@@ -10,3 +10,6 @@ bin/*
 # Tooling
 node_modules/
 .vscode-test/
+
+# Test downloads
+.vscode-test/

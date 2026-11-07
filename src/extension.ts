@@ -1,0 +1,53 @@
+// Copyright (C), 2026 Quartz Systems. Some rights reserved. This work is
+// licensed under the terms of the MIT license which can be found in the
+// root directory of this project.
+
+import * as vscode from 'vscode';
+import { about } from './commands/about';
+import { HostClient, HostState } from './host/client';
+import { ConnectionsProvider } from './views/connections';
+
+/** What `activate` returns; used by the integration tests. */
+export interface ExtensionApi {
+  readonly host: HostClient;
+}
+
+export function activate(context: vscode.ExtensionContext): ExtensionApi {
+  const output = vscode.window.createOutputChannel('Code for QS/400 Host', { log: true });
+  const host = new HostClient(context.extensionPath, output);
+
+  const status = vscode.window.createStatusBarItem('code-for-qs400.host', vscode.StatusBarAlignment.Left, 0);
+  status.name = 'QS/400 host';
+  status.text = '$(warning) QS/400 host stopped';
+  status.tooltip = 'The QS/400 host process stopped. It restarts on the next command, or click to restart it now.';
+  status.command = 'code-for-qs400.host.restart';
+  status.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+  const showState = (state: HostState) => (state === 'stopped' ? status.show() : status.hide());
+
+  const connections = new ConnectionsProvider();
+
+  context.subscriptions.push(
+    output,
+    host,
+    status,
+    connections,
+    host.onDidChangeState(showState),
+    vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
+    vscode.commands.registerCommand('code-for-qs400.about', () => about(host)),
+    vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
+      try {
+        await host.restart();
+        output.info('host restarted on request');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        void vscode.window.showErrorMessage(`Code for QS/400: could not restart the host: ${message}`);
+      }
+    }),
+  );
+
+  return { host };
+}
+
+export function deactivate(): void {
+  // Disposables registered in activate stop the host.
+}

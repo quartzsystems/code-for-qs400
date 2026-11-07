@@ -1,0 +1,91 @@
+{
+  "name": "code-for-qs400",
+  "displayName": "Code for QS/400",
+  "description": "Develop on QS/400: libraries, source members, the IFS, compiles and debugging, over QAP.",
+  "publisher": "quartzsystems",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Quartz Systems",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quartzsystems/quartz-systems-code-for-qs400"
+  },
+  "engines": {
+    "vscode": "^1.143.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:code-for-qs400.connections",
+    "onCommand:code-for-qs400.about",
+    "onCommand:code-for-qs400.host.restart"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "qs400",
+          "title": "QS/400",
+          "icon": "media/qs400.svg"
+        }
+      ]
+    },
+    "views": {
+      "qs400": [
+        {
+          "id": "code-for-qs400.connections",
+          "name": "Connections"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "code-for-qs400.about",
+        "title": "About",
+        "category": "Code for QS/400"
+      },
+      {
+        "command": "code-for-qs400.host.restart",
+        "title": "Restart Host",
+        "category": "Code for QS/400"
+      }
+    ],
+    "configuration": {
+      "title": "Code for QS/400",
+      "properties": {
+        "code-for-qs400.host.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to a `qs400-code-host` binary. Leave empty to use the one bundled with the extension."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "compile-tests": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit && eslint src test",
+    "pretest": "npm run build && npm run compile-tests",
+    "test": "vscode-test",
+    "package": "bash scripts/package.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "1.140.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.0",
+    "mocha": "^11.7.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}
