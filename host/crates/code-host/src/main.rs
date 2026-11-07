@@ -42,13 +42,23 @@ fn main() -> ExitCode {
 
 fn run_server() -> ExitCode {
     let outbound = Outbound::new(io::stdout());
+    // qap-client's own log lines (never a password, a token or a body).
+    let sink = outbound.clone();
+    qsa_net::log::set_sink(qsa_net::log::Level::Info, move |level, line| {
+        let level = match level {
+            qsa_net::log::Level::Error => LogLevel::Error,
+            qsa_net::log::Level::Warn => LogLevel::Warn,
+            _ => LogLevel::Info,
+        };
+        log(&sink, level, line);
+    });
     log(
         &outbound,
         LogLevel::Info,
         format!("qs400-code-host {VERSION_LINE} serving on stdio"),
     );
     let mut stdin = BufReader::new(io::stdin().lock());
-    match serve(&registry(), &mut stdin, outbound) {
+    match serve(&registry(&outbound), &mut stdin, outbound) {
         Ok(Exit::Requested) => ExitCode::SUCCESS,
         Ok(Exit::EndOfStream) => {
             eprintln!("[info] stdin closed, exiting");

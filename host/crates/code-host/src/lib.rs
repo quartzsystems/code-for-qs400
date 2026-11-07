@@ -4,6 +4,10 @@
 
 //! The `qs400-code-host` method set.
 
+pub mod session;
+
+use std::sync::Arc;
+
 use host_rpc::{Context, NoParams, Outbound, Registry, RpcError};
 use serde::{Deserialize, Serialize};
 
@@ -11,11 +15,12 @@ use serde::{Deserialize, Serialize};
 pub const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// QS/400 release this host is built for.
 pub const PRODUCT_VERSION: &str = "V1R0M0";
-/// QAP protocol version spoken.
-pub const QAP_VERSION: u32 = 1;
+/// The newest QAP version this host speaks: what `qap-client` offers in
+/// `Hello`. Each session reports the version its server agreed.
+pub const QAP_VERSION: u32 = qap_client::proto::VERSION as u32;
 
 /// The `--version` line, after the program name.
-pub const VERSION_LINE: &str = concat!(env!("CARGO_PKG_VERSION"), " (QS/400 V1R0M0, QAP v1)");
+pub const VERSION_LINE: &str = concat!(env!("CARGO_PKG_VERSION"), " (QS/400 V1R0M0, QAP v6)");
 
 /// Result of `host.version`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,9 +64,18 @@ pub fn log(outbound: &Outbound, level: LogLevel, message: impl Into<String>) {
     let _ = outbound.notify("host.log", &LogParams { level, message });
 }
 
-/// Every method this release serves.
-pub fn registry() -> Registry {
+/// Every method this release serves, with sessions over QAP. Session
+/// notifications go to `outbound`, the stream [`host_rpc::serve`] answers on.
+pub fn registry(outbound: &Outbound) -> Registry {
+    let sessions = session::Sessions::new(session::qap_factory(), outbound.clone());
+    sessions.watch();
+    registry_with(&sessions)
+}
+
+/// Every method, with `sessions` behind `session.*` and `libl.*`.
+pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     let mut r = Registry::new();
+    session::register(&mut r, sessions);
     r.register("host.version", |_: NoParams, _: &Context| {
         Ok::<_, RpcError>(VersionResult {
             host: HOST_VERSION.to_owned(),
@@ -105,12 +119,8 @@ mod tests {
             write_frame(&mut input, &serde_json::to_vec(r).unwrap()).unwrap();
         }
         let sink = Sink::default();
-        let exit = serve(
-            &registry(),
-            &mut Cursor::new(input),
-            Outbound::new(sink.clone()),
-        )
-        .unwrap();
+        let outbound = Outbound::new(sink.clone());
+        let exit = serve(&registry(&outbound), &mut Cursor::new(input), outbound).unwrap();
         let bytes = sink.0.lock().unwrap().clone();
         let mut r = Cursor::new(bytes);
         let mut out = Vec::new();
@@ -126,7 +136,7 @@ mod tests {
         assert_eq!(
             out,
             vec![
-                json!({"jsonrpc":"2.0","id":1,"result":{"host":"1.0.0","product":"V1R0M0","qap":1}})
+                json!({"jsonrpc":"2.0","id":1,"result":{"host":"1.0.0","product":"V1R0M0","qap":6}})
             ]
         );
     }
@@ -170,10 +180,27 @@ mod tests {
     }
 
     #[test]
-    fn registry_lists_phase0_methods() {
+    fn registry_lists_methods() {
         assert_eq!(
-            registry().method_names(),
-            vec!["host.ping", "host.shutdown", "host.version"]
+            registry(&Outbound::new(io::sink())).method_names(),
+            vec![
+                "host.ping",
+                "host.shutdown",
+                "host.version",
+                "libl.get",
+                "libl.set",
+                "session.changePassword",
+                "session.connect",
+                "session.disconnect",
+                "session.list",
+                "session.status",
+            ]
         );
+    }
+
+    #[test]
+    fn qap_version_is_the_clients() {
+        assert_eq!(QAP_VERSION, 6);
+        assert_eq!(qap_client::proto::VERSION, 6);
     }
 }

@@ -130,6 +130,7 @@ dependencies = [
  "clap",
  "host-rpc",
  "qap-client",
+ "qsa-net",
  "serde",
  "serde_json",
 ]

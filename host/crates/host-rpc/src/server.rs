@@ -53,6 +53,15 @@ pub struct Context {
 }
 
 impl Context {
+    /// A context on `outbound`, for calling [`Registry::dispatch`] outside
+    /// [`serve`] (tests that act between requests).
+    pub fn new(outbound: Outbound) -> Self {
+        Self {
+            outbound,
+            exit: Cell::new(false),
+        }
+    }
+
     /// The outgoing stream, for notifications.
     pub fn outbound(&self) -> &Outbound {
         &self.outbound
@@ -134,10 +143,7 @@ pub fn serve<R: BufRead>(
     reader: &mut R,
     outbound: Outbound,
 ) -> io::Result<Exit> {
-    let ctx = Context {
-        outbound,
-        exit: Cell::new(false),
-    };
+    let ctx = Context::new(outbound);
     while let Some(body) = read_frame(reader)? {
         let reply = match serde_json::from_slice::<Value>(&body) {
             Err(e) => Some(response_err(
