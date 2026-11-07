@@ -68,13 +68,17 @@ export interface TlsParams {
   caFile?: string;
 }
 
-/** Params of `session.connect`. The port is left out for the host's default. */
+/**
+ * Params of `session.connect`. The port is left out for the host's default.
+ * Without a password the host resumes the stale session of the same name,
+ * endpoint and user, or answers `NeedsPassword`.
+ */
 export interface ConnectParams {
   name: string;
   host: string;
   port?: number;
   user: string;
-  password: string;
+  password?: string;
   tls?: TlsParams;
 }
 

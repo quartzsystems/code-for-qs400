@@ -3,8 +3,8 @@
 // root directory of this project.
 
 import * as vscode from 'vscode';
-import { HostClient } from '../host/client';
-import { SessionStatus } from '../host/protocol';
+import { HostClient, HostRpcError } from '../host/client';
+import { MethodName, ParamsOf, ResultOf, SessionErrorCodes, SessionStatus } from '../host/protocol';
 import { ConnectionConfig, connectParams, sameName } from './config';
 import { PasswordAnswer, promptNewPassword, promptPassword, serverMessage, showError } from './prompts';
 import { ConnectionStore } from './store';
@@ -23,6 +23,8 @@ export class SessionManager implements vscode.Disposable {
   private readonly statuses = new Map<string, SessionStatus>();
   private readonly changed = new vscode.EventEmitter<SessionStatus | undefined>();
   private readonly subscriptions: vscode.Disposable[];
+  /** A sign-on prompt in progress, by connection: one prompt however many calls wait on it. */
+  private readonly prompting = new Map<string, Promise<boolean>>();
 
   /** Fires with a session's new status, or undefined when several changed. */
   readonly onDidChange = this.changed.event;
@@ -93,6 +95,16 @@ export class SessionManager implements vscode.Disposable {
    */
   async connect(name: string): Promise<SessionStatus | undefined> {
     const c = this.connection(name);
+    if (this.status(c.name).state === 'stale') {
+      try {
+        // No password: the host resumes the session, or signs on again
+        // with the one it keeps, or asks for one (handled by call).
+        return await this.afterSignOn(c, await this.call(c.name, 'session.connect', connectParams(c)));
+      } catch (err) {
+        void showError(err, c.name);
+        return undefined;
+      }
+    }
     const saved = await this.store.password(c.name);
     let answer: PasswordAnswer | undefined;
     if (saved === undefined) {
@@ -155,6 +167,58 @@ export class SessionManager implements vscode.Disposable {
     await this.setActive(c.name);
     this.output.info(`${c.name}: signed on as ${s.user ?? c.user}`);
     return s;
+  }
+
+  /**
+   * A host request that needs the session `name`. The host reconnects
+   * silently after the server's idle close; when the session must sign on
+   * again and the password it kept was refused, this asks for the password
+   * once, signs on, and sends the request again once.
+   */
+  async call<M extends MethodName>(name: string, method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
+    const send = () =>
+      (this.host.request as unknown as (m: M, p: ParamsOf<M>) => Promise<ResultOf<M>>).call(this.host, method, params);
+    try {
+      return await send();
+    } catch (err) {
+      if (!(err instanceof HostRpcError) || err.code !== SessionErrorCodes.NeedsPassword) {
+        throw err;
+      }
+      if (!(await this.signOnAgain(name, err))) {
+        throw err;
+      }
+      return send();
+    }
+  }
+
+  private signOnAgain(name: string, err: HostRpcError): Promise<boolean> {
+    let p = this.prompting.get(name);
+    if (!p) {
+      p = this.promptAndSignOn(name, err).finally(() => this.prompting.delete(name));
+      this.prompting.set(name, p);
+    }
+    return p;
+  }
+
+  private async promptAndSignOn(name: string, err: HostRpcError): Promise<boolean> {
+    const c = this.connection(name);
+    const refused = serverMessage(err);
+    const saved = await this.store.password(c.name);
+    if (saved !== undefined) {
+      if (refused) {
+        // The server refused the password the session signed on with.
+        await this.store.forgetPassword(c.name);
+        this.output.warn(`${c.name}: the server refused the saved password; it was removed from secret storage`);
+      } else {
+        return (await this.signOn(c, { password: saved, save: false }, true)) !== undefined;
+      }
+    }
+    const reason = refused?.messageId ? `${refused.messageId}: ${refused.text ?? ''}` : undefined;
+    const answer = await promptPassword(c, reason);
+    if (!answer) {
+      return false;
+    }
+    return (await this.signOn(c, answer, false)) !== undefined;
   }
 
   async disconnect(name: string): Promise<void> {

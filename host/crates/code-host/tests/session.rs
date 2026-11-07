@@ -575,3 +575,35 @@ fn the_real_client_reports_a_refused_connection() {
     assert_eq!(e.code, codes::TRANSPORT, "{}", e.message);
     assert_eq!(h.changes(), ["connecting", "disconnected"]);
 }
+
+#[test]
+fn connect_without_a_password_resumes_a_stale_session() {
+    let h = Host::new();
+    let params = json!({"name":"QSHQ400","host":"qshq400.example","user":"cwellman"});
+    let e = h.call("session.connect", params.clone()).unwrap_err();
+    assert_eq!(e.code, codes::NEEDS_PASSWORD, "nothing to resume");
+    assert!(h.calls().is_empty());
+
+    h.connect("secret").unwrap();
+    h.changes();
+    h.calls();
+    h.script().live = false;
+    let r = h.call("session.connect", params.clone()).unwrap();
+    assert_eq!(r["state"], "connected");
+    assert_eq!(r["job"]["number"], "100001");
+    assert_eq!(h.calls(), ["reconnect"]);
+    assert_eq!(h.changes(), ["stale", "connecting", "connected"]);
+
+    // Connected already: nothing sent.
+    h.call("session.connect", params.clone()).unwrap();
+    assert!(h.calls().is_empty());
+
+    // Another user is a new sign-on, which needs a password.
+    let e = h
+        .call(
+            "session.connect",
+            json!({"name":"QSHQ400","host":"qshq400.example","user":"QSECOFR"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, codes::NEEDS_PASSWORD);
+}

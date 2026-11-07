@@ -139,7 +139,11 @@ pub struct ConnectParams {
     #[serde(default)]
     pub port: Option<u16>,
     pub user: String,
-    pub password: String,
+    /// Absent: resume the session this name has to the same endpoint and
+    /// user, as the first call after a drop would; `needs_password` when
+    /// there is none to resume.
+    #[serde(default)]
+    pub password: Option<String>,
     #[serde(default)]
     pub tls: TlsParams,
 }
@@ -582,7 +586,7 @@ impl Sessions {
     }
 
     pub fn connect(&self, p: ConnectParams) -> Result<StatusDto, RpcError> {
-        let password = Secret::new(p.password);
+        let password = p.password.map(Secret::new);
         for (field, v) in [("name", &p.name), ("host", &p.host), ("user", &p.user)] {
             if v.trim().is_empty() {
                 return Err(RpcError::invalid_params(format!("{field} is empty")));
@@ -598,9 +602,17 @@ impl Sessions {
         let sess = self.entry(&p.name);
         let mut s = lock(&sess);
         s.observe();
-        if s.state == State::Connected && s.endpoint.as_ref() == Some(&endpoint) && s.user == user {
+        let same = s.endpoint.as_ref() == Some(&endpoint) && s.user == user;
+        if same && s.state == State::Connected {
             return Ok(s.status());
         }
+        let Some(password) = password else {
+            if same && s.state == State::Stale {
+                self.ensure(&mut s)?;
+                return Ok(s.status());
+            }
+            return Err(needs_password(None));
+        };
         if let Some(problem) = s.close() {
             log(
                 &self.outbound,

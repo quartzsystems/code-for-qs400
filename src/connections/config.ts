@@ -188,9 +188,12 @@ export function toSetting(c: ConnectionConfig): Record<string, unknown> {
   return out;
 }
 
-/** What `session.connect` is sent for `c`. */
-export function connectParams(c: ConnectionConfig, password: string): ConnectParams {
-  const p: ConnectParams = { name: c.name, host: c.host, user: c.user, password };
+/** What `session.connect` is sent for `c`; no password resumes a stale session. */
+export function connectParams(c: ConnectionConfig, password?: string): ConnectParams {
+  const p: ConnectParams = { name: c.name, host: c.host, user: c.user };
+  if (password !== undefined) {
+    p.password = password;
+  }
   if (c.port !== undefined) {
     p.port = c.port;
   }
