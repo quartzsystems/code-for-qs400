@@ -1,6 +1,5 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://quartz.systems/schemas/code-for-qs400/actions.json",
   "title": "Code for QS/400 Actions",
   "description": "Schema for .vscode/actions.json. Defined in Phase 4.",
   "type": "object"
