@@ -331,3 +331,55 @@ and the extension present at once. The failure did not happen again.
 **Linux x64: not yet run by hand.** `code-for-qs400-linux-x64.vsix` was
 built (static-pie musl host), and CI runs the same About round-trip test on
 `ubuntu-latest`. Installing the VSIX on a Linux desktop is still to do.
+
+## Phase 1 exit test
+
+> Connect to `QSHQ400` as `CWELLMAN`; `QMAXSIGN` lockout and expired
+> password surface as the real `CPF` messages.
+
+**Not run yet, 2026-11-07: no QAP server was reachable from the
+development machine.** `QSHQ400` does not resolve (as a bare name or under
+`ad.quartz.systems` or `quartz.systems`), and the one system configured in the
+QS/400 Access configuration there (`QS400`, 10.42.70.150) does not answer
+on QAP port 2320. No message IDs from a real system have been seen, so none
+are recorded here.
+
+**Library list: blocked on QAP.** The pinned `qap-client` has no
+`library_list` service (Phase 1 decision 1), so the library list step
+cannot pass on any server until QAP adds it. `libl.get` and `libl.set`
+answer `-32001 library_list not available on this server`, and the node
+says so.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The host's state machine against canned replies carrying the IDs and
+  texts QS/400's sign-on sends: `CPF1107` (password or profile not
+  correct), `CPF1392` (the next attempt disables the profile), `CPF1393`
+  (`QMAXSIGN` reached, profile or device disabled) and `CPF1394` (profile
+  disabled), each passed through as `messageId: text` with nothing added.
+  The expired-password case uses `CPD9BAE` from QS/400's QAP test engine;
+  the real system's ID for it is still to be seen.
+- The real `qap-client` against a closed port: a `-32011` transport error,
+  and the session back to `disconnected`.
+- The extension against the real host: the tree, the status bar, the
+  reconnect and the library list against a fake server, and the
+  `win32-x64` VSIX packaged.
+
+To run it, on a machine that reaches `QSHQ400`:
+
+1. Add a connection named `QSHQ400` for `CWELLMAN`. Connect and enter the
+   password. Check the status bar reads `QSHQ400 · CWELLMAN`, and hover it:
+   the session job is `nnnnnn/CWELLMAN/<jobname>`.
+2. Disconnect. Connect with a wrong password, choosing **Ask every time**,
+   as many times as `QMAXSIGN` allows. Note each notification's message ID
+   and text; they must be the server's own.
+   This disables `CWELLMAN`, and a security officer must enable it again
+   before step 3.
+3. With an expired password: note the message. **Change password** appears
+   (Phase 1 decision 2), changes the password and signs on.
+4. Library list: blocked, as above. Once QAP has `library_list`, add a
+   library, move it to the top, set a current library, disconnect and
+   connect: the list comes back as saved. `test/live.test.ts` runs steps 1
+   and 4 when `QS400_TEST_HOST`, `QS400_TEST_USER` and
+   `QS400_TEST_PASSWORD` are set.
+5. Record the result and every message ID seen here.
