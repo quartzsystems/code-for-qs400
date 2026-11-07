@@ -1,0 +1,16 @@
+# Deny everything, then allow what the extension needs at run time.
+# This keeps host/, test/, src/, node_modules/ and build caches out.
+**
+!package.json
+!dist/extension.js
+!media/*.svg
+!schemas/*.json
+!syntaxes/*.json
+!languages/*.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+# scripts/package.sh empties bin/ and copies in only the current target's
+# host, so at most one of these exists when vsce runs.
+!bin/qs400-code-host
+!bin/qs400-code-host.exe
