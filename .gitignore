@@ -1,0 +1,12 @@
+# Build output
+host/target/
+target/
+dist/
+out/
+*.vsix
+bin/*
+!bin/.gitkeep
+
+# Tooling
+node_modules/
+.vscode-test/
