@@ -102,11 +102,14 @@ export class HostClient implements vscode.Disposable {
   private _state: HostState = 'idle';
   private readonly stateEmitter = new vscode.EventEmitter<HostState>();
   private readonly logEmitter = new vscode.EventEmitter<LogParams>();
+  private readonly sessionEmitter = new vscode.EventEmitter<HostNotifications['session.changed']>();
 
   /** Fires on every state change. */
   readonly onDidChangeState = this.stateEmitter.event;
   /** Fires for each `host.log` notification. */
   readonly onDidLog = this.logEmitter.event;
+  /** Fires for each `session.changed` notification. */
+  readonly onDidChangeSession = this.sessionEmitter.event;
 
   constructor(
     private readonly extensionPath: string,
@@ -195,6 +198,7 @@ export class HostClient implements vscode.Disposable {
     }
     this.stateEmitter.dispose();
     this.logEmitter.dispose();
+    this.sessionEmitter.dispose();
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -289,6 +293,10 @@ export class HostClient implements vscode.Disposable {
       // The same line arrives on stderr, which is what the output channel
       // shows; the notification is for listeners in the extension.
       this.logEmitter.fire(params as HostNotifications['host.log']);
+      return;
+    }
+    if (method === 'session.changed') {
+      this.sessionEmitter.fire(params as HostNotifications['session.changed']);
       return;
     }
     this.output.debug(`unhandled notification ${method}`);

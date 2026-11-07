@@ -51,6 +51,48 @@
         "command": "code-for-qs400.host.restart",
         "title": "Restart Host",
         "category": "Code for QS/400"
+      },
+      {
+        "command": "code-for-qs400.connection.add",
+        "title": "Add Connection",
+        "category": "Code for QS/400",
+        "icon": "$(add)"
+      },
+      {
+        "command": "code-for-qs400.connection.edit",
+        "title": "Edit Connection",
+        "category": "Code for QS/400",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "code-for-qs400.connection.remove",
+        "title": "Remove Connection",
+        "category": "Code for QS/400",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "code-for-qs400.connection.connect",
+        "title": "Connect",
+        "category": "Code for QS/400",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "code-for-qs400.connection.disconnect",
+        "title": "Disconnect",
+        "category": "Code for QS/400",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "code-for-qs400.connection.setDefault",
+        "title": "Set as Default Connection",
+        "category": "Code for QS/400",
+        "icon": "$(star)"
+      },
+      {
+        "command": "code-for-qs400.connection.forgetPassword",
+        "title": "Forget Saved Password",
+        "category": "Code for QS/400",
+        "icon": "$(key)"
       }
     ],
     "configuration": {
@@ -61,6 +103,86 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "Path to a `qs400-code-host` binary. Leave empty to use the one bundled with the extension."
+        },
+        "code-for-qs400.connections": {
+          "type": "array",
+          "default": [],
+          "scope": "application",
+          "markdownDescription": "Saved connections. `name` is unique and is the key for the saved password and the library list. Passwords are never kept here: they go to VS Code secret storage. Edit with the **Add Connection** and **Edit Connection** commands, or here.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "host",
+              "user"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Unique connection name, for example QSHQ400."
+              },
+              "host": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Host name or address of the QS/400 system. The server certificate must carry this name."
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535,
+                "description": "QAP port. Leave it out for the default port."
+              },
+              "user": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10,
+                "description": "User profile to sign on as."
+              },
+              "tls": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "verify": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Must be `true`. QAP accepts only a verified server certificate, as QS/400 Access does; to trust a self-signed certificate, name it in `caFile`."
+                  },
+                  "caFile": {
+                    "type": "string",
+                    "description": "PEM file with certificates to trust beyond the system store: a CA, or the server certificate itself."
+                  }
+                }
+              },
+              "libraryList": {
+                "type": "object",
+                "additionalProperties": false,
+                "markdownDescription": "Library list applied to the session job on connect. The Library list node edits it.",
+                "properties": {
+                  "current": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "description": "Current library."
+                  },
+                  "user": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 10
+                    },
+                    "description": "User part of the library list, in order."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "code-for-qs400.defaultConnection": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "markdownDescription": "Name of the default connection: offered first when a command asks for a connection, and marked in the Connections view."
         }
       }
     }
