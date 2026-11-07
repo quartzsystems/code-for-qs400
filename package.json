@@ -99,6 +99,36 @@
         "title": "Switch Active Connection",
         "category": "Code for QS/400",
         "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "code-for-qs400.libl.add",
+        "title": "Add Library to Library List",
+        "category": "Code for QS/400",
+        "icon": "$(add)"
+      },
+      {
+        "command": "code-for-qs400.libl.remove",
+        "title": "Remove from Library List",
+        "category": "Code for QS/400",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "code-for-qs400.libl.moveUp",
+        "title": "Move Up",
+        "category": "Code for QS/400",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "code-for-qs400.libl.moveDown",
+        "title": "Move Down",
+        "category": "Code for QS/400",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "code-for-qs400.libl.setCurrent",
+        "title": "Set as Current Library",
+        "category": "Code for QS/400",
+        "icon": "$(star-full)"
       }
     ],
     "configuration": {
@@ -246,6 +276,69 @@
           "command": "code-for-qs400.connection.remove",
           "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\./",
           "group": "3_remove@1"
+        },
+        {
+          "command": "code-for-qs400.libl.add",
+          "when": "view == code-for-qs400.connections && viewItem == libraryList",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.libl.add",
+          "when": "view == code-for-qs400.connections && viewItem == libraryList",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "code-for-qs400.libl.moveUp",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^library\\.user(\\.last)?$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.libl.moveDown",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^library\\.user(\\.first)?$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "code-for-qs400.libl.add",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^library\\./",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "code-for-qs400.libl.moveUp",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^library\\.user(\\.last)?$/",
+          "group": "1_edit@2"
+        },
+        {
+          "command": "code-for-qs400.libl.moveDown",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^library\\.user(\\.first)?$/",
+          "group": "1_edit@3"
+        },
+        {
+          "command": "code-for-qs400.libl.setCurrent",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^library\\.user/",
+          "group": "1_edit@4"
+        },
+        {
+          "command": "code-for-qs400.libl.remove",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^library\\./",
+          "group": "2_remove@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "code-for-qs400.libl.remove",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.libl.moveUp",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.libl.moveDown",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.libl.setCurrent",
+          "when": "false"
         }
       ]
     }

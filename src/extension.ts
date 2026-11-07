@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
+import { LibraryListController } from './connections/libraryList';
 import { SessionManager } from './connections/sessions';
 import { ConnectionStore } from './connections/store';
 import { HostClient, HostState } from './host/client';
@@ -17,6 +18,7 @@ export interface ExtensionApi {
   readonly store: ConnectionStore;
   readonly sessions: SessionManager;
   readonly connections: ConnectionsProvider;
+  readonly libraryList: LibraryListController;
   readonly statusBar: SessionStatusBar;
 }
 
@@ -34,7 +36,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   const store = new ConnectionStore(context.secrets, output);
   const sessions = new SessionManager(host, store, context.workspaceState, output);
-  const connections = new ConnectionsProvider(store, sessions);
+  const libraryList = new LibraryListController(store, sessions, output);
+  const connections = new ConnectionsProvider(store, sessions, libraryList);
   const statusBar = new SessionStatusBar(store, sessions);
 
   context.subscriptions.push(
@@ -42,6 +45,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     host,
     store,
     sessions,
+    libraryList,
     status,
     connections,
     statusBar,
@@ -49,6 +53,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.commands.registerCommand('code-for-qs400.about', () => about(host)),
     ...registerConnectionCommands(store, sessions),
+    ...libraryList.registerCommands(),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();
@@ -60,7 +65,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, statusBar };
+  return { host, store, sessions, connections, libraryList, statusBar };
 }
 
 export function deactivate(): void {
