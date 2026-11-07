@@ -9,12 +9,15 @@ import { SessionManager } from './connections/sessions';
 import { ConnectionStore } from './connections/store';
 import { HostClient, HostState } from './host/client';
 import { ConnectionsProvider } from './views/connections';
+import { SessionStatusBar } from './views/sessionStatusBar';
 
 /** What `activate` returns; used by the integration tests. */
 export interface ExtensionApi {
   readonly host: HostClient;
   readonly store: ConnectionStore;
   readonly sessions: SessionManager;
+  readonly connections: ConnectionsProvider;
+  readonly statusBar: SessionStatusBar;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -31,7 +34,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   const store = new ConnectionStore(context.secrets, output);
   const sessions = new SessionManager(host, store, context.workspaceState, output);
-  const connections = new ConnectionsProvider();
+  const connections = new ConnectionsProvider(store, sessions);
+  const statusBar = new SessionStatusBar(store, sessions);
 
   context.subscriptions.push(
     output,
@@ -40,6 +44,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     sessions,
     status,
     connections,
+    statusBar,
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.commands.registerCommand('code-for-qs400.about', () => about(host)),
@@ -55,7 +60,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions };
+  return { host, store, sessions, connections, statusBar };
 }
 
 export function deactivate(): void {

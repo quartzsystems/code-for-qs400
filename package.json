@@ -93,6 +93,12 @@
         "title": "Forget Saved Password",
         "category": "Code for QS/400",
         "icon": "$(key)"
+      },
+      {
+        "command": "code-for-qs400.connection.switchActive",
+        "title": "Switch Active Connection",
+        "category": "Code for QS/400",
+        "icon": "$(arrow-swap)"
       }
     ],
     "configuration": {
@@ -185,6 +191,63 @@
           "markdownDescription": "Name of the default connection: offered first when a command asks for a connection, and marked in the Connections view."
         }
       }
+    },
+    "viewsWelcome": [
+      {
+        "view": "code-for-qs400.connections",
+        "contents": "No QS/400 connections yet.\n[Add Connection](command:code-for-qs400.connection.add)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "code-for-qs400.connection.add",
+          "when": "view == code-for-qs400.connections",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "code-for-qs400.connection.connect",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\.disconnected/",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.connection.disconnect",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\.(connected|stale|connecting)/",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.connection.connect",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\.(disconnected|stale)/",
+          "group": "1_session@1"
+        },
+        {
+          "command": "code-for-qs400.connection.disconnect",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\.(connected|stale|connecting)/",
+          "group": "1_session@2"
+        },
+        {
+          "command": "code-for-qs400.connection.edit",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\./",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "code-for-qs400.connection.setDefault",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\.[a-z]+$/",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "code-for-qs400.connection.forgetPassword",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\./",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "code-for-qs400.connection.remove",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^connection\\./",
+          "group": "3_remove@1"
+        }
+      ]
     }
   },
   "scripts": {
