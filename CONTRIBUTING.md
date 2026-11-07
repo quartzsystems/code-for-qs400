@@ -11,13 +11,15 @@ decided along the way.
 | `package.json`, `src/` | Extension manifest and TypeScript sources, bundled by `esbuild.mjs` to `dist/extension.js` |
 | `src/host/client.ts` | Spawns `qs400-code-host`, frames and correlates JSON-RPC, supervises the process |
 | `src/host/protocol.ts` | Types for every host method and notification; keep in step with `host/crates/code-host/src/lib.rs` |
-| `src/views/`, `src/commands/` | Tree views and commands |
+| `src/connections/` | The connections setting (`config.ts`, no `vscode` import), store and secrets, prompts, the session manager, the library list |
+| `src/views/`, `src/commands/` | Tree views, the status bar item and commands |
 | `syntaxes/`, `languages/` | Grammars and language configuration (Phase 5) |
 | `schemas/actions.json` | Schema for `.vscode/actions.json` (Phase 4) |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
 | `bin/` | Host binary for the current platform, copied in by `scripts/package.sh`; gitignored |
 | `host/` | Cargo workspace: `crates/host-rpc` (framing, registry, error codes; no QS/400 knowledge) and `crates/code-host` (the `qs400-code-host` binary) |
-| `test/` | Extension integration tests, run inside VS Code |
+| `host/crates/code-host/src/session.rs` | Sessions: one per connection name, the state machine, `session.*` and `libl.*` |
+| `test/` | Extension tests, run inside VS Code; `live.test.ts` against a real system |
 | `scripts/` | `check-naming.sh`, `package.sh`, `package.ps1` |
 | `.github/workflows/ci.yml` | CI for Windows and Linux |
 | `docs/` | User documentation |
@@ -51,6 +53,39 @@ npm test                            # on Linux without a display: xvfb-run -a np
 
 `npm test` downloads VS Code 1.143.0 (the lowest version `engines.vscode`
 allows) into `.vscode-test/` and runs `test/*.test.ts` in it.
+
+### Session tests
+
+`qap-client` has no transport trait: `Client` opens its own connection
+from a `Target`. So `session.rs` puts a small `Backend` trait of its own in
+front of `Client` (`QapBackend` is one `qap-client` call per method), and
+`host/crates/code-host/tests/session.rs` tests the state machine at the
+method-registry level with a fake backend and canned replies:
+`Registry::dispatch` one call at a time, reading the `session.changed`
+notifications back. The canned refusals use the IDs and texts QS/400's
+sign-on sends. One test drives the real `qap-client` against a closed
+port. `host_rpc::Context::new` exists so these tests can act between
+calls.
+
+### Live tests
+
+`test/live.test.ts` runs the Phase 1 exit test's connect and library list
+steps against a real system. It is skipped unless these are set:
+
+| Variable | Meaning |
+| --- | --- |
+| `QS400_TEST_HOST`, `QS400_TEST_USER`, `QS400_TEST_PASSWORD` | Required. |
+| `QS400_TEST_PORT` | QAP port, when not the default. |
+| `QS400_TEST_CA_FILE` | PEM file to trust (CI writes `QS400_TEST_CA_PEM` to one). |
+| `QS400_TEST_LIBRARY` | Library to add and move to the top. Default `QGPL`. |
+| `QS400_TEST_CURLIB` | Library to set as current. Default the user profile. |
+
+It never signs on with a wrong password, so it cannot count against
+`QMAXSIGN`. When the server has no `library_list` service, the library list
+step is skipped and says so. In CI the `live tests` job runs only when the
+repository secrets of the same names exist; otherwise it is green and its
+summary says "live tests skipped". The runner must be able to reach the
+system's QAP port.
 
 ## Package
 
@@ -97,7 +132,8 @@ file is built on that platform (CI runs both).
 ## Adding a host method
 
 1. Add the params/result types and register the handler in
-   `host/crates/code-host/src/lib.rs`, with a test.
+   `host/crates/code-host/src/lib.rs` (or the area's module, as
+   `session.rs`), with a test.
 2. Add the method to `HostMethods` in `src/host/protocol.ts`. The client's
    `request()` is typed from that map.
 
@@ -184,6 +220,94 @@ file is built on that platform (CI runs both).
 21. **The Linux VSIX was built locally in Docker** (`rust:1.98-bookworm`
     with `musl-tools` and Node 22), running the same `scripts/package.sh`.
     The Windows VSIX was built natively.
+
+## Decisions made in Phase 1
+
+1. **`library_list` is not in the pinned `qap-client`.** At
+   `quartz-systems-access` `1afe1b4` (with `qap-proto` from
+   `quartz-systems-400` `93c6350`) QAP has 49 operations in the services
+   Connection, SignOn, System, Command, Spool, Sql, Ifs and Messages, and
+   none for a library list. `libl.get` and `libl.set` take the plan's
+   proposed shape (the user part and the current library), check their
+   params, bring the session back if it went stale, and then answer
+   `-32001 "library_list not available on this server"`. Both, and the
+   request they would send, are marked `// QAP v2: library_list`. Nothing
+   emulates the service with remote commands.
+2. **`session.changePassword` is a seventh session method.** `qap-client`
+   has `Client::change_password`, so an expired password gets a **Change
+   password** button. After `PasswordExpired` the host keeps the connection
+   open for the change, as `qap-client` expects.
+3. **`session.connect` takes an optional password.** Without one it
+   resumes the stale session of the same name, endpoint and user, as the
+   first call after a drop would, or answers `needs_password`. Connect on a
+   stale connection uses it, so it keeps the session job instead of signing
+   on again.
+4. **Error codes.** `-32001` library list unavailable, `-32002` not
+   connected, `-32003` `needs_password`, `-32010` a server refusal,
+   `-32011` transport (name lookup, TCP, TLS, closed connection, no reply).
+   A refusal's `message` is `qap-client`'s own text, which for a server
+   message is `messageId: text`; `data` is
+   `{ status, messageId, text, secondLevel? }` as QAP returned them.
+   `needs_password` carries the same `data` when the server refused the
+   kept password. Severity and substitution data are not passed on.
+5. **TLS is QS/400 Access's.** `qsa-net` has no switch to skip
+   verification, so `tls.verify: false` is refused with `-32602`, and the
+   setting's description says so. `tls.caFile` is read into
+   `qsa_net::Trust` as Access reads its CA list's files. An untrusted
+   certificate is a `-32011` error with `data: { kind: "untrusted", reason }`;
+   there is no "trust this certificate" flow yet.
+6. **The host reports QAP v6**, the newest version `qap-client` offers in
+   `Hello` (`qap_client::proto::VERSION`), which settles Phase 0 decision
+   11. About shows `QAP v6`; each session's `system.qap` is the version its
+   server agreed.
+7. **Status fields beyond the method table:** `user` (the signed-on
+   profile), `system.name`, `system.model` and `system.qap`.
+   `system.product` is the first product `SystemInfo` lists (`QS00SS1`).
+   `job` is left out for a server older than QAP 4, which has no `JobInfo`.
+8. **Noticing the idle close.** A watcher thread looks at every session
+   when `qap-client` calls the target's `wake` (on a close or an event) and
+   every 5 s. It only looks: `connected` with a closed connection becomes
+   `stale` and is sent as `session.changed`. It never reconnects, and it
+   skips a session a request is using.
+9. **Signing on again.** The host keeps the password as a `qap-client`
+   `Secret` in memory only. When the server refuses it on a re-sign-on, the
+   host forgets it and answers `needs_password`; it never tries it twice,
+   so it never counts against `QMAXSIGN` twice. The extension, likewise,
+   deletes a saved password the server refuses, prompts once however many
+   calls are waiting, and repeats each waiting call once.
+10. **Disconnect** signs off only when the connection is open. A stale
+    session is left to the server's idle timeout rather than reconnecting
+    just to end it.
+11. **Settings.** `code-for-qs400.connections` has `application` scope, so
+    a workspace cannot add a connection that asks for a password. Names
+    compare without case. Users are upper-cased. An entry that does not
+    parse is skipped and reported in the host output channel, and writes
+    replace only the named entry, so such an entry is kept as written.
+12. **Set as Default Connection** writes `code-for-qs400.defaultConnection`
+    (also `application` scope). The default is offered first when a
+    command asks for a connection and is marked in the tree's tooltip.
+13. **Switch Active Connection** (`code-for-qs400.connection.switchActive`)
+    is an eighth connection command, for the status bar click. The active
+    connection is kept in workspace state under
+    `code-for-qs400.activeConnection`; Disconnect moves it to another
+    signed-on connection when there is one.
+14. **Add and Edit ask five boxes:** name, host, port, user, CA file.
+    `tls.verify` is not asked, since only `true` works.
+15. **The status bar item** shows the active connection when it is signed
+    on, else the first signed-on one, else nothing. It is separate from the
+    host-stopped warning item.
+16. **Library list node.** The system part is not shown. **Set as Current
+    Library** takes the library out of the user part. **Add** puts the
+    library at the end of the user part. The saved list is applied each
+    time a session gets a new job (connect, or signing on again after the
+    server ended the session), and saved only after the server took an
+    edit.
+17. **`qsa-net` is a direct dependency** at the same commit as
+    `qap-client`, for `Trust` and for its log sink. `qap-client`'s log lines
+    at info and above go to `host.log`; it never logs a password, a token
+    or a body.
+18. **`host_rpc::Context::new` is public**, so tests can call
+    `Registry::dispatch` and act between calls.
 
 ## Phase 0 exit test
 

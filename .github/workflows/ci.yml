@@ -94,3 +94,63 @@ jobs:
           name: code-for-qs400-${{ matrix.target }}.vsix
           path: code-for-qs400-${{ matrix.target }}.vsix
           if-no-files-found: error
+
+  live:
+    name: live tests
+    runs-on: ubuntu-latest
+    env:
+      QS400_TEST_HOST: ${{ secrets.QS400_TEST_HOST }}
+      QS400_TEST_USER: ${{ secrets.QS400_TEST_USER }}
+      QS400_TEST_PASSWORD: ${{ secrets.QS400_TEST_PASSWORD }}
+      QS400_TEST_PORT: ${{ secrets.QS400_TEST_PORT }}
+      QS400_TEST_CA_PEM: ${{ secrets.QS400_TEST_CA_PEM }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check for the live test secrets
+        id: check
+        run: |
+          if [ -n "$QS400_TEST_HOST" ] && [ -n "$QS400_TEST_USER" ] && [ -n "$QS400_TEST_PASSWORD" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "live tests skipped"
+            echo "live tests skipped: QS400_TEST_HOST, QS400_TEST_USER and QS400_TEST_PASSWORD are not set" >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.check.outputs.run == 'true'
+
+      - name: Install musl tools
+        if: steps.check.outputs.run == 'true'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install Rust toolchain (host/rust-toolchain.toml)
+        if: steps.check.outputs.run == 'true'
+        working-directory: host
+        run: rustup toolchain install && rustc --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: steps.check.outputs.run == 'true'
+        with:
+          workspaces: host
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.check.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build host into bin/
+        if: steps.check.outputs.run == 'true'
+        run: npm ci && scripts/package.sh --host-only
+
+      - name: Live tests
+        if: steps.check.outputs.run == 'true'
+        run: |
+          if [ -n "$QS400_TEST_CA_PEM" ]; then
+            printf '%s\n' "$QS400_TEST_CA_PEM" > "$RUNNER_TEMP/qs400-ca.pem"
+            export QS400_TEST_CA_FILE="$RUNNER_TEMP/qs400-ca.pem"
+          fi
+          xvfb-run -a npm test

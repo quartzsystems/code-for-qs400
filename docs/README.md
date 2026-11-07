@@ -5,11 +5,17 @@ This guide grows with each phase and ships with the marketplace listing.
 ## Getting started
 
 1. Install the VSIX for your platform (Windows x64 or Linux x64).
-2. Open the **QS/400** view in the activity bar. The **Connections** view is
-   empty until Phase 1 adds connections and sign-on.
+2. Open the **QS/400** view in the activity bar and add a connection: see
+   [Connections and sign-on](connections.md).
 3. Run **Code for QS/400: About** from the Command Palette to check that the
    bundled host is working. It shows the QS/400 release, the host version
    and the QAP version, all reported by the host.
+
+## Guides
+
+- [Connections and sign-on](connections.md): adding a connection, where the
+  password is kept, the Connections view, the status bar, reconnecting and
+  the library list.
 
 ## Troubleshooting
 
