@@ -161,6 +161,11 @@ export function outputLinks(lines: readonly string[]): OutputLink[] {
 /** What `action.run` is handed: a URI (editor title, palette), a tree node, or nothing (the active editor). */
 type RunArg = vscode.Uri | { kind?: string; connection?: string; [k: string]: unknown } | undefined;
 
+/** The action named by `action.run`'s second argument: a non-empty string, else none (the pick). */
+export function actionNameArg(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() !== '' ? v : undefined;
+}
+
 /** The target a URI names: a member or a stream file, its connection as saved. */
 export function uriTarget(uri: vscode.Uri, store: ConnectionStore): ActionTarget | undefined {
   if (uri.scheme === MEMBER_SCHEME) {
@@ -546,7 +551,9 @@ export class ActionRunner implements vscode.Disposable {
   register(): vscode.Disposable[] {
     return [
       this,
-      vscode.commands.registerCommand('code-for-qs400.action.run', (arg?: RunArg, actionName?: string) => this.run(arg, actionName)),
+      // The second argument names an action only when it is a string: the
+      // editor title passes its group context there, a tree its selection.
+      vscode.commands.registerCommand('code-for-qs400.action.run', (arg?: RunArg, actionName?: unknown) => this.run(arg, actionNameArg(actionName))),
       vscode.languages.registerDocumentLinkProvider(
         { language: OUTPUT_LANGUAGE },
         {

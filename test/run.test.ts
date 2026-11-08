@@ -5,7 +5,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { JOB_LOG_LINE, headerLines, linkConnection, listingLine, outcomeLines, parseListingLine, submittedJob, timestamp } from '../src/actions/output';
-import { ActionRunner, LAST_ACTIONS_KEY, SavableDocument, nodeTarget, outputLinks, uriTarget } from '../src/actions/run';
+import { ActionRunner, LAST_ACTIONS_KEY, SavableDocument, actionNameArg, nodeTarget, outputLinks, uriTarget } from '../src/actions/run';
 import { ActionStore } from '../src/actions/store';
 import { ActionTarget } from '../src/actions/targets';
 import { SessionManager } from '../src/connections/sessions';
@@ -28,6 +28,16 @@ const RNS9304: CommandMessage = {
   severity: 0,
   text: 'Program ASSETS42 created in library CWELLMAN. Highest severity: 00.',
 };
+
+suite('Run: the command arguments', () => {
+  test('only a string names the action: the editor title’s group context and a tree’s selection do not', () => {
+    assert.equal(actionNameArg('Compile (CRTBNDRPG)'), 'Compile (CRTBNDRPG)');
+    assert.equal(actionNameArg({ groupId: 1 }), undefined);
+    assert.equal(actionNameArg([{ kind: 'member' }]), undefined);
+    assert.equal(actionNameArg(''), undefined);
+    assert.equal(actionNameArg(undefined), undefined);
+  });
+});
 
 suite('Run: the output block', () => {
   test('header: the time, the action, the target and the connection; then the command', () => {
