@@ -2,8 +2,8 @@
 // licensed under the terms of the MIT license which can be found in the
 // root directory of this project.
 
-// The Phase 1, 2, 3 and 4 exit tests' automatic steps against a real
-// QS/400 system. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
+// The Phase 1, 2, 3, 4 and 6 exit tests' automatic steps against a real
+// QS/400 system. Phase 6 makes and drops the table HLINV.QS4SQL6. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
 // QS400_TEST_PASSWORD are set. Optional: QS400_TEST_PORT, QS400_TEST_CA_FILE,
 // QS400_TEST_LIBRARY (added to the list, default QGPL),
 // QS400_TEST_CURLIB (set as the current library, default the user profile),
@@ -696,5 +696,228 @@ suite('Live: Phase 4 exit test', function () {
     const doc = await api.jobLog.open(NAME);
     assert.ok(doc);
     assert.equal(doc.lineCount - 1, log.entries.length);
+  });
+});
+
+/** RFC 4180 records of a CSV text (quoted fields may hold line breaks). */
+function csvRecords(text: string): string[][] {
+  const out: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') {
+        quoted = false;
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === ',') {
+      row.push(field);
+      field = '';
+    } else if (c === '\r' && text[i + 1] === '\n') {
+      row.push(field);
+      out.push(row);
+      row = [];
+      field = '';
+      i++;
+    } else {
+      field += c;
+    }
+  }
+  return out;
+}
+
+suite('Live: Phase 6 exit test', function () {
+  let api: ExtensionApi;
+  const SCRATCH = 'HLINV.QS4SQL6';
+  const seen = new Set<string>();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qs400-sql-'));
+
+  suiteSetup(async function () {
+    if (!HOST || !USER || !PASSWORD) {
+      this.skip();
+    }
+    const ext = vscode.extensions.getExtension<ExtensionApi>('quartzsystems.code-for-qs400');
+    assert.ok(ext);
+    api = await ext.activate();
+    const c = connection();
+    await config().update('connections', [c], true);
+    await api.sessions.signOn(c, { password: PASSWORD, save: false }, false);
+    const qap = api.sessions.status(NAME).system?.qap ?? 0;
+    if (qap < 4) {
+      console.log(`live: Phase 6 skipped: the server agreed QAP v${qap}; Sql needs 4`);
+      this.skip();
+    }
+  });
+
+  suiteTeardown(async function () {
+    if (!api) {
+      return;
+    }
+    await api.host.request('sql.rollback', { name: NAME }).catch(() => undefined);
+    await api.host.request('sql.options.set', { name: NAME, commit: 'none' }).catch(() => undefined);
+    await api.sqlRunner.run(NAME, `DROP TABLE ${SCRATCH}`);
+    console.log(`live: Phase 6 message IDs seen: ${[...seen].sort().join(', ') || 'none'}`);
+    api.results.close();
+    await api.host.request('session.disconnect', { name: NAME }).catch(() => undefined);
+    await config().update('connections', undefined, true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const note = (r: { result?: { messages: { id: string; text: string }[] }; error?: { message: string; data?: { messageId?: string } } }) => {
+    for (const m of r.result?.messages ?? []) {
+      seen.add(m.id);
+      console.log(`live:   ${m.id} ${m.text}`);
+    }
+    if (r.error?.data?.messageId) {
+      seen.add(r.error.data.messageId);
+    }
+  };
+
+  async function count(sql: string): Promise<number> {
+    const r = await api.sqlRunner.run(NAME, sql);
+    note(r);
+    assert.ok(r.result, r.error?.message);
+    const v = r.result.rows?.[0]?.[0];
+    return typeof v === 'number' ? v : Number(v);
+  }
+
+  test('SELECT * FROM HLINV.ASSETS: typed columns, rows, then CSV export whose rows match COUNT(*)', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'qs400-sql', content: 'SELECT * FROM HLINV.ASSETS' });
+    const editor = await vscode.window.showTextDocument(doc);
+    api.sql.bind(doc, NAME);
+    const [run] = await api.sqlRunner.runEditor(editor);
+    note(run);
+    assert.ok(run.result, run.error?.message);
+    const r = run.result;
+    assert.equal(r.kind, 'query');
+    const tab = api.results.activeTab!;
+    const page = api.results.page(tab);
+    console.log(`live: HLINV.ASSETS columns: ${page.columns?.map((c) => `${c.name} ${c.type}${c.nullable ? '?' : ''}`).join(', ')}`);
+    console.log(`live: footer: ${page.summary}${page.more ? ' with Load more' : ''}`);
+    assert.ok((page.columns ?? []).every((c) => c.type.length > 0));
+    const total = await count('SELECT COUNT(*) FROM HLINV.ASSETS');
+    const file = path.join(dir, 'ASSETS.csv');
+    const rows = await api.exporter.export(tab, api.results, file);
+    const bytes = fs.readFileSync(file);
+    assert.notDeepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'no byte order mark');
+    const records = csvRecords(bytes.toString('utf8'));
+    console.log(`live: CSV ${records.length - 1} rows, COUNT(*) ${total}, sql.export said ${rows}`);
+    assert.equal(records.length - 1, total);
+    assert.equal(rows, total);
+    assert.deepEqual(records[0], r.columns!.map((c) => c.name));
+    // Decimals exact, dates ISO, NULL empty: the CSV holds the grid's text.
+    for (let i = 0; i < Math.min(tab.rows.length, 200); i++) {
+      r.columns!.forEach((c, k) => {
+        const v = tab.rows[i][k];
+        const f = records[i + 1][k];
+        if (v === null) {
+          assert.equal(f, '', `${c.name} NULL is empty`);
+        } else if (typeof v === 'string' && /^(DECIMAL|NUMERIC)$/i.test(c.type)) {
+          assert.equal(f, v, `${c.name} exact`);
+        } else if (/^DATE$/i.test(c.type)) {
+          assert.match(f, /^\d{4}-\d{2}-\d{2}$/, `${c.name} ISO`);
+        }
+      });
+    }
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  });
+
+  test('a view, its columns, and the indexes of HLINV.ASSETS from the catalog (compare DSPFFD and DSPDBR)', async () => {
+    const views = await api.host.request('sql.tables', { name: NAME, schema: 'HLINV', kinds: ['view'] });
+    console.log(`live: HLINV views: ${views.map((v) => v.name).join(', ') || 'none'}`);
+    const view = views.find((v) => v.name === 'ASSETS_BY_SITE') ?? views[0];
+    assert.ok(view, 'HLINV has a view');
+    const cols = await api.host.request('sql.columns', { name: NAME, schema: 'HLINV', table: view.name });
+    for (const c of cols) {
+      console.log(`live:   ${view.name}.${c.name} ${c.type} length ${c.length} scale ${c.scale} ${c.nullable ? 'nullable' : 'not null'} CCSID ${c.ccsid} "${c.label.trim()}"`);
+    }
+    assert.ok(cols.length > 0);
+    const idx = await api.host.request('sql.indexes', { name: NAME, schema: 'HLINV', table: 'ASSETS' });
+    for (const i of idx) {
+      console.log(`live:   index ${i.schema}.${i.name}${i.unique ? ' unique' : ''} (${i.columns.join(', ')})`);
+    }
+  });
+
+  test('UPDATE ... WHERE 1 = 0: 0 rows updated, no grid', async () => {
+    const r = await api.sqlRunner.run(NAME, 'UPDATE HLINV.ASSETS SET NOTES = NOTES WHERE 1 = 0');
+    note(r);
+    assert.ok(r.result, r.error?.message);
+    assert.equal(r.result.kind, 'update');
+    assert.equal(r.result.updated, 0);
+    assert.equal(api.results.page(api.results.activeTab!).summary, '0 rows updated');
+  });
+
+  test('a syntax error: lsp-sql flags its line before the run; the server ID and text in the result tab and the Problems panel', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'qs400-sql', content: 'SELECT 1 FROM HLINV.ASSETS;\nSELECT * FORM HLINV.ASSETS;\n' });
+    const editor = await vscode.window.showTextDocument(doc);
+    api.sql.bind(doc, NAME);
+    const flagged = await until('the language server diagnostic', () => {
+      const d = vscode.languages.getDiagnostics(doc.uri).filter((x) => x.source === 'qs400-sql');
+      return d.length > 0 ? d : undefined;
+    });
+    const code = (d: vscode.Diagnostic) => String(typeof d.code === 'object' ? d.code.value : d.code);
+    console.log(`live: as typed: ${flagged.map((d) => `${code(d)} line ${d.range.start.line + 1}`).join(', ')}`);
+    editor.selection = new vscode.Selection(1, 3, 1, 3);
+    const [run] = await api.sqlRunner.runEditor(editor);
+    note(run);
+    assert.ok(run.error, 'refused');
+    const id = run.error.data?.messageId ?? '';
+    console.log(`live: run: ${id}: ${run.error.data?.text} (SQLSTATE ${run.error.data?.sqlstate}, SQLCODE ${run.error.data?.sqlcode})`);
+    assert.match(id, /^SQL\d{4}$/);
+    assert.equal(api.results.page(api.results.activeTab!).error?.messageId, id);
+    const problems = api.sqlRunner.diagnostics.get(doc.uri) ?? [];
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0].range.start.line, 1);
+    assert.equal(problems[0].code, id);
+    assert.ok(flagged.some((d) => d.range.start.line === 1), 'lsp-sql flagged the same line');
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  });
+
+  test('*CHG: an INSERT rolled back is gone; committed, it stays', async () => {
+    await api.sqlRunner.run(NAME, `DROP TABLE ${SCRATCH}`);
+    const made = await api.sqlRunner.run(NAME, `CREATE TABLE ${SCRATCH} (ID INTEGER NOT NULL, NOTE VARCHAR(20))`);
+    note(made);
+    assert.ok(made.result, made.error?.message);
+    const o = await api.sql.set(NAME, { commit: 'readUncommitted' });
+    assert.equal(o.commit, 'readUncommitted');
+    const ins = await api.sqlRunner.run(NAME, `INSERT INTO ${SCRATCH} VALUES (1, 'rolled back')`);
+    note(ins);
+    assert.ok(ins.result, ins.error?.message);
+    assert.equal(ins.result.uncommitted, true);
+    await api.sql.rollback(NAME);
+    assert.equal(await count(`SELECT COUNT(*) FROM ${SCRATCH}`), 0);
+    const again = await api.sqlRunner.run(NAME, `INSERT INTO ${SCRATCH} VALUES (2, 'committed')`);
+    assert.ok(again.result, again.error?.message);
+    await api.sql.commit(NAME);
+    assert.equal((await api.sql.read(NAME)).uncommitted, false);
+    assert.equal(await count(`SELECT COUNT(*) FROM ${SCRATCH}`), 1);
+    await api.sql.set(NAME, { commit: 'none' });
+  });
+
+  test('History: three runs with their times and counts; the first runs again', async () => {
+    for (const s of ['VALUES 1', 'VALUES 2', 'VALUES 3']) {
+      await api.sqlRunner.run(NAME, s);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    const top = api.history.entries(NAME).slice(0, 3);
+    assert.deepEqual(
+      top.map((e) => e.sql),
+      ['VALUES 3', 'VALUES 2', 'VALUES 1'],
+    );
+    for (const e of top) {
+      console.log(`live: history ${e.sql} · ${new Date(e.time).toISOString()} · ${e.count} rows`);
+      assert.equal(e.count, 1);
+    }
+    const again = await api.history.rerun(NAME, top[2]);
+    assert.ok(again.result);
+    assert.equal(again.sql, 'VALUES 1');
   });
 });

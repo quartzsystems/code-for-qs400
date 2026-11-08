@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.0-pre · Phase 6 · SQL
+
+- **Run Statement** (`Ctrl+Enter`) on SQL members, stream files, local
+  files and untitled SQL editors: the selection, the statement under the
+  cursor, or the whole document statement by statement, stopping at the
+  first error. Statements are split as the SQL language server's parser
+  splits them. **New SQL Editor** opens one on the active connection, and
+  any SQL document can run on another connection.
+- A failed statement's message ID, text and second-level text, with
+  SQLSTATE and SQLCODE, in its result tab and in the Problems panel on the
+  statement's first line.
+- **SQL results**, a panel with a tab per run (the last 20): column types
+  with length and scale, the system's exact numbers, `NULL` as `-`, binary
+  as hex, ISO dates and times, `n rows` or `500 of more` with **Load
+  more**, `n rows updated` for a data change.
+- **Export CSV**: the rows shown and then the rest of the result, written
+  by the host a page at a time (RFC 4180, UTF-8 with no byte order mark,
+  `NULL` empty), with progress and Cancel.
+- The **SQL** view: schemas (filtered by a pattern per connection), their
+  tables, views, aliases, physical and logical files, procedures and
+  functions, each table's columns and indexes; View Data, Generate
+  `SELECT` and `INSERT`, Copy Name and Copy CALL.
+- Commit level, naming and default schema from the SQL status bar item,
+  which marks uncommitted changes with `●`; Commit and Rollback; a
+  question before disconnecting with uncommitted changes; a warning when
+  the system ends the SQL job.
+- **SQL History**: the last 50 statements per connection, to run again,
+  open or save.
+- The host's `sql.*` methods: one SQL connection per session, statements,
+  cursors, commitment control and the catalog over QAP's `Sql` service.
+  See [docs/sql.md](docs/sql.md).
+
 ## 1.0.0-pre · Phase 5 · language support
 
 - Grammars and language configuration for RPG (`qs400-rpgle`: fixed form

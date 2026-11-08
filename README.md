@@ -5,7 +5,7 @@ remote operation goes through `qs400-code-host`, a Rust sidecar bundled
 with the extension that speaks QAP, the Quartz Access Protocol shared with
 QS/400 Access.
 
-**Status: 1.0.0 pre-release, Phase 5.** Saved connections, sign-on over
+**Status: 1.0.0 pre-release, Phase 6.** Saved connections, sign-on over
 QAP, a session per connection with its status, session job and library
 list; the Objects view with filters; source members opened, locked and
 saved with their sequence numbers and dates; the IFS view, with stream
@@ -15,11 +15,14 @@ from `.vscode/actions.json`, the defaults and each connection, with the
 compiler's messages in the Problems panel and the connection job's log;
 RPG, CL, DDS, SQL and command definition source coloured and checked as
 you type by the QS/400 compiler front-ends, with the outline, Go to
-Definition into `/COPY` members, hover, completion, rename and folding.
+Definition into `/COPY` members, hover, completion, rename and folding;
+SQL run from the editor into a results panel with paging and CSV export,
+the SQL view of schemas, tables, views, routines, columns and indexes,
+commit levels with Commit and Rollback, and a statement history.
 See [docs/connections.md](docs/connections.md),
 [docs/objects-and-members.md](docs/objects-and-members.md),
-[docs/ifs.md](docs/ifs.md), [docs/actions.md](docs/actions.md) and
-[docs/languages.md](docs/languages.md).
+[docs/ifs.md](docs/ifs.md), [docs/actions.md](docs/actions.md),
+[docs/languages.md](docs/languages.md) and [docs/sql.md](docs/sql.md).
 
 ## Requirements
 
@@ -60,6 +63,10 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | Run Action… | `code-for-qs400.action.run` |
 | Clear Compile Diagnostics | `code-for-qs400.diagnostics.clear` |
 | Job Log, Refresh Job Log | `code-for-qs400.job.log`, `code-for-qs400.job.logRefresh` |
+| Run Statement, Cancel Running SQL, New SQL Editor | `code-for-qs400.sql.run`, `.cancel`, `.newEditor` |
+| SQL Options…, Commit, Rollback, Change SQL Connection… | `code-for-qs400.sql.options`, `.commit`, `.rollback`, `.changeConnection` |
+| SQL History | `code-for-qs400.sql.history` |
+| SQL view: Refresh, Filter Schemas…, View Data, Generate SELECT, Generate INSERT, Copy Name, Copy CALL | `code-for-qs400.sql.refresh`, `.filterSchemas`, `.viewData`, `.generateSelect`, `.generateInsert`, `.copyName`, `.copyCall` |
 
 **About** asks the host for its version and shows, for example,
 `Code for QS/400 V1R0M0 · host 1.0.0 · QAP v9`.
@@ -109,9 +116,12 @@ package.json, src/      the extension (TypeScript, bundled by esbuild to dist/)
   src/actions/            actions: the model and merge, variables, the run and its output, diagnostics
   src/jobs/jobLog.ts      the Job log document and its hover
   src/languages/          the language clients, includes for the servers, fixed-form RPG guides
+  src/sql/                SQL: statement scope, the runner, options and status bar, the results
+                          webview, CSV export, the generators, history
   src/views/connections.ts  the Connections tree
   src/views/objects.ts    the Objects tree
   src/views/ifs.ts        the IFS tree
+  src/views/sql.ts        the SQL tree
   src/views/sessionStatusBar.ts  the active connection in the status bar
   src/commands/           About, connection, object, member and IFS commands
 syntaxes/, languages/   grammars and language configuration
@@ -124,7 +134,8 @@ host/                   Cargo workspace for the sidecar
   crates/code-host        the qs400-code-host binary; src/session.rs holds the sessions,
                           src/objects.rs and src/members.rs the object and member methods,
                           src/ifs.rs the IFS methods and transfers, src/actions.rs
-                          the commands and compiles, src/jobs.rs the job log
+                          the commands and compiles, src/jobs.rs the job log,
+                          src/sql/ the SQL methods, values and CSV
   crates/lsp-common       what the language servers share: the loop, positions, includes, features
   crates/lsp-<lang>       one language server each (rpgle, cl, dds, sql, cmd) on its front end
   crates/severity         the one severity table, shared with the extension

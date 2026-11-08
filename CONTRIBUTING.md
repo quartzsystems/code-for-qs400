@@ -19,6 +19,8 @@ decided along the way.
 | `src/actions/` | `model.ts` (the action fields, merge order, matching and the compile list), `variables.ts`, `targets.ts` (each variable's value per target), `output.ts` (the output channel's block), `placement.ts` and `severity.ts` (where a diagnostic goes, the one severity table); none of these imports `vscode`. `store.ts` (the three layers, the check on save), `run.ts` (**Run Action…**), `diagnostics.ts` (the Problems panel) |
 | `src/jobs/jobLog.ts` | The Job log document and its hover |
 | `src/languages/` | `client.ts` (one language client per language, the include notifications), `includes.ts` (`qs400/fetchInclude` and `qs400/listMembers` through the host), `protocol.ts` (keep in step with `host/crates/lsp-common/src/protocol.rs`), `rpgColumns.ts` (the fixed-form columns; no `vscode` import), `fixedForm.ts` (the guides and the column in the status bar) |
+| `src/sql/` | `statements.ts` (the split and the statement under the cursor), `format.ts` (labels), `generate.ts` (the SQL the tree writes), none of which imports `vscode`; `resultsHtml.ts` (the results page; no `vscode` import), `session.ts` (each document's connection, the options, the status bar, Commit, Rollback, the disconnect question), `run.ts` (**Run Statement**, the Problems panel), `results.ts` (the **SQL results** panel), `export.ts` (Export CSV), `history.ts` |
+| `src/views/sql.ts` | The SQL tree and its commands |
 | `syntaxes/`, `languages/` | The five TextMate grammars and language configurations |
 | `schemas/actions.json`, `defaults/actions.json` | The schema of `.vscode/actions.json`, and the default actions shipped |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
@@ -28,6 +30,7 @@ decided along the way.
 | `host/crates/code-host/src/objects.rs`, `members.rs` | `object.*` and `member.*`, thin over `qap-client`'s `Develop`; `members::codec` is the one place `seq` and `date` convert |
 | `host/crates/code-host/src/ifs.rs` | `ifs.*`, thin over `qap-client`'s `Files`, `read` and `write`; the transfers and their threads |
 | `host/crates/code-host/src/actions.rs`, `jobs.rs` | `action.*` over `Command` and `Develop::compile`, each run on a thread of its own; `job.log` over `Jobs::job_log` |
+| `host/crates/code-host/src/sql/` | `sql.*` over one `SqlConnection` per session and the `Sql` catalog; `values.rs` is the one place a `SqlValue` becomes JSON or CSV text, `csv.rs` the CSV writer |
 | `host/crates/lsp-common` | What the language servers share: the loop (`server.rs`), positions (`position.rs`), the URI's source (`uri.rs`), the include cache (`includes.rs`), the features (`features.rs`), the custom messages (`protocol.rs`) and a test client (`testing.rs`) |
 | `host/crates/lsp-rpgle`, `lsp-cl`, `lsp-dds`, `lsp-sql`, `lsp-cmd` | One `Language` each over its front end's `analyze`: options, folding, completion words |
 | `host/crates/severity` | `severity.json`, the one severity table, read by the servers and by `src/actions/severity.ts` |
@@ -112,10 +115,22 @@ hold a request in the lane until it is cancelled. The canned messages use
 QS/400's own IDs and texts (`RNF7030`, `RNS9304`, `RNS9310`, `CPF9812`,
 `CPD0030`, `CPF1321`).
 
+`host/crates/code-host/tests/sql.rs` does it for `sql.*`. `qap-client`'s
+`SqlConnection` needs an `Attached`, which opens a TCP connection of its
+own, so the host reaches it through the object-safe `sql::SqlConn` (each
+method the one of the same name). The fake sends every statement request
+over a real `qap_client::Connection` on an in-memory transport and reads
+the replies with `qap-client`'s own `ExecuteOutcome` and `FetchOutcome`,
+so `SqlError`, `Cancelled` and `end` come back as shipped. The canned
+messages use QS/400's IDs and texts (`SQL0104`, `SQL0551`, `SQL0752`,
+`SQL0803`, `SQL0952`). The same file tests `sql::values` and `sql::csv` at
+their edges.
+
 ### Live tests
 
-`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3 and 4
-exit tests against a real system. Phase 3 makes and removes
+`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3, 4 and 6
+exit tests against a real system. Phase 6 makes and drops the table
+`HLINV.QS4SQL6`; `HLINV` must be journaled for its commit level step. Phase 3 makes and removes
 `/home/<QS400_TEST_USER>/code-test`. Phase 4 makes and removes the member
 `QS4ACT42` in `QS400_TEST_SRCPF`, compiles it into `QS400_TEST_CURLIB`
 (the program stays there) and calls the program `QS400_TEST_SOURCE`
@@ -915,6 +930,137 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
 18. **The process test** now drives `lsp rpgle` through `initialize`, a
     published `RNF5014`, `shutdown` and `exit`; `dap` is still not
     implemented, and an unknown language exits 2.
+
+## Decisions made in Phase 6
+
+1. **No new pins.** `qap-client` stays at `quartz-systems-access`
+   `90d9bba`. The prompt calls the service "Service 6 `Sql`";
+   `docs/QAP.md` at `7f82a43f` numbers it **Service 5 `Sql`** (version 4),
+   and Service 6 is `Ifs`. The version 8 additions, operations 12
+   `ListRoutines` and 13 `ListIndexes`, match.
+2. **A query's statement is released with its cursor**, not after the
+   first fetch as the prompt has it. `SqlConnection::release` takes the
+   statement's cursors with it ("the statement is gone, its cursors with
+   it"), so releasing after the first page would end Load more. A query's
+   statement goes at its cursor's end, at `sql.close`, or when an export
+   reaches the end; every other statement is released as soon as it ran.
+3. **`cursor` in the JSON is the host's result ID**, not QAP's cursor
+   number (a new job has new numbers). The result stays after its cursor
+   ended, with the rows sent so far, so Export CSV can write them; it goes
+   at `sql.close`, which the panel sends when a tab closes, when a 21st
+   tab pushes it out, or when the panel closes.
+4. **Export** writes the held rows, then fetches the rest in pages of 500
+   to the file, not into memory. After an export that read past the held
+   rows, a second export of that result is refused (`-32031`, "no longer
+   held") and the tab says so. `sql.export` takes an `export` ID;
+   `sql.progress { export, rows }` goes at most every 250 ms;
+   `sql.cancel { id }` cancels a run or an export. A cancelled or failed
+   export removes its file. Error codes: `-32030` cancelled
+   (`data: { id, rows }`), `-32031` no such result.
+5. **`SqlValue` to JSON beyond the prompt's rules** (`sql::values`):
+   - `Boolean` (variant 9, in the spec at `7f82a43f` but not in the
+     prompt's list) is a JSON `true` or `false`, and `TRUE` or `FALSE` in
+     CSV.
+   - "Fits 53 bits" is `Number.MAX_SAFE_INTEGER`: −(2⁵³ − 1) to 2⁵³ − 1
+     are numbers; ±2⁵³ and beyond are strings.
+   - `Binary` hex is upper case.
+   - `Time` has `.mmm` only when its milliseconds are not 0.
+   - `Timestamp` is `YYYY-MM-DDTHH:MM:SS` with as many fraction digits as
+     the column's `scale` (0 to 12), cut from the milliseconds and the
+     picoseconds past them; no zone, since the spec sends them "as if
+     UTC".
+   - `Date` is the day of `ms`, floored to whole days.
+6. **CSV**: CRLF after every record, the header is the column names (not
+   labels), and an empty string is `""` so it stays apart from `NULL`'s
+   empty field.
+7. **`kind`**: `query` when `Prepare` returned columns; `update` when the
+   statement's first keyword (past comments and parentheses) is `INSERT`,
+   `UPDATE`, `DELETE` or `MERGE`; else `ddl`, without a count. A trailing
+   `;` is not sent.
+8. **Every `sql.*` method is deferred**, on a thread of its own, and the
+   connection is held only to send and to read a reply: `Execute` and
+   `Fetch` are waited for outside it. So a long query holds up neither the
+   catalog nor `sql.cancel`. The extension does not time out `sql.run`,
+   `sql.fetch`, `sql.commit`, `sql.rollback`, `sql.options.set` or
+   `sql.export`.
+9. **Life of the SQL connection.** It attaches on the first statement;
+   options set before then are kept and sent when it attaches, and set
+   again on every new one. It is made again when its session ended or
+   signed on anew (a sign-on epoch the session keeps), and noted when
+   `SqlConnection::lost` says so; both send `sql.lost { name, message }`,
+   which the extension shows and which stops Load more on that
+   connection's tabs. `Sessions::on_close` closes it on disconnect and
+   before a new sign-on, so the options start again at `None`, `Sql` and no
+   default schema. `Backend::sql` has a default of `None`, so the other
+   services' test fakes are unchanged.
+10. **JSON names**: `commit` is `none`, `readUncommitted`,
+    `readCommitted`, `repeatableRead` or `serializable`; `naming` is `sql`
+    or `system`; table kinds `table`, `view`, `alias`, `physicalFile`,
+    `logicalFile`. `sql.options.*`, `sql.commit` and `sql.rollback` all
+    answer the options with `uncommitted`. Column JSON names the SQL type
+    `type`.
+11. **`qs400/sqlStatements`.** The front end at `5e2bbee9` measures a
+    string or number token by its value (`Tok::describe`), so a span ending
+    in `'it''s'` is one character short, and running it would drop the
+    closing quote. `lsp-sql` keeps the parser's statements (their starts,
+    and which `;` ends each) and takes each end from the source: the last
+    character before that `;`, comments and blanks left out
+    (`statement_end`). That is a `quartz-systems-400` matter.
+    `lsp-common` gained `Language::document_methods` and
+    `document_request` for requests on one document's analysis.
+12. **Scope.** The statement under the cursor runs from its first
+    character to its `;`, or from anywhere on its last line after it; on a
+    line between statements the whole document runs. A selection is split
+    by the extension's own rule (`statements.ts`), which is also used for
+    a document the server has no answer for. The two agree on the test
+    fixtures; they differ on compound statements (`BEGIN ... END`), which
+    the parser keeps whole and the fallback splits.
+13. **Local `.sql` files stay VS Code's SQL** (Phase 5 decision 12). Run
+    Statement and its title button work in both `qs400-sql` and `sql`
+    documents, with the local split for `sql`; `Ctrl+Enter` is bound in
+    `qs400-sql` only, so other SQL extensions keep theirs. `untitled` is
+    now one of the language client's schemes, for New SQL Editor.
+14. **Which connection.** A member or stream file runs on its own
+    connection; any other document on the one it was bound to (New SQL
+    Editor, Generate, the status bar), else the active one. Bindings last
+    while the document is open; they are not saved.
+15. **The Problems panel** gets one diagnostic for a failed statement:
+    collection `code-for-qs400-sql`, source `SQL`, the message ID as the
+    code, the server's text, the statement's whole first line, the second
+    level as related information. A document's next run clears it.
+16. **The status bar item** shows only while an SQL document is active.
+    Commit levels are shown as `qap-proto` names them: `*NONE`, `*CHG`,
+    `*CS`, `*ALL` (`RepeatableRead`), `*RR` (`Serializable`); QS/400 runs
+    both of the last two as `*ALL` (`docs/QAP.md`, "Version 4 Sql, as
+    built").
+17. **Disconnect with uncommitted changes** asks through a guard on the
+    session manager (`addDisconnectGuard`), for Disconnect and Remove:
+    **Commit and Disconnect** or **Roll Back and Disconnect**.
+18. **The results webview** (`code-for-qs400.sqlResults`) keeps its
+    context when hidden, loads nothing (`localResourceRoots: []`, a nonce
+    policy), draws the rows of 22 px in view plus 20 either side, and is
+    told whole tabs and appended rows by message. Numeric types (right
+    aligned) are `SMALLINT`, `INTEGER`, `INT`, `BIGINT`, `DECIMAL`,
+    `NUMERIC`, `DECFLOAT`, `REAL`, `DOUBLE` and `FLOAT`. The elapsed time
+    is the extension's round trip.
+19. **The SQL tree** always shows all seven groups; tables, views,
+    aliases, physical and logical files each have Columns and Indexes.
+    The schema pattern is kept per connection in workspace state
+    (`code-for-qs400.sql.schemaFilter`). Generated SQL uses the naming
+    last read for the connection.
+20. **Copy CALL.** The spec's `Routine` has no parameters, so they are
+    read with `sql.run` from `QSYS2.SYSPARMS`, `ORDER BY 3` (its third
+    column is the parameter's position; the naming check matches that
+    column's name, so it is not spelled). Each `?` carries the parameter's
+    name in a comment; a function gets `VALUES`. When the catalog query
+    fails, the `CALL` has no parameters and a warning says so.
+21. **History** is workspace state `code-for-qs400.sqlHistory`, keyed by
+    the connection name in upper case, newest first; a query's count is
+    the rows shown, with `+` when there were more.
+22. **The naming check** fired on a word in a comment and on that
+    `SYSPARMS` column; both are gone.
+23. **Not in this phase:** values for parameter markers. A statement with
+    `?` is sent with no parameter rows, and the system refuses it.
 
 ## Phase 0 exit test
 

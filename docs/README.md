@@ -29,6 +29,8 @@ This guide grows with each phase and ships with the marketplace listing.
   language servers' diagnostics, outline, Go to Definition, hover,
   completion, rename and folding, how includes are read, and how the
   editor's diagnostics are held to the compiler's.
+- [SQL](sql.md): running statements, the results panel, CSV export, the
+  SQL view, commit levels and the history.
 
 ## Troubleshooting
 
