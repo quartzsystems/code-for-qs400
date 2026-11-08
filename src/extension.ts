@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
+import { IfsDragAndDrop, registerIfsFileCommands } from './commands/ifsFiles';
 import { registerIfsOpenCommands, registerIfsViewCommands } from './commands/ifs';
 import { registerMemberCommands } from './commands/members';
 import { registerObjectCommands } from './commands/objects';
@@ -56,7 +57,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const objects = new ObjectsProvider(store, sessions, libraryList);
   const members = new MemberFsProvider(sessions, store, output);
   const ifs = new IfsProvider(store, sessions, context.workspaceState);
-  const ifsView = vscode.window.createTreeView('code-for-qs400.ifs', { treeDataProvider: ifs, showCollapseAll: true });
+  const ifsDrop = new IfsDragAndDrop(ifs);
+  const ifsView = vscode.window.createTreeView('code-for-qs400.ifs', {
+    treeDataProvider: ifs,
+    showCollapseAll: true,
+    canSelectMany: true,
+    dragAndDropController: ifsDrop,
+  });
   const ifsFs = new IfsFsProvider(sessions, store, output);
 
   context.subscriptions.push(
@@ -85,6 +92,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerMemberCommands(members, objects, sessions),
     ...registerIfsViewCommands({ provider: ifs, view: ifsView, store, sessions }),
     ...registerIfsOpenCommands({ provider: ifs, view: ifsView, store, sessions }),
+    ...registerIfsFileCommands({ provider: ifs, view: ifsView, store, sessions }, ifsFs),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();

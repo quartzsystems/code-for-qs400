@@ -272,6 +272,48 @@
         "title": "Open",
         "category": "Code for QS/400",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "code-for-qs400.ifs.newFile",
+        "title": "New File…",
+        "category": "Code for QS/400",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "code-for-qs400.ifs.newFolder",
+        "title": "New Folder…",
+        "category": "Code for QS/400",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "code-for-qs400.ifs.rename",
+        "title": "Rename…",
+        "category": "Code for QS/400",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "code-for-qs400.ifs.copy",
+        "title": "Copy to…",
+        "category": "Code for QS/400",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "code-for-qs400.ifs.delete",
+        "title": "Delete",
+        "category": "Code for QS/400",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "code-for-qs400.ifs.properties",
+        "title": "Properties",
+        "category": "Code for QS/400",
+        "icon": "$(info)"
+      },
+      {
+        "command": "code-for-qs400.ifs.changeCcsid",
+        "title": "Change CCSID…",
+        "category": "Code for QS/400",
+        "icon": "$(symbol-key)"
       }
     ],
     "configuration": {
@@ -665,6 +707,46 @@
           "command": "code-for-qs400.ifs.open",
           "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(file|symlink)$/",
           "group": "1_open@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.newFile",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.newFile",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory)/",
+          "group": "2_new@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.newFolder",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory)/",
+          "group": "2_new@2"
+        },
+        {
+          "command": "code-for-qs400.ifs.rename",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(directory|file|symlink|other)$/",
+          "group": "4_edit@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.copy",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(directory|file|symlink|other)$/",
+          "group": "4_edit@2"
+        },
+        {
+          "command": "code-for-qs400.ifs.changeCcsid",
+          "when": "view == code-for-qs400.ifs && viewItem == ifs.file",
+          "group": "4_edit@3"
+        },
+        {
+          "command": "code-for-qs400.ifs.delete",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(directory|file|symlink|other)$/",
+          "group": "5_delete@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.properties",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory|file|symlink|other)/",
+          "group": "6_info@1"
         }
       ],
       "commandPalette": [
@@ -738,6 +820,30 @@
         },
         {
           "command": "code-for-qs400.ifs.open",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.rename",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.copy",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.delete",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.properties",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.changeCcsid",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.newFolder",
           "when": "false"
         }
       ],

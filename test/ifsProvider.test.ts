@@ -319,7 +319,9 @@ suite('IFS: the qs400ifs provider', () => {
             { ...info('file'), name: 'a.txt' },
             { ...info('file'), kind: 'symlink', name: 'l' },
           ]
-        : null,
+        : m === 'ifs.info'
+          ? info('file')
+          : null,
     );
     assert.deepEqual(await p.readDirectory(ifsUri('IFS', '/home')), [
       ['src', vscode.FileType.Directory],
@@ -335,6 +337,7 @@ suite('IFS: the qs400ifs provider', () => {
       [
         ['ifs.mkdir', { name: 'IFS', path: '/home/new', parents: false }],
         ['ifs.rename', { name: 'IFS', from: '/home/a.txt', to: '/home/b.txt', replace: false }],
+        ['ifs.info', { name: 'IFS', path: '/home/b.txt' }],
         ['ifs.copy', { name: 'IFS', from: '/home/b.txt', to: '/tmp/b.txt', replace: true }],
         ['ifs.delete', { name: 'IFS', path: '/tmp/b.txt' }],
       ],

@@ -11,7 +11,8 @@ import { SessionManager } from '../connections/sessions';
 import { ConnectionStore } from '../connections/store';
 import { HostRpcError } from '../host/client';
 import { IfsChange, IfsEntry, IfsErrorCodes, IfsInfo } from '../host/protocol';
-import { baseName, formatSize } from './paths';
+import { baseName, formatSize, isWithin } from './paths';
+import { Lister, copyTree, deleteWalked, walkBottomUp } from './tree';
 import { DOCUMENT_LIMIT, isBinaryPath, languageForPath } from './types';
 import { IFS_SCHEME, parseIfsUri } from './uri';
 
@@ -376,10 +377,24 @@ export class IfsFsProvider implements vscode.FileSystemProvider, vscode.Disposab
     this.emitter.fire([{ type: vscode.FileChangeType.Created, uri }]);
   }
 
-  async delete(uri: vscode.Uri): Promise<void> {
+  /** Lists a directory, for the walks. */
+  private lister(connection: string): Lister {
+    return (dir) => this.sessions.call(connection, 'ifs.list', { name: connection, path: dir });
+  }
+
+  /** A file, a link or an empty directory; with `recursive`, a directory and everything in it, children first. */
+  async delete(uri: vscode.Uri, options: { recursive: boolean } = { recursive: false }): Promise<void> {
     const { connection, path } = this.where(uri);
+    const del = async (p: string) => {
+      await this.sessions.call(connection, 'ifs.delete', { name: connection, path: p });
+    };
     try {
-      await this.sessions.call(connection, 'ifs.delete', { name: connection, path });
+      const e = options.recursive ? await this.info(connection, path) : undefined;
+      if (e?.kind === 'directory') {
+        await deleteWalked(await walkBottomUp(path, this.lister(connection)), del);
+      } else {
+        await del(path);
+      }
     } catch (err) {
       throw ifsFsError(err);
     }
@@ -404,14 +419,36 @@ export class IfsFsProvider implements vscode.FileSystemProvider, vscode.Disposab
     ]);
   }
 
+  /** A file copied on the system (`ifs.copy`); a directory copied entry by entry. */
   async copy(from: vscode.Uri, to: vscode.Uri, options: { overwrite: boolean }): Promise<void> {
     const a = this.where(from);
     const b = this.where(to);
     if (a.connection.toLowerCase() !== b.connection.toLowerCase()) {
       throw vscode.FileSystemError.NoPermissions('A file is copied within its connection');
     }
+    const name = a.connection;
+    if (isWithin(b.path, a.path)) {
+      throw vscode.FileSystemError.NoPermissions(`${a.path} cannot be copied into itself`);
+    }
+    const copy = async (f: string, t: string, replace: boolean) => {
+      await this.sessions.call(name, 'ifs.copy', { name, from: f, to: t, replace });
+    };
     try {
-      await this.sessions.call(a.connection, 'ifs.copy', { name: a.connection, from: a.path, to: b.path, replace: options.overwrite });
+      const e = await this.info(name, a.path);
+      if (e.kind === 'directory') {
+        const skipped = await copyTree(a.path, b.path, {
+          list: this.lister(name),
+          mkdir: async (p) => {
+            await this.sessions.call(name, 'ifs.mkdir', { name, path: p, parents: false });
+          },
+          copy: (f, t) => copy(f, t, false),
+        });
+        if (skipped.length > 0) {
+          this.output.warn(`${name}: not copied, neither file nor directory: ${skipped.join(', ')}`);
+        }
+      } else {
+        await copy(a.path, b.path, options.overwrite);
+      }
     } catch (err) {
       throw ifsFsError(err);
     }
