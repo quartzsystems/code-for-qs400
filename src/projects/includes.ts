@@ -14,16 +14,20 @@ import { Project, ProjectStore, relativeTo } from './store';
 
 type Usable = Project & { config: ProjectConfig };
 
-/** A directory's entry named `name` without case: the name as it is on disk. */
-async function entryNamed(dir: string, name: string, want: 'file' | 'directory'): Promise<string | undefined> {
+/**
+ * A directory's subdirectories named `name` without case, as they are on
+ * disk. On a case-sensitive file system `QRPGLESRC/` and `qrpglesrc/` are
+ * two directories that both stand for the source file, so each is searched.
+ */
+async function directoriesNamed(dir: string, name: string): Promise<string[]> {
   let entries: import('node:fs').Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch {
-    return undefined;
+    return [];
   }
   const upper = name.toUpperCase();
-  return entries.find((e) => (want === 'file' ? e.isFile() : e.isDirectory()) && e.name.toUpperCase() === upper)?.name;
+  return entries.filter((e) => e.isDirectory() && e.name.toUpperCase() === upper).map((e) => e.name);
 }
 
 /**
@@ -79,31 +83,36 @@ export class WorkspaceIncludes {
       if (!local && library !== '' && !library.startsWith('*') && library !== t.library) {
         continue;
       }
-      const dir = await entryNamed(p.folder.uri.fsPath, file, 'directory');
-      if (!dir) {
-        continue;
-      }
-      let entries: string[];
-      try {
-        entries = (await fs.readdir(nodePath.join(p.folder.uri.fsPath, dir), { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name);
-      } catch {
-        continue;
-      }
-      const hit = entries
-        .map((n) => ({ n, m: memberOf(`${dir}/${n}`) }))
-        .find((x) => isMember(x.m) && x.m.member === member && !isIgnored(`${dir}/${x.n}`, p.config.ignore));
-      if (!hit) {
-        continue;
-      }
-      const at = nodePath.join(p.folder.uri.fsPath, dir, hit.n);
-      try {
-        const text = await fs.readFile(at, 'utf8');
-        return { uri: vscode.Uri.file(at).toString(), at: { kind: 'member', library: t.library, file, member }, text };
-      } catch {
-        continue;
+      for (const dir of await directoriesNamed(p.folder.uri.fsPath, file)) {
+        const found = await this.memberIn(p, dir, member);
+        if (found !== undefined) {
+          return { uri: vscode.Uri.file(found.at).toString(), at: { kind: 'member', library: t.library, file, member }, text: found.text };
+        }
       }
     }
     return null;
+  }
+
+  /** The file of `member` in the project's directory `dir`, with its text; undefined when there is none. */
+  private async memberIn(p: Usable, dir: string, member: string): Promise<{ at: string; text: string } | undefined> {
+    let entries: string[];
+    try {
+      entries = (await fs.readdir(nodePath.join(p.folder.uri.fsPath, dir), { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name);
+    } catch {
+      return undefined;
+    }
+    const hit = entries
+      .map((n) => ({ n, m: memberOf(`${dir}/${n}`) }))
+      .find((x) => isMember(x.m) && x.m.member === member && !isIgnored(`${dir}/${x.n}`, p.config.ignore));
+    if (!hit) {
+      return undefined;
+    }
+    const at = nodePath.join(p.folder.uri.fsPath, dir, hit.n);
+    try {
+      return { at, text: await fs.readFile(at, 'utf8') };
+    } catch {
+      return undefined;
+    }
   }
 
   private async findPath(doc: vscode.Uri, r: IncludeRequest, list: Usable[]): Promise<FetchedInclude | null> {
