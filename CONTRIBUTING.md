@@ -30,7 +30,7 @@ decided along the way.
 | `syntaxes/`, `languages/` | The five TextMate grammars and language configurations |
 | `schemas/actions.json`, `defaults/actions.json` | The schema of `.vscode/actions.json`, and the default actions shipped |
 | `schemas/qs400project.json` | The schema of a project's `qs400project.json` |
-| `media/` | Activity bar icon (placeholder until Phase 10) |
+| `media/` | The activity bar icon, the job log glyphs, and the walkthrough pages in `media/walkthrough/` |
 | `bin/` | Host binary for the current platform, copied in by `scripts/package.sh`; gitignored |
 | `host/` | Cargo workspace: `crates/host-rpc` (framing, registry, error codes; no QS/400 knowledge) and `crates/code-host` (the `qs400-code-host` binary) |
 | `host/crates/code-host/src/session.rs` | Sessions: one per connection name, the state machine, `session.*` and `libl.*`, and `DevelopBackend` |
@@ -1554,6 +1554,83 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     through for the server. A hover that fails is not shown. **Pause** is
     refused with a sentence saying a stop needs a breakpoint.
 
+## Decisions made in Phase 10
+
+1. **No extension gallery.** The release is the two VSIX files of a GitHub
+   release, installed by hand (the user's decision). So the release
+   workflow runs no `vsce publish` or `ovsx publish`, there are no
+   `VSCE_PAT` or `OVSX_PAT` secrets and no Open VSX namespace, and the
+   manifest has no `galleryBanner`. The exit test installs the VSIX from
+   the release instead of from a gallery search.
+2. **The publisher stays `quartzsystems`.** With no gallery it is only the
+   first half of the extension ID, `quartzsystems.code-for-qs400`. That ID
+   keys VS Code's secret storage, so changing it later loses every saved
+   password.
+3. **No icon.** No `media/icon.png` was provided, and `vsce` takes only a
+   PNG for `icon`, so the manifest has none and the Extensions view shows
+   the default. The activity bar keeps `media/qs400.svg` (Phase 8 decision
+   24).
+4. **The walkthrough's pages are Markdown, not screenshots**
+   (`media/walkthrough/*.md`, the `markdown` media a walkthrough step
+   takes). No system could be signed on to in this phase, the views show
+   nothing without one, and a mockup is not a screenshot; for the same
+   reason the README has no screenshot per view. Each page describes the
+   step with the output formats the guides document. Screenshots taken on
+   a signed-on system can replace them as `image` media.
+5. **`extensionKind` is `["ui"]`, and untrusted workspaces are not
+   supported**, with the reason in `capabilities.untrustedWorkspaces`.
+   The extension suite runs in an empty window, which VS Code trusts, so
+   it is unaffected.
+6. **The repository URL** in the manifest was
+   `quartzsystems/quartz-systems-code-for-qs400`, which does not exist; it
+   is `quartzsystems/code-for-qs400`, the remote. `bugs` is its issues and
+   `homepage` its GitHub Pages site, which is not enabled yet (see
+   Release).
+7. **The release workflow calls `ci.yml`** (`workflow_call`, secrets
+   inherited), so a release runs exactly what CI runs and releases the VSIX
+   artifacts CI uploaded. CI's concurrency group is now keyed by
+   `github.workflow`, so a release run and a push to `main` cannot cancel
+   each other. The release is made with `gh release create`, so no
+   third-party action is added; `actions/download-artifact` is pinned at
+   `9000827c` (v8.0.2). A `version` job refuses a tag, manifest, host or
+   CHANGELOG heading that disagree, and publishing from anything but a tag.
+8. **The dry run was not run on GitHub.** Its steps were run locally
+   instead: `scripts/package.sh` on Windows and, for Linux, in a
+   `node:22-bookworm` container with rustup and `musl-tools` from a
+   `git archive` of HEAD; then the workflow's own `SHA256SUMS` and
+   release-notes script. The artifacts a dry run uploads are
+   `code-for-qs400-linux-x64.vsix`, `code-for-qs400-win32-x64.vsix` and
+   `release-V1R0M0-dry-run`.
+9. **The scripts were not executable in git** (`100644`), so CI's Linux job
+   had stopped at the naming check with exit 126 on every run; no CI run
+   had passed. Fixed in its own commit (`100755`); found when the Linux
+   package build in a container stopped the same way.
+10. **The CHANGELOG is dated 2026-11-08.** If the tag is made on another
+    day, change the date; the workflow checks the version, not the date.
+11. **Audits.** `cargo deny check` is clean with `host/deny.toml` (new):
+    six licenses, crates.io and the two Quartz repositories. Its two
+    warnings are `compdiag` and `ipc` at both `quartz-systems-400` pins
+    (Phase 5 decision 1). `npm audit` reports 16 findings (1 low, 14
+    moderate, 1 high), every one in development tools that are not in
+    the VSIX (`mocha`, `@vscode/test-cli`, `@vscode/vsce`,
+    `typescript-eslint` and what they bring), except one: `minimatch`
+    10.2.6 under `vscode-languageclient` 10.1.2 (GHSA-g3hv-75wg-m249, a
+    denial of service from a crafted pattern), which the bundle carries.
+    The only patterns it is given are the extension's own document
+    selectors, which are constants. It is left as it is: npm's fix
+    downgrades the client to 9.0.1, below the version Phase 5 decision 15
+    chose, and an override to `minimatch` 11 is a version the client was
+    not released with.
+12. **Docs that did not match the recorded behaviour**, corrected:
+    `objects-and-members.md` still said colouring came in a later release
+    (Phase 5) and pointed to "later, Actions" for source files (Phase 8's
+    `CRTSRCPF`); `languages.md` took a local file's includes from the
+    active connection (Phase 8 decision 18: the workspace's projects
+    first, the project's connection); `connections.md` said "later
+    features act on" the active connection; `docs/README.md` spoke of a
+    marketplace listing and the README of CI artifacts. The README's
+    commands table and host section moved to `docs/README.md`.
+
 ## Phase 0 exit test
 
 > VSIX installs on Windows and Linux; About shows `V1R0M0` from the host.
@@ -2442,3 +2519,47 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
    decision 13 it starts on its own connection).
 7. Record the result, the latency, any frame with `line` 0, and every
    message ID seen here.
+
+## Phase 10 exit test
+
+> Install from the marketplace on a clean machine and complete the
+> Phase 4 exit test.
+
+Read, by decision 1, as: install the VSIX from the GitHub release on a
+clean machine.
+
+**Not run yet, 2026-11-08: the release has not been tagged, and the
+system could not be signed on to.** As at the end of Phase 9, `QSHQ400`
+does not resolve, and no `QS400_TEST_*` variables or password were at
+hand.
+
+What was checked instead, with the VSIX files the dry run's steps built
+(decision 8):
+
+| Check | Result |
+| --- | --- |
+| Windows x64: `code --install-extension` into a fresh `--user-data-dir` and `--extensions-dir` of VS Code 1.143.0 | installed, listed as `quartzsystems.code-for-qs400@1.0.0`; its `bin\qs400-code-host.exe --version`: `qs400-code-host 1.0.0 (QS/400 V1R0M0, QAP v9)` |
+| Linux x64: the same in a `debian:bookworm` container with VS Code 1.143.0's tarball | installed, listed as `quartzsystems.code-for-qs400@1.0.0`; `bin/qs400-code-host` mode 755, static-pie, `--version` as above |
+| Each VSIX's entries | 32, one host binary, no `host/`, `test/`, `src/`, `node_modules/` or fixtures |
+| `SHA256SUMS` of the local builds | `de0831586eb910f645d60e488bf05b488b81143a3879a5c878bba60376244d7d  code-for-qs400-linux-x64.vsix`, `7f13c0a9d718c3e65215c2354bc926de4999bda7e263a90e4efbb322780948a4  code-for-qs400-win32-x64.vsix`; the release's own are in the release |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` (Windows) | clean, 310 passing |
+| `npm run lint`, `npm test` (Windows, VS Code 1.143.0) | clean, 296 passing, the live suites pending |
+| The walkthrough's buttons and pages | every command exists, every page ships (`extension.test.ts`) |
+
+To run it, after the release is published, on a Windows machine and a
+Linux machine that have never had the extension, each reaching `QSHQ400`:
+
+1. From the release `V1R0M0`, download the platform's VSIX and
+   `SHA256SUMS`; check the file; **Install from VSIX…**.
+2. **Code for QS/400: About**: `Code for QS/400 V1R0M0 · host 1.0.0 ·
+   QAP v9`.
+3. Add the connection `QSHQ400` for `CWELLMAN` (with the system's
+   certificate as the CA file) and connect.
+4. Open `HLINV/QRPGLESRC/ASSETS.rpgle` from the Objects view, break line
+   42 with a name nothing defines, save, and run **Compile (CRTBNDRPG)**
+   from the editor title. The Problems panel has the error at line 42.
+5. Fix it and compile again: the entry clears.
+6. **Help → Welcome → Get started with Code for QS/400**, and follow it
+   from the first step without the repository: each button runs, and each
+   step is checked off.
+7. Record both machines' results here, and every message ID seen.
