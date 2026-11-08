@@ -1,0 +1,40 @@
+# Copyright (C), 2026 Quartz Systems. Some rights reserved. This work is
+# licensed under the terms of the MIT license which can be found in the
+# root directory of this project.
+
+# cargo deny check (run in host/). The licenses are the ones the tree
+# holds at 1.0.0, every one compatible with shipping the binary under MIT;
+# a new one fails the check until it is read and added here.
+
+[graph]
+targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-musl"]
+
+[advisories]
+yanked = "deny"
+
+[licenses]
+allow = [
+  "Apache-2.0",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Unlicense",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Crates from other Quartz repositories are git dependencies pinned by
+# commit (CONTRIBUTING.md, Rules).
+allow-git = [
+  "https://github.com/quartzsystems/quartz-systems-400",
+  "https://github.com/quartzsystems/quartz-systems-access",
+]
