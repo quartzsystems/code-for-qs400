@@ -15,6 +15,15 @@ import {
   withSource,
 } from '../src/actions/model';
 import { ActionStore } from '../src/actions/store';
+import {
+  ActionTarget,
+  batchCommand,
+  choiceKey,
+  matchTarget,
+  needsLibrary,
+  resolveCommand,
+  usesCurrentLibrary,
+} from '../src/actions/targets';
 import { substitute, unknownVariables, variablesIn } from '../src/actions/variables';
 import { parseConnections, toSetting } from '../src/connections/config';
 import { SessionManager } from '../src/connections/sessions';
@@ -266,5 +275,101 @@ suite('Actions: the text of actions.json', () => {
     assert.equal((t.value as unknown[]).length, 4);
     assert.equal(t.commands.length, 4);
     assert.equal(ACTIONS_TEXT.slice(t.commands[1]!.offset, t.commands[1]!.offset + t.commands[1]!.length), '"CRTBNDRPGX PGM(&LIBRARY/&NAME)"');
+  });
+});
+
+suite('Actions: variables for a member, a stream file and an object', () => {
+  const connection = { user: 'CWELLMAN', host: 'qshq400.example', custom: { TGTRLS: 'V1R0M0', DBG: '*SOURCE' } };
+  const member: ActionTarget = {
+    environment: 'member',
+    connection: 'QSHQ400',
+    library: 'HLINV',
+    file: 'QTMPSRC',
+    member: 'ASSETS42',
+    type: 'RPGLE',
+  };
+  const file: ActionTarget = { environment: 'file', connection: 'QSHQ400', path: '/home/CWELLMAN/sql/make_tables.sql' };
+  const object: ActionTarget = {
+    environment: 'object',
+    connection: 'QSHQ400',
+    library: 'HLINV',
+    object: 'ASSETS',
+    type: '*PGM',
+    attribute: 'RPGLE',
+  };
+  const ALL = '&LIBRARY|&NAME|&TYPE|&EXT|&CURLIB|&USERNAME|&HOST|&CUSTOM:TGTRLS';
+
+  test('member: &LIBRARY is the current library; the source names its file and library', () => {
+    const r = resolveCommand(
+      'CRTBNDRPG PGM(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) TGTRLS(&CUSTOM:TGTRLS) DBGVIEW(&CUSTOM:dbg)',
+      member,
+      { connection, curlib: 'CWELLMAN' },
+    );
+    assert.deepEqual(r, {
+      ok: true,
+      command: 'CRTBNDRPG PGM(CWELLMAN/ASSETS42) SRCFILE(HLINV/QTMPSRC) SRCMBR(ASSETS42) TGTRLS(V1R0M0) DBGVIEW(*SOURCE)',
+    });
+    assert.deepEqual(resolveCommand(ALL, member, { connection, curlib: 'CWELLMAN' }), {
+      ok: true,
+      command: 'CWELLMAN|ASSETS42|RPGLE|rpgle|CWELLMAN|CWELLMAN|qshq400.example|V1R0M0',
+    });
+  });
+
+  test('member with no current library: &LIBRARY is asked for, and the answer used', () => {
+    const cmd = 'CRTBNDRPG PGM(&LIBRARY/&NAME)';
+    assert.equal(needsLibrary(cmd, member, { connection }), true);
+    assert.equal(needsLibrary(cmd, member, { connection, curlib: 'CWELLMAN' }), false);
+    assert.equal(needsLibrary('CALL PGM(&LIBRARY/&NAME)', object, { connection }), false, 'an object has its own');
+    assert.equal(needsLibrary('DSPFD &SRCLIB/&SRCFILE', member, { connection }), false, 'not used');
+    assert.deepEqual(resolveCommand(cmd, member, { connection, library: 'QTEMP' }), {
+      ok: true,
+      command: 'CRTBNDRPG PGM(QTEMP/ASSETS42)',
+    });
+    assert.equal(usesCurrentLibrary(cmd, 'member'), true);
+    assert.equal(usesCurrentLibrary('CALL PGM(&LIBRARY/&NAME)', 'object'), false);
+    assert.equal(usesCurrentLibrary('CHGCURLIB &CURLIB', 'object'), true);
+  });
+
+  test('stream file: the path, its folder and its name with and without the extension', () => {
+    assert.deepEqual(
+      resolveCommand(
+        "RUNSQLSTM SRCSTMF('&FULLPATH') COMMIT(*NONE) -- &PARENT &BASENAME &BASENAMEEXT &NAME &TYPE &EXT &LIBRARY",
+        file,
+        { connection, curlib: 'HLINV' },
+      ),
+      {
+        ok: true,
+        command:
+          "RUNSQLSTM SRCSTMF('/home/CWELLMAN/sql/make_tables.sql') COMMIT(*NONE) -- /home/CWELLMAN/sql make_tables make_tables.sql MAKE_TABLES SQL sql HLINV",
+      },
+    );
+  });
+
+  test('object: its own library, name, type and attribute', () => {
+    assert.deepEqual(resolveCommand(ALL, object, { connection, curlib: 'CWELLMAN' }), {
+      ok: true,
+      command: 'HLINV|ASSETS|*PGM|rpgle|CWELLMAN|CWELLMAN|qshq400.example|V1R0M0',
+    });
+  });
+
+  test('unresolved: a variable the target has none for, or a custom one the connection lacks, is an error before anything is sent', () => {
+    assert.deepEqual(resolveCommand('CALL PGM(&SRCLIB/&SRCFILE) PARM(&CUSTOM:NOPE &FULLPATH)', object, { connection }), {
+      ok: false,
+      unresolved: ['&SRCLIB', '&SRCFILE', '&CUSTOM:NOPE', '&FULLPATH'],
+    });
+    assert.deepEqual(resolveCommand('CHGCURLIB &CURLIB', member, { connection }), { ok: false, unresolved: ['&CURLIB'] });
+    assert.deepEqual(resolveCommand('CRTBNDRPG PGM(&LIBRARY/&NAME)', member, { connection }), {
+      ok: false,
+      unresolved: ['&LIBRARY'],
+    });
+  });
+
+  test('matching names, the remembered choice’s key, and batch', () => {
+    assert.deepEqual(matchTarget(member).names, ['RPGLE', 'rpgle']);
+    assert.deepEqual(matchTarget(file).names, ['sql']);
+    assert.deepEqual(matchTarget(object).names, ['*PGM']);
+    assert.equal(choiceKey(member), 'qshq400|member|RPGLE');
+    assert.equal(choiceKey(object), 'qshq400|object|*PGM');
+    assert.equal(batchCommand('CALL PGM(HLINV/ASSETS)', 'ASSETS'), 'SBMJOB CMD(CALL PGM(HLINV/ASSETS)) JOB(ASSETS) JOBQ(QBATCH)');
   });
 });
