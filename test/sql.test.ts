@@ -11,6 +11,7 @@ import { HostClient, HostRpcError } from '../src/host/client';
 import { SessionErrorCodes, SqlRunResult } from '../src/host/protocol';
 import { SQL_STATEMENTS, SqlStatementRange } from '../src/languages/protocol';
 import { commitLabel, outcomeText, rowCount, statusText, typeLabel } from '../src/sql/format';
+import { ResultPanel } from '../src/sql/results';
 import { SqlRunner } from '../src/sql/run';
 import { SqlSessions } from '../src/sql/session';
 import { Span, splitStatements, statementAt } from '../src/sql/statements';
@@ -188,5 +189,133 @@ suite('SQL: Run Statement', () => {
     e.selection = new vscode.Selection(0, 3, 0, 3);
     await runner.runEditor(e);
     assert.equal((runner.diagnostics.get(e.document.uri) ?? []).length, 0);
+  });
+});
+
+suite('SQL: results', () => {
+  let parts: vscode.Disposable[] = [];
+  let host: FakeHost;
+  let runner: SqlRunner;
+  let panel: ResultPanel;
+  let sql: SqlSessions;
+  let fetched = 0;
+
+  const COLUMNS = [
+    { name: 'ASSET_ID', label: 'ASSET_ID', type: 'INTEGER', length: 4, scale: 0, nullable: false, ccsid: 0 },
+    { name: 'COST', label: 'Cost', type: 'DECIMAL', length: 11, scale: 2, nullable: true, ccsid: 0 },
+  ];
+  const rows = (from: number, n: number) => Array.from({ length: n }, (_, i) => [from + i, i % 5 === 0 ? null : `${from + i}.50`]);
+
+  setup(async () => {
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', [{ name: 'QSHQ400', host: 'qshq400.example', user: 'CWELLMAN' }], true);
+    const output = vscode.window.createOutputChannel('sql results test', { log: true });
+    let cursor = 0;
+    fetched = 0;
+    host = new FakeHost((method) => {
+      switch (method) {
+        case 'sql.options.get':
+          return { commit: 'none', naming: 'sql', uncommitted: false };
+        case 'sql.run':
+          return { kind: 'query', columns: COLUMNS, rows: rows(1, 500), end: false, cursor: ++cursor, messages: [], uncommitted: false };
+        case 'sql.fetch':
+          fetched++;
+          return fetched === 1 ? { rows: rows(501, 500), end: false } : { rows: rows(1001, 7), end: true };
+        default:
+          return null;
+      }
+    });
+    const secrets = { get: async () => undefined, store: async () => {}, delete: async () => {} };
+    const store = new ConnectionStore(secrets as unknown as vscode.SecretStorage, output);
+    const sessions = new SessionManager(host as unknown as HostClient, store, new Memento(), output);
+    sessions.update({ name: 'QSHQ400', state: 'connected', user: 'CWELLMAN' });
+    await sessions.setActive('QSHQ400');
+    sql = new SqlSessions(host as unknown as HostClient, store, sessions);
+    runner = new SqlRunner(host as unknown as HostClient, store, sessions, sql, async () => null);
+    panel = new ResultPanel(sessions, runner, sql);
+    parts = [panel, runner, sql, sessions, store, output, host];
+  });
+
+  teardown(async () => {
+    parts.forEach((p) => p.dispose());
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', undefined, true);
+  });
+
+  const closed = () => host.sent.filter((s) => s.method === 'sql.close').map((s) => s.params.cursor);
+
+  test('a tab per run: the header types, 500 of more, Load more to the end', async () => {
+    await runner.run('QSHQ400', 'SELECT * FROM HLINV.ASSETS');
+    const t = panel.activeTab!;
+    const p = panel.page(t);
+    assert.deepEqual(p.columns?.map((c) => [c.name, c.type, c.nullable, c.numeric]), [
+      ['ASSET_ID', 'INTEGER', false, true],
+      ['COST', 'DECIMAL(11,2)', true, true],
+    ]);
+    assert.equal(p.summary, '500 of more');
+    assert.equal(p.more, true);
+    assert.deepEqual(p.rows?.[0], [1, null]);
+    assert.equal(await panel.loadMore(t.id), 500);
+    assert.equal(panel.page(t).summary, '1000 of more');
+    assert.equal(await panel.loadMore(t.id), 7);
+    const end = panel.page(t);
+    assert.equal(end.summary, '1007 rows');
+    assert.equal(end.more, false);
+    assert.equal(await panel.loadMore(t.id), 0, 'nothing past the end');
+    assert.deepEqual(
+      host.sent.filter((s) => s.method === 'sql.fetch').map((s) => s.params),
+      [
+        { name: 'QSHQ400', cursor: 1, maxRows: 500 },
+        { name: 'QSHQ400', cursor: 1, maxRows: 500 },
+      ],
+    );
+  });
+
+  test('the last 20 tabs kept; closing a tab or the panel closes cursors', async () => {
+    for (let i = 0; i < 21; i++) {
+      await runner.run('QSHQ400', `SELECT ${i} FROM T`);
+    }
+    assert.equal(panel.tabs.length, 20);
+    assert.deepEqual(closed(), [1], 'the oldest went');
+    await panel.closeTab(panel.tabs[0].id);
+    assert.deepEqual(closed(), [1, 2]);
+    panel.close();
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(closed().length, 21);
+    assert.equal(panel.tabs.length, 0);
+  });
+
+  test('an update has no grid; an error shows its message ID and text', async () => {
+    host.answer = (method) =>
+      method === 'sql.run' ? { kind: 'update', updated: 0, messages: [], uncommitted: false } : { commit: 'none', naming: 'sql', uncommitted: false };
+    await runner.run('QSHQ400', 'UPDATE HLINV.ASSETS SET NOTES = NOTES WHERE 1 = 0');
+    const u = panel.page(panel.activeTab!);
+    assert.equal(u.kind, 'update');
+    assert.equal(u.summary, '0 rows updated');
+    assert.deepEqual(u.columns, []);
+    host.answer = (method) => {
+      if (method === 'sql.run') {
+        throw SQL0104;
+      }
+      return null;
+    };
+    await runner.run('QSHQ400', 'SELECT * FORM T');
+    const e = panel.page(panel.activeTab!);
+    assert.equal(e.kind, 'error');
+    assert.equal(e.summary, 'SQL0104');
+    assert.deepEqual(e.error, {
+      messageId: 'SQL0104',
+      text: 'Token FORM was not valid. Valid tokens: FROM INTO.',
+      secondLevel: 'Cause . . . . . :   A syntax error was detected at token FORM.',
+      sqlstate: '42601',
+      sqlcode: -104,
+    });
+  });
+
+  test('a lost SQL connection stops Load more on its tabs', async () => {
+    await runner.run('QSHQ400', 'SELECT * FROM HLINV.ASSETS');
+    host.sqlLost.fire({ name: 'QSHQ400', message: 'QSHQ400: the SQL connection was lost' });
+    const p = panel.page(panel.activeTab!);
+    assert.equal(p.more, false);
+    assert.match(p.note ?? '', /lost/);
   });
 });

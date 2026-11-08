@@ -30,6 +30,7 @@ import { LanguageServers } from './languages/client';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
 import { SQL_STATEMENTS, type SqlStatementRange } from './languages/protocol';
+import { ResultPanel } from './sql/results';
 import { SqlRunner } from './sql/run';
 import { SqlSessions } from './sql/session';
 
@@ -55,6 +56,7 @@ export interface ExtensionApi {
   readonly rpg: FixedFormRpg;
   readonly sql: SqlSessions;
   readonly sqlRunner: SqlRunner;
+  readonly results: ResultPanel;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -108,6 +110,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const sqlRunner = new SqlRunner(host, store, sessions, sql, (doc) =>
     languages.request<SqlStatementRange[] | null>('qs400-sql', SQL_STATEMENTS, { textDocument: { uri: doc.uri.toString() } }),
   );
+  const results = new ResultPanel(sessions, sqlRunner, sql);
 
   context.subscriptions.push(
     output,
@@ -146,6 +149,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     rpg,
     sql,
     sqlRunner,
+    results,
     ...sql.register(),
     ...sqlRunner.register(),
     // A session signed on again: includes it could not read may be there now.
@@ -166,7 +170,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results };
 }
 
 export function deactivate(): void {
