@@ -122,7 +122,8 @@ Run the statement again to see them.
 
 ## The SQL view
 
-The **SQL** view, under **IFS**, lists the active connection's schemas.
+The **SQL** view, first in the **QS/400 Work** container (its own icon
+in the activity bar, below **QS/400**), lists the active connection's schemas.
 **Filter Schemas…** (`code-for-qs400.sql.filterSchemas`) sets an SQL
 `LIKE` pattern for the connection (`HL%`; empty is all), kept with the
 workspace.

@@ -12,7 +12,9 @@ guide covers release V1R0M0. The same pages are published at
    `code --install-extension code-for-qs400-<platform>.vsix`. Check it
    against the release's `SHA256SUMS` first. VS Code does not update a
    VSIX install; install the next release over it.
-2. Open the **QS/400** view in the activity bar and add a connection: see
+2. Open the **QS/400** view in the activity bar (Project, Connections,
+   Objects, IFS; SQL, Jobs, Spooled files and Messages are under
+   **QS/400 Work**, the icon below it) and add a connection: see
    [Connections and sign-on](connections.md).
 3. Run **Code for QS/400: About** from the Command Palette to check that the
    bundled host is working. It shows the QS/400 release, the host version

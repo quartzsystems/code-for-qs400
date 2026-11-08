@@ -1,6 +1,7 @@
 # Jobs, spooled files and messages
 
-Three views under SQL in the **QS/400** container show the active
+Three views under SQL in the **QS/400 Work** container (its own icon in
+the activity bar, below **QS/400**) show the active
 connection's work on the system: **Jobs**, **Spooled files** and
 **Messages**. Spooled files open in a read-only viewer that keeps the
 printed columns. Jobs need a server at QAP version 8, spooled files

@@ -72,6 +72,11 @@
           "id": "qs400",
           "title": "QS/400",
           "icon": "media/qs400.svg"
+        },
+        {
+          "id": "qs400-work",
+          "title": "QS/400 Work",
+          "icon": "media/qs400-work.svg"
         }
       ]
     },
@@ -96,26 +101,28 @@
           "id": "code-for-qs400.ifs",
           "name": "IFS",
           "initialSize": 3
-        },
+        }
+      ],
+      "qs400-work": [
         {
           "id": "code-for-qs400.sql",
           "name": "SQL",
-          "visibility": "collapsed"
+          "initialSize": 3
         },
         {
           "id": "code-for-qs400.jobs",
           "name": "Jobs",
-          "visibility": "collapsed"
+          "initialSize": 2
         },
         {
           "id": "code-for-qs400.spool",
           "name": "Spooled files",
-          "visibility": "collapsed"
+          "initialSize": 2
         },
         {
           "id": "code-for-qs400.messages",
           "name": "Messages",
-          "visibility": "collapsed"
+          "initialSize": 2
         }
       ]
     },
