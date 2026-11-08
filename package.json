@@ -751,6 +751,12 @@
         "title": "Open on System",
         "category": "Code for QS/400",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "code-for-qs400.debug.attach",
+        "title": "Attach to Job…",
+        "category": "Code for QS/400",
+        "icon": "$(debug-alt)"
       }
     ],
     "configuration": {
@@ -1638,6 +1644,11 @@
           "command": "code-for-qs400.project.openRemote",
           "when": "view == code-for-qs400.project && viewItem =~ /^project\\.file\\.remote$/",
           "group": "3_system@2"
+        },
+        {
+          "command": "code-for-qs400.debug.attach",
+          "when": "view == code-for-qs400.jobs && viewItem == jobs.job",
+          "group": "5_debug@1"
         }
       ],
       "commandPalette": [
@@ -1919,6 +1930,10 @@
         },
         {
           "command": "code-for-qs400.project.openRemote",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.debug.attach",
           "when": "false"
         }
       ],

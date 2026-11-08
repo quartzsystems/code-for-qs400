@@ -149,7 +149,16 @@ enum Mode {
     None,
     /// `Own`: the `CALL` that runs at `configurationDone`.
     Call { command: String },
+    /// `Job`: another job, attached at `attach`.
+    Attach,
+    /// `Own`, with a service entry point set at `configurationDone`: the
+    /// first job of `user` that calls `program` is the session's thread.
+    ServiceEntry { program: ObjectName, user: String },
 }
+
+/// The adapter's event naming a debugged job as it becomes a thread:
+/// `{ threadId, job }`, for the extension's status bar.
+pub const THREAD_EVENT: &str = "qs400/thread";
 
 /// What the `CALL`'s thread tells `close`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,17 +304,20 @@ fn shown_name(full: &str, parent: Option<&str>) -> String {
 }
 
 impl State {
-    fn thread_for(&mut self, job: &JobId) -> i64 {
+    /// The thread of `job`, and whether it is new: a job a service entry
+    /// point attached, or one the session has not stopped before.
+    fn thread_for(&mut self, job: &JobId) -> (i64, bool) {
         let at = self.threads.iter().position(|t| match t {
             Some(j) => same_job(j, job),
             // The connection job before `JobInfo` named it.
             None => false,
         });
+        let new = at.is_none();
         let at = at.unwrap_or_else(|| {
             self.threads.push(Some(job.clone()));
             self.threads.len() - 1
         });
-        i64::try_from(at).unwrap_or(i64::MAX - 1) + 1
+        (i64::try_from(at).unwrap_or(i64::MAX - 1) + 1, new)
     }
 }
 
@@ -468,15 +480,33 @@ impl Session {
         }
     }
 
+    /// `qs400/thread`: a job is now one of the session's threads.
+    fn thread_named(&self, thread: i64, job: Option<&JobId>) {
+        self.out.event(
+            THREAD_EVENT,
+            json!({ "threadId": thread, "job": thread_name(job) }),
+        );
+    }
+
     fn on_stopped(&self, s: &Stopped) {
-        let thread = {
+        let (thread, new) = {
             let mut st = lock(&self.state);
-            let thread = st.thread_for(&s.job);
+            let (thread, new) = st.thread_for(&s.job);
             st.stopped = Some(thread);
             st.frames.clear();
             st.refs.clear();
-            thread
+            (thread, new)
         };
+        if new {
+            self.thread_named(thread, Some(&s.job));
+            if s.reason == StopReason::ServiceEntry {
+                self.out.console(&format!(
+                    "Service entry: {} called {}",
+                    crate::backend::job_text(&s.job),
+                    object_text(&s.frame.program)
+                ));
+            }
+        }
         let (reason, text) = match &s.reason {
             StopReason::Breakpoint => ("breakpoint", None),
             StopReason::Step => ("step", None),
@@ -533,17 +563,21 @@ impl Session {
 
     /// Ends the session. With `terminate`, a running `CALL` is cancelled
     /// first: `End` before it would let a stopped job run on to its end.
-    /// Then `End`, the `CALL`'s reply (a moment), sign-off. Nothing is
-    /// reported; nothing more will be.
+    /// Then the service entry point removed (`End` removes it too; this
+    /// says so to the server first), `End`, the `CALL`'s reply (a moment),
+    /// sign-off. Nothing is reported; nothing more will be.
     fn close(&self, terminate: bool) {
-        let (flag, news) = {
+        let (flag, news, mode) = {
             let mut st = lock(&self.state);
             st.closing = true;
-            (st.call.take(), st.call_done.take())
+            (st.call.take(), st.call_done.take(), st.mode.clone())
         };
         let Some(mut b) = lock(&self.backend).take() else {
             return;
         };
+        if let Mode::ServiceEntry { program, .. } = &mode {
+            let _ = b.remove_service_entry(program);
+        }
         let mut ended = false;
         if terminate && let (Some(f), Some(news)) = (&flag, &news) {
             f.store(true, Ordering::Release);
@@ -595,6 +629,21 @@ struct LaunchArgs {
     /// does not show it too.
     #[serde(default)]
     recompile_offer: bool,
+    /// Service entry: whose jobs stop, `*CURRENT` or a profile.
+    #[serde(default)]
+    user: Option<String>,
+    qs400: Credentials,
+}
+
+/// `attach`'s arguments.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachArgs {
+    /// `nnnnnn/USER/NAME`.
+    job: String,
+    /// The programs to put under debug in the job.
+    #[serde(default)]
+    programs: Vec<String>,
     qs400: Credentials,
 }
 
@@ -625,6 +674,7 @@ impl Adapter {
             })
             .unwrap_or(Value::Null)),
             "launch" => self.launch(req),
+            "attach" => self.attach(req),
             "configurationDone" => self.configuration_done(),
             "setBreakpoints" => self.set_breakpoints(&req.arguments),
             "continue" => self.resume(ResumeHow::Go),
@@ -661,7 +711,7 @@ impl Adapter {
         match result {
             Ok(body) => {
                 self.out().ok(req, body);
-                if req.command == "launch" {
+                if req.command == "launch" || req.command == "attach" {
                     self.out().event("initialized", Value::Null);
                 }
             }
@@ -696,66 +746,103 @@ impl Adapter {
     fn launch(&mut self, req: &Incoming) -> Result<Value, Failure> {
         let args: LaunchArgs = serde_json::from_value(req.arguments.clone())
             .map_err(|e| Failure::new(format!("launch: {e}")))?;
-        match args.mode.as_deref().unwrap_or("call") {
-            "call" => {}
-            other => return Err(Failure::new(format!("launch: no mode {other:?}"))),
-        }
         let program = object_name(
             args.program
                 .as_deref()
                 .ok_or_else(|| Failure::new("launch: no program"))?,
         )?;
-        let command = args
-            .command
-            .clone()
-            .filter(|c| !c.trim().is_empty())
-            .unwrap_or_else(|| format!("CALL PGM({})", object_text(&program)));
+        let mode = match args.mode.as_deref().unwrap_or("call") {
+            "call" => Mode::Call {
+                command: args
+                    .command
+                    .clone()
+                    .filter(|c| !c.trim().is_empty())
+                    .unwrap_or_else(|| format!("CALL PGM({})", object_text(&program))),
+            },
+            "serviceEntry" => Mode::ServiceEntry {
+                program: program.clone(),
+                user: args
+                    .user
+                    .as_deref()
+                    .map(|u| u.trim().to_ascii_uppercase())
+                    .filter(|u| !u.is_empty())
+                    .unwrap_or_else(|| "*CURRENT".to_owned()),
+            },
+            other => return Err(Failure::new(format!("launch: no mode {other:?}"))),
+        };
         self.open(&args.qs400)?;
-        let started = self.start(DebugTarget::Own, &program, &args).map(|()| {
-            lock(&self.session.state).mode = Mode::Call { command };
-        });
-        if started.is_err() {
-            self.session.close(false);
-        }
-        started.map(|()| Value::Null)
+        // A service entry's thread is the job the entry attaches, at its stop.
+        let own_thread = matches!(mode, Mode::Call { .. });
+        let started = self
+            .start(DebugTarget::Own, own_thread)
+            .and_then(|()| self.add_programs(Some(&program), &args.programs, args.recompile_offer));
+        self.started(started, mode)
     }
 
-    /// `Start`, the event thread, the session's thread, the programs.
-    fn start(
-        &mut self,
-        target: DebugTarget,
-        program: &ObjectName,
-        args: &LaunchArgs,
-    ) -> Result<(), Failure> {
+    /// `Start(Job)` of the job, and its programs: none of them is needed,
+    /// so a refusal of one is only reported.
+    fn attach(&mut self, req: &Incoming) -> Result<Value, Failure> {
+        let args: AttachArgs = serde_json::from_value(req.arguments.clone())
+            .map_err(|e| Failure::new(format!("attach: {e}")))?;
+        let job = crate::backend::job_id(&args.job)?;
+        self.open(&args.qs400)?;
+        let started = self
+            .start(DebugTarget::Job { job }, true)
+            .and_then(|()| self.add_programs(None, &args.programs, false));
+        self.started(started, Mode::Attach)
+    }
+
+    /// The session's mode once it started; its end when it did not.
+    fn started(&mut self, started: Result<(), Failure>, mode: Mode) -> Result<Value, Failure> {
+        match started {
+            Ok(()) => {
+                lock(&self.session.state).mode = mode;
+                Ok(Value::Null)
+            }
+            Err(f) => {
+                self.session.close(false);
+                Err(f)
+            }
+        }
+    }
+
+    /// `Start`, the event thread, and (`thread`) the job debugged as the
+    /// session's first thread.
+    fn start(&mut self, target: DebugTarget, thread: bool) -> Result<(), Failure> {
         let events = self.session.with_backend(|b| b.start(target.clone()))?;
         self.session.forward(events);
-        let job = match &target {
-            DebugTarget::Own => self.session.with_backend(|b| b.job())?,
-            DebugTarget::Job { job } => Some(job.clone()),
-        };
-        lock(&self.session.state).threads.push(job);
-        self.add_programs(program, &args.programs, args.recompile_offer)
+        if thread {
+            let job = match &target {
+                DebugTarget::Own => self.session.with_backend(|b| b.job())?,
+                DebugTarget::Job { job } => Some(job.clone()),
+            };
+            lock(&self.session.state).threads.push(job.clone());
+            self.session.thread_named(1, job.as_ref());
+        }
+        Ok(())
     }
 
-    /// `AddProgram` of the program, which must have debug data, then of
-    /// each of `more` (`*PGM`, else `*SRVPGM`), whose refusals are only
+    /// `AddProgram` of `main`, which must have debug data, then of each
+    /// of `more` (`*PGM`, else `*SRVPGM`), whose refusals are only
     /// reported.
     fn add_programs(
         &mut self,
-        program: &ObjectName,
+        main: Option<&ObjectName>,
         more: &[String],
         recompile_offer: bool,
     ) -> Result<(), Failure> {
-        let modules = self
-            .session
-            .with_backend(|b| b.add_program(program, "*PGM"))
-            .map_err(|mut f| {
-                if recompile_offer && f.message_id.as_deref() == Some(NO_DEBUG_DATA) {
-                    f.show_user = false;
-                }
-                f
-            })?;
-        self.sources_of(program, &modules);
+        if let Some(program) = main {
+            let modules = self
+                .session
+                .with_backend(|b| b.add_program(program, "*PGM"))
+                .map_err(|mut f| {
+                    if recompile_offer && f.message_id.as_deref() == Some(NO_DEBUG_DATA) {
+                        f.show_user = false;
+                    }
+                    f
+                })?;
+            self.sources_of(program, &modules);
+        }
         for p in more {
             let name = match object_name(p) {
                 Ok(n) => n,
@@ -1035,9 +1122,19 @@ impl Adapter {
         Ok(json!({ "value": now }))
     }
 
-    /// The session is configured: a `CALL` runs now.
+    /// The session is configured: a `CALL` runs now, or the service entry
+    /// point is set (after the breakpoints, so they are there when a job
+    /// stops at it).
     fn configuration_done(&mut self) -> Result<Value, Failure> {
         let mode = lock(&self.session.state).mode.clone();
+        if let Mode::ServiceEntry { program, user } = &mode {
+            self.session
+                .with_backend(|b| b.set_service_entry(program, user))?;
+            self.out().console(&format!(
+                "Waiting for a job of {user} to call {}.",
+                object_text(program)
+            ));
+        }
         if let Mode::Call { command } = mode {
             let running = self.session.with_backend(|b| b.run_command(&command))?;
             let flag = Arc::new(AtomicBool::new(false));

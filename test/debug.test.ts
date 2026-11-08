@@ -11,6 +11,8 @@ import { callCommand, clParameter, completeConfiguration, initialConfigurations,
 import { type DebugSourceDeps, resolveDebugSource } from '../src/debug/source';
 import { StatementsProvider, statementLine } from '../src/debug/statements';
 import { programOfEntry } from '../src/debug/programs';
+import { parsePrograms } from '../src/debug/commands';
+import { debugStatusText } from '../src/debug/statusBar';
 import type { ObjectProperty } from '../src/host/protocol';
 
 const EXTENSION_ID = 'quartzsystems.code-for-qs400';
@@ -222,6 +224,27 @@ suite('Debug: qs400/debugSource', () => {
     // Not signed on: object.properties fails, so the answer is null.
     await debugging.answerSource(session, { id: 7, program: 'HLINV/ASSETS', module: 'ASSETS' });
     assert.deepEqual(sent, [{ command: 'qs400/debugSource', args: { id: 7, path: null, name: undefined } }]);
+  });
+});
+
+suite('Debug: attach and the status bar', () => {
+  test('the status bar names the job, with the service entry program in that mode', () => {
+    assert.equal(debugStatusText({ job: '123456/QUSER/QAPCNN' }), '$(debug) 123456/QUSER/QAPCNN');
+    assert.equal(debugStatusText({ serviceEntry: 'HLINV/ASSETS' }), '$(debug) waiting for HLINV/ASSETS');
+    assert.equal(debugStatusText({ job: '777777/CWELLMAN/QPADEV0004', serviceEntry: 'HLINV/ASSETS' }), '$(debug) 777777/CWELLMAN/QPADEV0004 · HLINV/ASSETS');
+    assert.equal(debugStatusText({}), undefined);
+  });
+
+  test('the programs to attach with', () => {
+    assert.deepEqual(parsePrograms(''), []);
+    assert.deepEqual(parsePrograms('hlinv/assets, HLINV/ASSETSRV  ASSETRPT'), ['HLINV/ASSETS', 'HLINV/ASSETSRV', '*LIBL/ASSETRPT']);
+    assert.equal(parsePrograms('HLINV/ASSETS, A/B/C'), 'A/B/C is not a program name (LIB/PGM)');
+  });
+
+  test('Attach to Job… is on other jobs only, not the connection job', () => {
+    const pkg = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON as { contributes: { menus: Record<string, Array<{ command: string; when?: string }>> } };
+    const m = pkg.contributes.menus['view/item/context'].find((x) => x.command === 'code-for-qs400.debug.attach');
+    assert.equal(m?.when, 'view == code-for-qs400.jobs && viewItem == jobs.job');
   });
 });
 

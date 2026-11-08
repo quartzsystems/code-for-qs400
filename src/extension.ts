@@ -51,6 +51,8 @@ import { ResultPanel } from './sql/results';
 import { SqlRunner } from './sql/run';
 import { SqlSessions } from './sql/session';
 import { Debugging } from './debug/debugging';
+import { attachToJob } from './debug/commands';
+import { DebugStatusBar } from './debug/statusBar';
 import { programOfDocument, programOfEntry } from './debug/programs';
 import { memberUri } from './members/uri';
 import type { ObjectsNode } from './views/objects';
@@ -289,6 +291,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerMessagesViewCommands(messages, sessions),
     debugging,
     ...debugging.register(),
+    new DebugStatusBar(),
+    vscode.commands.registerCommand('code-for-qs400.debug.attach', (n?: JobNode) =>
+      n?.kind === 'job' ? attachToJob(n.connection, n.entry.job, context.workspaceState) : undefined,
+    ),
     // A session signed on again: includes it could not read may be there now.
     sessions.onDidChange((st) => {
       if (st?.state === 'connected') {
