@@ -32,6 +32,7 @@ import {
   submittedJob,
 } from './output';
 import { ActionStore, connectionValues } from './store';
+import { variablesIn } from './variables';
 import {
   ActionTarget,
   ResolveContext,
@@ -70,6 +71,8 @@ export interface RunResult {
    * (a batch run); its line is written when it is found.
    */
   listing?: Promise<SpooledFile | undefined>;
+  /** The local file the target was deployed from, for an action on a local file. */
+  local?: vscode.Uri;
 }
 
 /** What a run needs of the document a target is open in. */
@@ -88,6 +91,22 @@ export interface RunnerOptions {
   append?: (line: string) => void;
   /** How long a batch run's listing is waited for; the host's 10 minutes by default. */
   listingWaitMs?: number;
+  /**
+   * A local file of a project as a target: the member or stream file it
+   * deploys to, the library its `&LIBRARY` is, and the deploy that comes
+   * first. A message when the file cannot be deployed; undefined when it
+   * is in no project.
+   */
+  local?: (uri: vscode.Uri) => Promise<LocalTarget | string | undefined>;
+}
+
+/** What `RunnerOptions.local` makes of a local file. */
+export interface LocalTarget {
+  target: ActionTarget;
+  /** `&LIBRARY` and `&SRCLIB` of a member: the project's target library. */
+  library?: string;
+  uri: vscode.Uri;
+  deploy(): Promise<boolean>;
 }
 
 /** A link in the output channel: where it is and the command it runs. */
@@ -225,6 +244,7 @@ export class ActionRunner implements vscode.Disposable {
   private readonly findDocument: (t: ActionTarget) => SavableDocument | undefined;
   private readonly append: (line: string) => void;
   private readonly listingWaitMs: number | undefined;
+  private readonly local?: (uri: vscode.Uri) => Promise<LocalTarget | string | undefined>;
 
   constructor(
     private readonly store: ConnectionStore,
@@ -238,6 +258,7 @@ export class ActionRunner implements vscode.Disposable {
     this.findDocument = options.findDocument ?? targetDocument;
     this.append = options.append ?? ((l) => this.output.appendLine(l));
     this.listingWaitMs = options.listingWaitMs;
+    this.local = options.local;
   }
 
   /** `job`'s spooled files; the connection job's are the signed-on profile's. */
@@ -348,9 +369,19 @@ export class ActionRunner implements vscode.Disposable {
    * pick is shown when it is absent). Undefined when nothing was run.
    */
   async run(arg?: RunArg, actionName?: string): Promise<RunResult | undefined> {
-    const t = this.target(arg);
+    // A local file of a project runs against what it deploys to.
+    const uri = arg instanceof vscode.Uri ? arg : arg === undefined ? vscode.window.activeTextEditor?.document.uri : undefined;
+    const got = uri?.scheme === 'file' && this.local ? await this.local(uri) : undefined;
+    if (typeof got === 'string') {
+      void vscode.window.showErrorMessage(`Run Action: ${got}.`);
+      return undefined;
+    }
+    const local = got;
+    const t = local?.target ?? this.target(arg);
     if (!t) {
-      void vscode.window.showInformationMessage('Open a member or a stream file, or pick a member, a file or an object, to run an action on it.');
+      void vscode.window.showInformationMessage(
+        'Open a member, a stream file or a file of a project, or pick a member, a file or an object, to run an action on it.',
+      );
       return undefined;
     }
     await this.actions.ready;
@@ -383,10 +414,16 @@ export class ActionRunner implements vscode.Disposable {
     if (doc?.isDirty && !(await doc.save())) {
       return notRun(`${targetLabel(t)} could not be saved`);
     }
+    // A local file is deployed first (saved, and checked for a conflict); the action runs only once the system has it.
+    if (local && !(await local.deploy())) {
+      return notRun(`${vscode.workspace.asRelativePath(local.uri)} was not deployed`);
+    }
 
-    const ctx: ResolveContext = { connection: connectionValues(this.store, this.sessions, name) };
+    const ctx: ResolveContext = { connection: connectionValues(this.store, this.sessions, name), library: local?.library };
     try {
-      if (usesCurrentLibrary(action.command, t.environment)) {
+      // A local file's &LIBRARY is its project's; the current library is read only for &CURLIB then.
+      const curlibOnly = ctx.library !== undefined;
+      if (curlibOnly ? variablesIn(action.command).some((v) => v.name === 'CURLIB') : usesCurrentLibrary(action.command, t.environment)) {
         ctx.curlib = (await this.sessions.call(name, 'libl.get', { name })).current ?? undefined;
       }
     } catch (err) {
@@ -418,7 +455,7 @@ export class ActionRunner implements vscode.Disposable {
     const ownJob = this.sessions.status(name).job;
     const before = params.kind === 'compile' && ownJob ? await this.highestFile(name, ownJob) : undefined;
     this.write(headerLines({ when: new Date(), action: action.name, target: targetLabel(t), connection: name, command }));
-    const result: RunResult = { action, target: t, command };
+    const result: RunResult = { action, target: t, command, local: local?.uri };
     try {
       result.outcome = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: action.name, cancellable: true },

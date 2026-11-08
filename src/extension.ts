@@ -38,6 +38,7 @@ import { ProjectPrompts } from './projects/ui';
 import { registerDeployCommands, registerPullCommands } from './projects/commands';
 import { Deployer } from './projects/deploy';
 import { GitApiChanges } from './projects/git';
+import { LocalActions } from './projects/local';
 import { sameName } from './connections/config';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -118,7 +119,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const transfers = new Transfers(host, sessions, ifs, ifsFs);
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
   const projects = new ProjectStore(store, output);
-  const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
+  const runner = new ActionRunner(store, sessions, actions, context.workspaceState, {
+    objects,
+    ifs,
+    local: (uri) => localActions.resolve(uri),
+  });
   const projectDeps: ProjectDeps = {
     store,
     sessions,
@@ -138,8 +143,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     }
   });
+  const localActions = new LocalActions(projectDeps, deployer);
   const hasProject = () => void vscode.commands.executeCommand('setContext', 'code-for-qs400.hasProject', projects.usable().length > 0);
-  const diagnostics = new CompileDiagnostics();
+  const diagnostics = new CompileDiagnostics((connection, at) => deployer.localFor(connection, at));
   const jobLog = new JobLogProvider(store, sessions, vscode.Uri.joinPath(context.extensionUri, 'media'));
   const languagesOutput = vscode.window.createOutputChannel('Code for QS/400 Languages', { log: true });
   const languages = new LanguageServers(

@@ -1812,7 +1812,7 @@
       "editor/title": [
         {
           "command": "code-for-qs400.action.run",
-          "when": "resourceScheme =~ /^qs400(mbr|ifs)$/",
+          "when": "resourceScheme =~ /^qs400(mbr|ifs)$/ || resourceScheme == file && code-for-qs400.hasProject",
           "group": "navigation@1"
         },
         {

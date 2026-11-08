@@ -45,7 +45,14 @@ function openFile(connection: string, path: string): vscode.TextDocument | undef
  * target opens writable, and any other member (a `/COPY` member) opens
  * read-only on click.
  */
-export function placedUri(p: PlacedIn, t: ActionTarget): { uri: vscode.Uri; doc?: vscode.TextDocument } {
+export function placedUri(p: PlacedIn, t: ActionTarget, local?: LocalFor): { uri: vscode.Uri; doc?: vscode.TextDocument } {
+  // A member or stream file deployed from a local file: the local file.
+  const at = p.kind === 'member' ? { kind: 'member' as const, library: p.library, file: p.file, member: p.member } : p.kind === 'path' ? { kind: 'path' as const, path: p.path } : undefined;
+  const mapped = at ? local?.(t.connection, at) : undefined;
+  if (mapped) {
+    const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === mapped.toString());
+    return { uri: doc?.uri ?? mapped, doc };
+  }
   switch (p.kind) {
     case 'member': {
       const doc = openMember(t.connection, p.library, p.file, p.member);
@@ -63,6 +70,12 @@ export function placedUri(p: PlacedIn, t: ActionTarget): { uri: vscode.Uri; doc?
       return { uri: propertiesUri(t.connection, p.library, p.object, p.type) };
   }
 }
+
+/** The local file a deployed member or stream file came from (Phase 8's deploy fills it); undefined for any other. */
+export type LocalFor = (
+  connection: string,
+  at: { kind: 'member'; library: string; file: string; member: string } | { kind: 'path'; path: string },
+) => vscode.Uri | undefined;
 
 /** A compiler's diagnostic as the Problems panel shows it. */
 export function toDiagnostic(d: CompileDiagnostic, uri: vscode.Uri, source: string, doc?: vscode.TextDocument): vscode.Diagnostic {
@@ -100,6 +113,9 @@ export class CompileDiagnostics implements vscode.Disposable {
   /** By target, then by document URI. */
   private readonly byTarget = new Map<string, Map<string, Placed>>();
 
+  /** `local`: where a member or stream file a deploy wrote came from, so its diagnostics go on the local file. */
+  constructor(private readonly local?: LocalFor) {}
+
   /** Takes a run's outcome; the documents whose diagnostics changed. */
   apply(r: RunResult): vscode.Uri[] {
     const o = r.outcome;
@@ -111,10 +127,10 @@ export class CompileDiagnostics implements vscode.Disposable {
     const source = firstToken(r.command);
     const next = new Map<string, Placed>();
     // The target is always reported on, so a clean compile clears it.
-    const own = placedUri(targetPlace(t), t);
+    const own = placedUri(targetPlace(t), t, this.local);
     next.set(own.uri.toString(), { uri: own.uri, diagnostics: [] });
     for (const d of o.diagnostics) {
-      const { uri, doc } = placedUri(placeIn(d, t), t);
+      const { uri, doc } = placedUri(placeIn(d, t), t, this.local);
       const k = uri.toString();
       const entry = next.get(k) ?? { uri, diagnostics: [] };
       entry.diagnostics.push(toDiagnostic(d, uri, source, doc));

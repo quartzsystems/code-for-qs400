@@ -16,7 +16,7 @@ import { parseState } from '../src/projects/state';
 import { fakeLibrary, libraryAnswer, projectRig } from './pull.test';
 
 /** A system with `HLINV` to pull from and `HLINVDEV` to deploy to, the clock in milliseconds. */
-class FakeSystem {
+export class FakeSystem {
   readonly lib = fakeLibrary();
   readonly dev = new Map<string, { type: string; text: string; lines: string[]; changed: number }>();
   readonly files = new Set<string>();
