@@ -670,10 +670,26 @@ impl Adapter {
         Flow::Continue
     }
 
-    /// Opens the session's connection.
+    /// Opens the session's connection, and gives its job the editor
+    /// session's library list. A list the server refuses (`CPF2110`) is
+    /// reported, and the job keeps the profile's.
     fn open(&self, c: &Credentials) -> Result<(), Failure> {
         let b = (self.connect)(c)?;
         *lock(&self.session.backend) = Some(b);
+        if let Some(l) = &c.library_list {
+            let current = l
+                .current
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            if let Err(f) = self
+                .session
+                .with_backend(|b| b.set_library_list(current, &l.user))
+            {
+                self.out()
+                    .console(&format!("Library list not set: {}", f.message));
+            }
+        }
         Ok(())
     }
 

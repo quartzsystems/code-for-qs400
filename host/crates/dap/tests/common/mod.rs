@@ -150,6 +150,7 @@ pub struct Script {
     /// Keeps a `CALL` with no outcome planned waiting.
     pub call_keep: Vec<Sender<Result<CommandOutcome, Error>>>,
     pub resume_error: Option<Error>,
+    pub libl_error: Option<Error>,
 }
 
 #[derive(Clone, Default)]
@@ -212,6 +213,17 @@ impl RunningCommand for Running {
 impl DebugBackend for Mock {
     fn job(&mut self) -> Result<Option<JobId>, Error> {
         Ok(self.script().job.clone())
+    }
+    fn set_library_list(&mut self, current: Option<&str>, user: &[String]) -> Result<(), Error> {
+        self.note(format!(
+            "SetLibraryList {} [{}]",
+            current.unwrap_or("-"),
+            user.join(" ")
+        ));
+        match self.script().libl_error.take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
     fn start(&mut self, target: DebugTarget) -> Result<Receiver<DebugEvent>, Error> {
         self.note(match &target {

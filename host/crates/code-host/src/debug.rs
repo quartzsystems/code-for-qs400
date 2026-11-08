@@ -23,7 +23,9 @@ use qap_client::{
     Client, CommandOutcome, DebugEvent, Debugger, Error, Pending, Requests, Secret, Target,
 };
 
-use crate::session::{QAP_ASKED, TlsParams, trust_for};
+use qap_client::proto::ops::develop::SetLibraryList;
+
+use crate::session::{DevelopBackend, QAP_ASKED, TlsParams, trust_for};
 
 /// The version `Debug` needs.
 pub const QAP_DEBUG: u16 = 9;
@@ -40,6 +42,13 @@ impl DebugBackend for QapDebug {
             Err(Error::Unsupported { .. }) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+    fn set_library_list(&mut self, current: Option<&str>, user: &[String]) -> Result<(), Error> {
+        let request = SetLibraryList {
+            current: current.map(|c| c.trim().to_ascii_uppercase()),
+            user: user.iter().map(|l| l.trim().to_ascii_uppercase()).collect(),
+        };
+        DevelopBackend::set_library_list(&mut self.client, &request).map(|_| ())
     }
     fn start(&mut self, target: DebugTarget) -> Result<Receiver<DebugEvent>, Error> {
         Debugger::start(&mut self.client, target).map(|s| s.events)

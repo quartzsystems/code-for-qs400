@@ -37,7 +37,11 @@
     "onLanguage:qs400-dds",
     "onLanguage:qs400-sql",
     "onLanguage:qs400-cmd",
-    "onFileSystem:qs400spl"
+    "onFileSystem:qs400spl",
+    "onDebugResolve:qs400",
+    "onDebugInitialConfigurations",
+    "onDebugAdapterProtocolTracker:qs400",
+    "onFileSystem:qs400dbg"
   ],
   "contributes": {
     "viewsContainers": {
@@ -2161,6 +2165,152 @@
         "key": "ctrl+enter",
         "mac": "cmd+enter",
         "when": "editorTextFocus && editorLangId == qs400-sql"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "qs400-rpgle"
+      },
+      {
+        "language": "qs400-cl"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "qs400",
+        "label": "QS/400",
+        "languages": [
+          "qs400-rpgle",
+          "qs400-cl"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "connection": {
+                "type": "string",
+                "description": "The saved connection. Left out: the active connection."
+              },
+              "programs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "More programs (LIB/PGM) to put under debug, for breakpoints in programs this one calls. Each is tried as *PGM, then *SRVPGM."
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "call",
+                  "serviceEntry"
+                ],
+                "default": "call",
+                "enumDescriptions": [
+                  "Call the program in the debug session's own job.",
+                  "Stop the next job of the user that calls the program (a 5250 session, a batch job)."
+                ],
+                "description": "How the program is debugged."
+              },
+              "program": {
+                "type": "string",
+                "description": "The program, LIB/PGM (or PGM for *LIBL). Left out: the active member's or project file's program, or the Objects view's selection."
+              },
+              "parameters": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                },
+                "default": [],
+                "description": "Parameters for the CALL: a string is passed quoted, a number as typed."
+              },
+              "user": {
+                "type": "string",
+                "default": "*CURRENT",
+                "description": "Service entry: whose jobs stop, *CURRENT or a profile (another profile needs *SERVICE)."
+              }
+            }
+          },
+          "attach": {
+            "required": [
+              "job"
+            ],
+            "properties": {
+              "connection": {
+                "type": "string",
+                "description": "The saved connection. Left out: the active connection."
+              },
+              "programs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "More programs (LIB/PGM) to put under debug, for breakpoints in programs this one calls. Each is tried as *PGM, then *SRVPGM."
+              },
+              "job": {
+                "type": "string",
+                "pattern": "^d{6}/[^/]+/[^/]+$",
+                "description": "The job to attach to, nnnnnn/USER/NAME, as STRSRVJOB names it."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "qs400",
+            "request": "launch",
+            "name": "Call HLINV/ASSETS",
+            "connection": "QSHQ400",
+            "program": "HLINV/ASSETS",
+            "parameters": [],
+            "programs": []
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "QS/400: Call",
+            "description": "Call a program in the debug session's own job",
+            "body": {
+              "type": "qs400",
+              "request": "launch",
+              "name": "Call ${1:HLINV/ASSETS}",
+              "connection": "${2:QSHQ400}",
+              "program": "${1:HLINV/ASSETS}",
+              "parameters": [],
+              "programs": []
+            }
+          },
+          {
+            "label": "QS/400: Attach to job",
+            "description": "Attach to another job by its qualified name",
+            "body": {
+              "type": "qs400",
+              "request": "attach",
+              "name": "Attach to job",
+              "connection": "${1:QSHQ400}",
+              "job": "${2:123456/CWELLMAN/QPADEV0001}",
+              "programs": [
+                "${3:HLINV/ASSETS}"
+              ]
+            }
+          },
+          {
+            "label": "QS/400: Service entry",
+            "description": "Stop the next job of the user that calls a program",
+            "body": {
+              "type": "qs400",
+              "request": "launch",
+              "name": "Service entry",
+              "connection": "${1:QSHQ400}",
+              "mode": "serviceEntry",
+              "program": "${2:HLINV/ASSETS}",
+              "user": "*CURRENT"
+            }
+          }
+        ]
       }
     ]
   },

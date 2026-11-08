@@ -286,6 +286,38 @@ fn exception_and_program_end_stops() {
 }
 
 #[test]
+fn the_editor_sessions_library_list_goes_on_the_adapters_job_first() {
+    let mock = Mock::assets();
+    let mut c = Client::new(&mock);
+    let mut creds = common::credentials();
+    creds["libraryList"] = json!({ "current": "HLINVDEV", "user": ["HLINV", "QGPL"] });
+    launch_call(&mut c, json!({ "qs400": creds }));
+    assert_eq!(
+        &mock.calls()[..2],
+        ["SetLibraryList HLINVDEV [HLINV QGPL]", "Start Own"]
+    );
+    c.close();
+
+    // Refused: reported, and the session goes on with the profile's.
+    let mock = Mock::assets();
+    mock.script().libl_error = Some(refusal(
+        Status::Error,
+        "CPF2110",
+        "Library NOSUCH not found.",
+    ));
+    let mut c = Client::new(&mock);
+    let mut creds = common::credentials();
+    creds["libraryList"] = json!({ "user": ["NOSUCH"] });
+    let r = launch_call(&mut c, json!({ "qs400": creds }));
+    assert_eq!(r["success"], true);
+    assert!(
+        c.console(Duration::from_millis(50))
+            .contains(&"Library list not set: CPF2110: Library NOSUCH not found.".to_owned())
+    );
+    c.close();
+}
+
+#[test]
 fn pause_and_the_unknown_are_refused() {
     let mut c = Client::new(&Mock::assets());
     let r = c.request("goto", json!({}));

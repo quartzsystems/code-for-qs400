@@ -50,6 +50,10 @@ import { SqlHistory } from './sql/history';
 import { ResultPanel } from './sql/results';
 import { SqlRunner } from './sql/run';
 import { SqlSessions } from './sql/session';
+import { Debugging } from './debug/debugging';
+import { programOfDocument, programOfEntry } from './debug/programs';
+import { memberUri } from './members/uri';
+import type { ObjectsNode } from './views/objects';
 
 /** What `activate` returns; used by the integration tests. */
 export interface ExtensionApi {
@@ -89,6 +93,8 @@ export interface ExtensionApi {
   readonly puller: Puller;
   readonly deployer: Deployer;
   readonly projectView: ProjectView;
+  readonly debugging: Debugging;
+  readonly objectsView: vscode.TreeView<ObjectsNode>;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -109,6 +115,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const connections = new ConnectionsProvider(store, sessions, libraryList);
   const statusBar = new SessionStatusBar(store, sessions);
   const objects = new ObjectsProvider(store, sessions, libraryList);
+  const objectsView = vscode.window.createTreeView('code-for-qs400.objects', { treeDataProvider: objects });
   const members = new MemberFsProvider(sessions, store, output);
   const ifs = new IfsProvider(store, sessions, context.workspaceState);
   const ifsDrop = new IfsDragAndDrop(ifs);
@@ -186,6 +193,29 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const viewer = new SpoolViewer(store, sessions, spool);
   const messages = new MessagesProvider(store, sessions, context.workspaceState, host);
   const messagesView = vscode.window.createTreeView('code-for-qs400.messages', { treeDataProvider: messages, showCollapseAll: true });
+  const debugging = new Debugging({
+    store,
+    sessions,
+    binary: () => host.resolveBinary(),
+    log: (line) => output.warn(line),
+    programOf: async (uri) => (await programOfDocument(uri, sessions, projects))?.program,
+    selectedProgram: () => {
+      const n = objectsView.selection[0];
+      return n?.kind === 'object' ? programOfEntry(n.entry) : undefined;
+    },
+    source: {
+      properties: (connection, library, object, type) => sessions.call(connection, 'object.properties', { name: connection, library, object, type }),
+      localMember: async (connection, library, file, member) => {
+        const deployed = deployer.localFor(connection, { kind: 'member', library, file, member });
+        if (deployed) {
+          return deployed;
+        }
+        const found = await workspaceIncludes.find(memberUri(connection, library, file, member, '').toString(), { library, file, member }, connection);
+        return found ? vscode.Uri.parse(found.uri) : undefined;
+      },
+      localPath: async (connection, path) => deployer.localFor(connection, { kind: 'path', path }),
+    },
+  });
 
   context.subscriptions.push(
     output,
@@ -216,7 +246,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     projects.onDidChange(hasProject),
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
-    vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
+    objectsView,
     vscode.workspace.registerFileSystemProvider(MEMBER_SCHEME, members, { isCaseSensitive: false }),
     vscode.workspace.registerFileSystemProvider(IFS_SCHEME, ifsFs, { isCaseSensitive: true }),
     vscode.commands.registerCommand('code-for-qs400.about', () => about(host)),
@@ -257,6 +287,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     messagesView,
     messages.attach(messagesView),
     ...registerMessagesViewCommands(messages, sessions),
+    debugging,
+    ...debugging.register(),
     // A session signed on again: includes it could not read may be there now.
     sessions.onDidChange((st) => {
       if (st?.state === 'connected') {
@@ -275,7 +307,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer, projectView };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer, projectView, debugging, objectsView };
 }
 
 export function deactivate(): void {

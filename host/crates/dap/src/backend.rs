@@ -28,6 +28,10 @@ pub trait DebugBackend: Send {
     /// `JobInfo`: the connection's own job, the one `Own` debugs. `None`
     /// when the server has no `JobInfo`.
     fn job(&mut self) -> Result<Option<JobId>, Error>;
+    /// `Develop`'s `SetLibraryList` (what `libl.set` sends): the editor
+    /// session's list on the adapter's job, so its `CALL` and `*LIBL`
+    /// find what the editor's would.
+    fn set_library_list(&mut self, current: Option<&str>, user: &[String]) -> Result<(), Error>;
     /// `Start`, and the receiver its events arrive on.
     fn start(&mut self, target: DebugTarget) -> Result<Receiver<DebugEvent>, Error>;
     /// `End`.
@@ -81,6 +85,19 @@ pub struct Credentials {
     /// PEM file of certificates to trust beyond the platform's store.
     #[serde(default)]
     pub ca_file: Option<String>,
+    /// The editor session's library list, applied to the adapter's job.
+    #[serde(default)]
+    pub library_list: Option<LibraryList>,
+}
+
+/// A library list as `libl.get` answers it: the current library and the
+/// user part.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct LibraryList {
+    #[serde(default)]
+    pub current: Option<String>,
+    #[serde(default)]
+    pub user: Vec<String>,
 }
 
 /// Opens a connection, signs on and checks the version: what `serve`
