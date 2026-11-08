@@ -37,6 +37,7 @@ import { ProjectDeps, Puller } from './projects/pull';
 import { ProjectPrompts } from './projects/ui';
 import { registerDeployCommands, registerPullCommands } from './projects/commands';
 import { Deployer } from './projects/deploy';
+import { GitApiChanges } from './projects/git';
 import { sameName } from './connections/config';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -125,9 +126,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ui: new ProjectPrompts(),
     append: (line) => runner.output.appendLine(line),
     showOutput: () => runner.output.show(true),
+    onProgress: host.onDidProgress,
   };
   const puller = new Puller(projectDeps);
-  const deployer = new Deployer(projectDeps, puller, undefined, async (connection, library, file, member) => {
+  const deployer = new Deployer(projectDeps, puller, new GitApiChanges(), async (connection, library, file, member) => {
     // A member written under an open editor: read it again (and lock it again), so its next save diffs the new lines.
     for (const d of vscode.workspace.textDocuments) {
       const m = d.uri.scheme === MEMBER_SCHEME && !isReadonlyUri(d.uri) ? parseMemberUri(d.uri) : undefined;

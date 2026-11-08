@@ -10,6 +10,7 @@ import { HostRpcError } from '../src/host/client';
 import { DeployErrorCodes, DeployMemberParams } from '../src/host/protocol';
 import { projectText } from '../src/projects/config';
 import { Deployer, GitChanges, UsableProject } from '../src/projects/deploy';
+import { GitApi, GitApiChanges } from '../src/projects/git';
 import { Puller } from '../src/projects/pull';
 import { parseState } from '../src/projects/state';
 import { fakeLibrary, libraryAnswer, projectRig } from './pull.test';
@@ -232,5 +233,123 @@ suite('Projects: deploy to a library', () => {
 
   test('the generator’s project file is read back as the project deployed', async () => {
     assert.ok(projectText({ connection: 'PRJ', target: { kind: 'library', library: 'HLINVDEV' } }).includes('"library": "HLINVDEV"'));
+  });
+});
+
+suite('Projects: deploy to an IFS path, and git-changed', () => {
+  let output: vscode.LogOutputChannel;
+  suiteSetup(() => {
+    output = vscode.window.createOutputChannel('deploy ifs test', { log: true });
+  });
+  suiteTeardown(() => output.dispose());
+
+  /** A system's stream files by path, each with its change counter. */
+  function ifsSystem() {
+    const files = new Map<string, { change: number; from: string; ccsid?: number }>();
+    let counter = 100;
+    const calls: Record<string, unknown>[] = [];
+    const answer = (method: string, p: Record<string, unknown>): unknown => {
+      if (method === 'ifs.info') {
+        const f = files.get(String(p.path));
+        if (!f) {
+          throw new HostRpcError(-32010, 'CPFA0A9: Object not found.', { status: 'NotFound', messageId: 'CPFA0A9' });
+        }
+        return { name: '', kind: 'file', size: 1, modified: 0, owner: '', ccsid: 1208, change: String(f.change) };
+      }
+      if (method === 'deploy.path') {
+        calls.push(p);
+        const have = files.get(String(p.path));
+        if (have && p.expect !== undefined && String(have.change) !== p.expect) {
+          throw new HostRpcError(DeployErrorCodes.Conflict, 'changed on the system', { change: String(have.change) });
+        }
+        files.set(String(p.path), { change: ++counter, from: String(p.from), ccsid: p.ccsid as number });
+        return { outcome: have ? 'written' : 'created', size: 1, change: String(counter) };
+      }
+      return null;
+    };
+    return { files, calls, answer, bump: (path: string) => files.set(path, { ...(files.get(path) as { change: number; from: string }), change: ++counter }) };
+  }
+
+  test('each file under the target with the project’s CCSID; a change on the system since is a conflict', async () => {
+    const sys = ifsSystem();
+    const rig = await projectRig(output, sys.answer);
+    try {
+      await rig.projects.create(rig.folder, { connection: 'PRJ', target: { kind: 'path', path: '/home/CWELLMAN/app' }, ifsCcsid: 819 });
+      await rig.write('src/a.sql', 'SELECT 1 FROM HLINV.ASSETS;\n');
+      await rig.write('b.txt', 'b\n');
+      await rig.write('README.md', 'ignored\n');
+      const project = (await rig.projects.at(rig.folder)) as UsableProject;
+      const deployer = new Deployer(rig.deps, new Puller(rig.deps));
+      const r = await deployer.deploy(project, 'all');
+      assert.deepEqual(r?.deployed, ['b.txt', 'src/a.sql']);
+      assert.deepEqual(
+        sys.calls.map((c) => [c.path, c.ccsid, c.expect, typeof c.transfer]),
+        [
+          ['/home/CWELLMAN/app/b.txt', 819, undefined, 'string'],
+          ['/home/CWELLMAN/app/src/a.sql', 819, undefined, 'string'],
+        ],
+      );
+      assert.equal(String(sys.calls[1].from).toLowerCase(), nodePath.join(rig.dir, 'src', 'a.sql').toLowerCase());
+      const state = parseState(await rig.read('.qs400/state.json'));
+      assert.deepEqual(state.files['src/a.sql'].at, '/home/CWELLMAN/app/src/a.sql');
+      assert.ok(rig.lines.includes('Created  src/a.sql → /home/CWELLMAN/app/src/a.sql'));
+
+      sys.bump('/home/CWELLMAN/app/src/a.sql');
+      await rig.write('src/a.sql', 'SELECT 2 FROM HLINV.ASSETS;\n');
+      sys.calls.length = 0;
+      rig.ui.conflicts = ['skip'];
+      const c = await deployer.deploy(project, 'changed');
+      assert.deepEqual(c?.conflicts, ['src/a.sql']);
+      assert.equal(sys.calls.length, 0);
+      rig.ui.conflicts = ['overwrite'];
+      const o = await deployer.deploy(project, 'changed');
+      assert.deepEqual(o?.deployed, ['src/a.sql']);
+      assert.equal(sys.calls[0].expect, undefined);
+      assert.equal(deployer.localFor('prj', { kind: 'path', path: '/home/CWELLMAN/app/src/a.sql' })?.fsPath, vscode.Uri.file(nodePath.join(rig.dir, 'src', 'a.sql')).fsPath);
+    } finally {
+      await rig.dispose();
+    }
+  });
+
+  test('git-changed: the files git reports, through the git API; none after a stash; no repository is Deploy changed', async () => {
+    const sys = new FakeSystem();
+    const rig = await projectRig(output, sys.answer);
+    try {
+      const changes: { uri: vscode.Uri }[] = [];
+      let repo = true;
+      const api: GitApi = {
+        get repositories() {
+          return repo ? [{ rootUri: rig.folder, state: { workingTreeChanges: changes, indexChanges: [], untrackedChanges: [] } }] : [];
+        },
+        getRepository: () => null,
+      };
+      const puller = new Puller(rig.deps);
+      await puller.pullSourceFiles('PRJ', 'HLINV', ['QRPGLESRC', 'QCLSRC'], rig.folder);
+      const project = (await rig.projects.at(rig.folder)) as UsableProject;
+      const deployer = new Deployer(rig.deps, puller, new GitApiChanges(async () => api));
+      await deployer.deploy(project, 'all');
+      sys.deploys.length = 0;
+
+      await rig.write('QCLSRC/BUILD.clle', 'PGM\n/* changed */\nENDPGM\n');
+      await rig.write('QRPGLESRC/ASSETS.rpgle', '**free\n// changed too, but git is told only of BUILD\n');
+      changes.push({ uri: vscode.Uri.file(nodePath.join(rig.dir, 'QCLSRC', 'BUILD.clle')) }, { uri: vscode.Uri.file(nodePath.join(rig.dir, '.qs400', 'state.json')) });
+      const g = await deployer.deploy(project, 'git');
+      assert.deepEqual(g?.deployed, ['QCLSRC/BUILD.clle']);
+      assert.deepEqual(sys.deploys.map((d) => d.member), ['BUILD']);
+
+      changes.length = 0;
+      rig.lines.length = 0;
+      const stashed = await deployer.deploy(project, 'git');
+      assert.deepEqual(stashed?.deployed, []);
+      assert.deepEqual(rig.lines.slice(1), ['Nothing to deploy', '0 deployed, 0 skipped, 0 conflicts']);
+
+      repo = false;
+      rig.ui.asked.length = 0;
+      const fallback = await deployer.deploy(project, 'git');
+      assert.ok(rig.ui.asked.some((a) => a.includes('is not in a git repository')));
+      assert.deepEqual(fallback?.deployed, ['QRPGLESRC/ASSETS.rpgle'], 'what changed since the last deploy');
+    } finally {
+      await rig.dispose();
+    }
   });
 });

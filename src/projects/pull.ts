@@ -9,7 +9,7 @@ import * as vscode from 'vscode';
 import { errorText } from '../connections/prompts';
 import { SessionManager } from '../connections/sessions';
 import { ConnectionStore } from '../connections/store';
-import { IfsEntry, MemberEntry } from '../host/protocol';
+import { IfsEntry, IfsProgress, MemberEntry } from '../host/protocol';
 import { joinPath } from '../ifs/paths';
 import { isBinaryPath } from '../ifs/types';
 import { qualifiedMember } from '../members/uri';
@@ -38,6 +38,8 @@ export interface ProjectDeps {
   append(line: string): void;
   /** Shows the output channel. */
   showOutput?(): void;
+  /** `ifs.progress` of the host's transfers, for a deploy's uploads. */
+  onProgress?: vscode.Event<IfsProgress>;
 }
 
 /** A member to pull: its source file, and its `member.list` entry. */

@@ -5,12 +5,13 @@
 import * as fs from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import * as vscode from 'vscode';
-import { errorText } from '../connections/prompts';
+import { errorText, serverMessage } from '../connections/prompts';
 import { HostRpcError } from '../host/client';
-import { DeployErrorCodes } from '../host/protocol';
+import { DeployErrorCodes, IfsErrorCodes } from '../host/protocol';
 import { qualifiedMember } from '../members/uri';
 import { ProjectConfig, textFor } from './config';
-import { LocalMember, clashes, contentHash, isMember, memberKey, memberLines, memberOf } from './layout';
+import { formatSize } from '../ifs/paths';
+import { LocalMember, clashes, contentHash, isMember, memberKey, memberLines, memberOf, remotePathOf } from './layout';
 import { ProjectDeps, Puller } from './pull';
 import { FileRecord, ProjectState, baseline, remoteChanged } from './state';
 import { Project, relativeTo } from './store';
@@ -85,6 +86,7 @@ export class Deployer {
   /** The files last found in conflict, by project folder, for the Project view. */
   readonly conflicts = new Map<string, Set<string>>();
   private readonly finished = new vscode.EventEmitter<{ project: UsableProject; result: DeployResult }>();
+  private transfers = 0;
   /** Fires after each deploy. */
   readonly onDidDeploy = this.finished.event;
 
@@ -446,15 +448,106 @@ export class Deployer {
     return choices;
   }
 
-  /** The stream files of `candidates` under `target`. */
+  /**
+   * The stream files of `candidates` under `target`: `ifs.info` of each
+   * before anything is written, then `deploy.path` (the parent made when
+   * missing, `ifs.upload` replace with `encoding.ifsCcsid`), with the
+   * upload's progress and Cancel as Phase 3's.
+   */
   private async toPath(p: UsableProject, connection: string, target: string, candidates: Candidate[], state: ProjectState, result: DeployResult): Promise<void> {
-    void p;
-    void connection;
-    void target;
-    void state;
+    const items: { c: Candidate; at: string; label: string; now: string | undefined }[] = [];
     for (const c of candidates) {
-      result.skipped.push(c.rel);
+      const path = remotePathOf(target, c.rel);
+      let now: string | undefined;
+      try {
+        now = (await this.deps.sessions.call(connection, 'ifs.info', { name: connection, path })).change;
+      } catch (err) {
+        if (serverMessage(err)?.status !== 'NotFound') {
+          result.failed.push(c.rel);
+          this.deps.append(`Failed   ${c.rel} → ${path}: ${errorText(err, connection)}`);
+          continue;
+        }
+      }
+      items.push({ c, at: path, label: `${c.rel} (${path})`, now });
     }
+    const choices = await this.resolveConflicts(p, items, result, state);
+    const conflictSet = this.conflictSet(p);
+    const total = items.reduce((n, x) => n + x.c.bytes.byteLength, 0);
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Deploy to ${target}`, cancellable: true },
+      async (progress, token) => {
+        let before = 0;
+        let shown = 0;
+        let current: string | undefined;
+        const report = (done: number, file: string) => {
+          const pct = total > 0 ? Math.min(100, ((before + done) * 100) / total) : 100;
+          progress.report({ increment: pct - shown, message: `${file} · ${formatSize(before + done)} of ${formatSize(total)}` });
+          shown = pct;
+        };
+        const subs = [
+          this.deps.onProgress?.((e) => {
+            if (e.transfer === current) {
+              report(e.done, e.path);
+            }
+          }),
+          token.onCancellationRequested(() => {
+            if (current) {
+              void this.deps.sessions.call(connection, 'ifs.cancel', { name: connection, transfer: current }).catch(() => undefined);
+            }
+          }),
+        ];
+        try {
+          for (const x of items) {
+            const choice = choices.get(x.c.rel);
+            if (choice === 'skip' || choice === 'pull') {
+              continue;
+            }
+            if (token.isCancellationRequested) {
+              result.skipped.push(x.c.rel);
+              continue;
+            }
+            const recorded = baseline(x.c.record, x.at);
+            const expect = choice === 'overwrite' || recorded === undefined ? undefined : String(recorded);
+            current = `d${process.pid.toString(36)}-${Date.now().toString(36)}-${++this.transfers}`;
+            report(0, x.at);
+            try {
+              const r = await this.deps.sessions.call(connection, 'deploy.path', {
+                name: connection,
+                from: x.c.file,
+                path: x.at,
+                ccsid: p.config.ifsCcsid,
+                expect,
+                transfer: current,
+              });
+              state.files[x.c.rel] = { hash: x.c.hash, remote: r.change ?? recorded ?? '', at: x.at };
+              conflictSet.delete(x.c.rel);
+              this.remember(connection, { kind: 'path', path: x.at }, vscode.Uri.file(x.c.file));
+              result.deployed.push(x.c.rel);
+              this.deps.append(`${r.outcome === 'created' ? 'Created ' : 'Deployed'} ${x.c.rel} → ${x.at}`);
+            } catch (err) {
+              if (isConflict(err)) {
+                result.conflicts.push(x.c.rel);
+                conflictSet.add(x.c.rel);
+                this.deps.append(`Conflict ${x.c.rel}: ${x.at} changed on the system; not written`);
+              } else if (err instanceof HostRpcError && err.code === IfsErrorCodes.Cancelled) {
+                result.skipped.push(x.c.rel);
+                this.deps.append(`Cancelled ${x.c.rel} → ${x.at}: the system has part of it; deploy again to replace it`);
+              } else {
+                result.failed.push(x.c.rel);
+                this.deps.append(`Failed   ${x.c.rel} → ${x.at}: ${errorText(err, connection)}`);
+              }
+            }
+            before += x.c.bytes.byteLength;
+          }
+        } finally {
+          current = undefined;
+          for (const s of subs) {
+            s?.dispose();
+          }
+        }
+      },
+    );
+    this.deps.projects.touch();
   }
 
   dispose(): void {

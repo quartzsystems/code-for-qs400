@@ -1568,3 +1568,77 @@ fn a_running_transfers_id_cannot_be_used_twice_and_unknown_cancels_are_null() {
     tx.send(()).unwrap();
     assert_eq!(first.join().unwrap().unwrap(), json!({"size":1000}));
 }
+
+// deploy.path: the existing ifs calls in sequence.
+
+#[test]
+fn deploy_path_of_a_new_file_makes_its_directory_and_uploads_replace_with_the_ccsid() {
+    let h = Host::new();
+    h.script().dir(HOME);
+    let from = scratch("deploy-new").join("a.sql");
+    std::fs::write(&from, b"SELECT 1 FROM HLINV.ASSETS;\n").unwrap();
+    let path = format!("{HOME}/app/src/a.sql");
+    let r = h
+        .call(
+            "deploy.path",
+            p(json!({"from":from,"path":path,"ccsid":1208,"transfer":"d1"})),
+        )
+        .unwrap();
+    let node = h.script().files[&path].clone();
+    assert_eq!(node.data, b"SELECT 1 FROM HLINV.ASSETS;\n".to_vec());
+    assert_eq!(node.ccsid, 1208);
+    assert_eq!(
+        r,
+        json!({"outcome":"created","size":28,"change":node.change.to_string()})
+    );
+    assert_eq!(
+        h.asked(),
+        vec![
+            format!("Stat {path}"),
+            format!("Stat {HOME}/app/src"),
+            format!("CreateDirectory {HOME}/app/src parents=true"),
+            format!("WriteFile {path} Replace 0 ccsid=1208 bytes=28 data_ccsid=None"),
+            format!("Stat {path}"),
+        ]
+    );
+    assert_eq!(h.notes("ifs.progress")[0]["transfer"], json!("d1"));
+}
+
+#[test]
+fn deploy_path_over_a_file_changed_since_is_a_conflict_and_nothing_is_written() {
+    let h = Host::new();
+    let path = format!("{HOME}/a.sql");
+    h.script().file(
+        &path, 1208, "old
+",
+    );
+    let change = h.script().files[&path].change;
+    let from = scratch("deploy-conflict").join("a.sql");
+    std::fs::write(
+        &from, b"new
+",
+    )
+    .unwrap();
+    let e = h
+        .call(
+            "deploy.path",
+            p(json!({"from":from,"path":path,"expect":(change - 1).to_string()})),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, code_host::deploy::codes::CONFLICT);
+    assert_eq!(e.data, Some(json!({"change":change.to_string()})));
+    assert_eq!(h.asked(), vec![format!("Stat {path}")]);
+    let r = h
+        .call(
+            "deploy.path",
+            p(json!({"from":from,"path":path,"expect":change.to_string()})),
+        )
+        .unwrap();
+    assert_eq!(r["outcome"], json!("written"));
+    assert_eq!(
+        h.script().files[&path].data,
+        b"new
+"
+        .to_vec()
+    );
+}
