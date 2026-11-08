@@ -557,6 +557,22 @@ export interface SqlCursorParams {
   cursor: number;
 }
 
+export interface SqlExportParams {
+  name: string;
+  cursor: number;
+  /** A local file, written whole: CSV, UTF-8 with no byte order mark. */
+  to: string;
+  format?: 'csv';
+  /** The ID `sql.progress` and `sql.cancel` use. */
+  export?: string;
+}
+
+/** `sql.progress`: rows written so far, at most every 250 ms. */
+export interface SqlProgress {
+  export: string;
+  rows: number;
+}
+
 export interface SqlCancelParams {
   name?: string;
   /** A run's or an export's ID. */
@@ -583,6 +599,8 @@ export interface SqlErrorData {
 
 /** Error codes of `sql.*` (host/crates/code-host/src/sql/mod.rs). */
 export const SqlErrorCodes = {
+  /** A run or an export was cancelled. `data` is `{ id, rows }`. */
+  Cancelled: -32030,
   /** No result has that cursor, or its rows are no longer held. */
   NoResult: -32031,
 } as const;
@@ -642,6 +660,8 @@ export interface HostMethods {
   /** Waits in the lane: no request timeout. */
   'sql.rollback': { params: NameParams; result: SqlOptions };
   'sql.cancel': { params: SqlCancelParams; result: null };
+  /** Answered when the export ends: no request timeout. */
+  'sql.export': { params: SqlExportParams; result: { rows: number } };
 }
 
 /** Notifications the host sends, by method name. */
@@ -651,6 +671,7 @@ export interface HostNotifications {
   'ifs.progress': IfsProgress;
   'ifs.transferEnded': IfsTransferEnded;
   'sql.lost': SqlLost;
+  'sql.progress': SqlProgress;
 }
 
 export type MethodName = keyof HostMethods;

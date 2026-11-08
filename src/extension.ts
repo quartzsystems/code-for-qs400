@@ -30,6 +30,7 @@ import { LanguageServers } from './languages/client';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
 import { SQL_STATEMENTS, type SqlStatementRange } from './languages/protocol';
+import { Exporter } from './sql/export';
 import { ResultPanel } from './sql/results';
 import { SqlRunner } from './sql/run';
 import { SqlSessions } from './sql/session';
@@ -57,6 +58,7 @@ export interface ExtensionApi {
   readonly sql: SqlSessions;
   readonly sqlRunner: SqlRunner;
   readonly results: ResultPanel;
+  readonly exporter: Exporter;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -111,6 +113,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     languages.request<SqlStatementRange[] | null>('qs400-sql', SQL_STATEMENTS, { textDocument: { uri: doc.uri.toString() } }),
   );
   const results = new ResultPanel(sessions, sqlRunner, sql);
+  const exporter = new Exporter(host, sessions, results);
 
   context.subscriptions.push(
     output,
@@ -170,7 +173,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter };
 }
 
 export function deactivate(): void {

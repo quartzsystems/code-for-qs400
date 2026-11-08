@@ -8,9 +8,10 @@ import { SessionManager } from '../src/connections/sessions';
 import { ConnectionStore } from '../src/connections/store';
 import type { ExtensionApi } from '../src/extension';
 import { HostClient, HostRpcError } from '../src/host/client';
-import { SessionErrorCodes, SqlRunResult } from '../src/host/protocol';
+import { SessionErrorCodes, SqlErrorCodes, SqlRunResult } from '../src/host/protocol';
 import { SQL_STATEMENTS, SqlStatementRange } from '../src/languages/protocol';
 import { commitLabel, outcomeText, rowCount, statusText, typeLabel } from '../src/sql/format';
+import { Exporter, exportName } from '../src/sql/export';
 import { ResultPanel } from '../src/sql/results';
 import { SqlRunner } from '../src/sql/run';
 import { SqlSessions } from '../src/sql/session';
@@ -309,6 +310,41 @@ suite('SQL: results', () => {
       sqlstate: '42601',
       sqlcode: -104,
     });
+  });
+
+  test('Export CSV: the cursor to a file through sql.export; past the rows shown the tab loads no more', async () => {
+    assert.equal(exportName('SELECT * FROM HLINV.ASSETS WHERE 1 = 1'), 'ASSETS.csv');
+    assert.equal(exportName('select * from hlinv/assets'), 'ASSETS.csv');
+    assert.equal(exportName('VALUES 1'), 'result.csv');
+    const exporter = new Exporter(host as unknown as HostClient, (panel as unknown as { sessions: SessionManager }).sessions, panel);
+    const before = host.answer;
+    host.answer = (method, params) => (method === 'sql.export' ? { rows: 1203 } : before(method, params));
+    await runner.run('QSHQ400', 'SELECT * FROM HLINV.ASSETS');
+    const t = panel.activeTab!;
+    assert.equal(panel.page(t).exportable, true);
+    assert.equal(await exporter.export(t, panel, '/tmp/assets.csv'), 1203);
+    const sent = host.sent.find((s) => s.method === 'sql.export')!.params;
+    assert.deepEqual({ ...sent, export: undefined }, { name: 'QSHQ400', cursor: t.cursor, to: '/tmp/assets.csv', format: 'csv', export: undefined });
+    const p = panel.page(t);
+    assert.equal(p.more, false);
+    assert.equal(p.summary, '500 rows');
+    assert.match(p.note ?? '', /1203 rows exported to assets\.csv; the 500 shown are kept/);
+  });
+
+  test('a cancelled export: no file, and no more rows', async () => {
+    const exporter = new Exporter(host as unknown as HostClient, (panel as unknown as { sessions: SessionManager }).sessions, panel);
+    const before = host.answer;
+    host.answer = (method, params) => {
+      if (method === 'sql.export') {
+        throw new HostRpcError(SqlErrorCodes.Cancelled, 'x1 cancelled', { id: 'x1', rows: 501 });
+      }
+      return before(method, params);
+    };
+    await runner.run('QSHQ400', 'SELECT * FROM HLINV.ASSETS');
+    const t = panel.activeTab!;
+    assert.equal(await exporter.export(t, panel, '/tmp/a.csv'), undefined);
+    assert.equal(panel.page(t).more, false);
+    assert.match(panel.page(t).note ?? '', /cancelled/);
   });
 
   test('a lost SQL connection stops Load more on its tabs', async () => {

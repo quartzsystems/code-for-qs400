@@ -97,6 +97,7 @@ export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>([
   'sql.commit',
   'sql.rollback',
   'sql.options.set',
+  'sql.export',
 ]);
 const SHUTDOWN_GRACE_MS = 2_000;
 
@@ -122,6 +123,7 @@ export class HostClient implements vscode.Disposable {
   private readonly progressEmitter = new vscode.EventEmitter<HostNotifications['ifs.progress']>();
   private readonly transferEmitter = new vscode.EventEmitter<HostNotifications['ifs.transferEnded']>();
   private readonly sqlLostEmitter = new vscode.EventEmitter<HostNotifications['sql.lost']>();
+  private readonly sqlProgressEmitter = new vscode.EventEmitter<HostNotifications['sql.progress']>();
 
   /** Fires on every state change. */
   readonly onDidChangeState = this.stateEmitter.event;
@@ -135,6 +137,8 @@ export class HostClient implements vscode.Disposable {
   readonly onDidEndTransfer = this.transferEmitter.event;
   /** Fires for each `sql.lost` notification. */
   readonly onDidLoseSql = this.sqlLostEmitter.event;
+  /** Fires for each `sql.progress` notification. */
+  readonly onDidExportProgress = this.sqlProgressEmitter.event;
 
   constructor(
     private readonly extensionPath: string,
@@ -232,6 +236,7 @@ export class HostClient implements vscode.Disposable {
     this.progressEmitter.dispose();
     this.transferEmitter.dispose();
     this.sqlLostEmitter.dispose();
+    this.sqlProgressEmitter.dispose();
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -342,6 +347,10 @@ export class HostClient implements vscode.Disposable {
     }
     if (method === 'sql.lost') {
       this.sqlLostEmitter.fire(params as HostNotifications['sql.lost']);
+      return;
+    }
+    if (method === 'sql.progress') {
+      this.sqlProgressEmitter.fire(params as HostNotifications['sql.progress']);
       return;
     }
     this.output.debug(`unhandled notification ${method}`);

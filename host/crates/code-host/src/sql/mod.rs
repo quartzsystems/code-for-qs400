@@ -26,12 +26,15 @@
 //!   run's `sql.cancel`.
 //! - Values become JSON and CSV in [`values`] only; CSV is [`csv`].
 
+pub mod csv;
 pub mod values;
 
 use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
+use std::io::BufWriter;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use host_rpc::{Context, Outbound, Registry, Responder, RpcError};
 use qap_client::proto::ops::sql::{
@@ -48,6 +51,8 @@ use crate::{LogLevel, log};
 
 /// JSON-RPC error codes of `sql.*`.
 pub mod codes {
+    /// A run or an export was cancelled. `data` is `{ id, rows }`.
+    pub const CANCELLED: i64 = -32030;
     /// No result has that `cursor`, or its rows are no longer held.
     pub const NO_RESULT: i64 = -32031;
 }
@@ -57,6 +62,9 @@ pub const PAGE: u32 = 500;
 
 /// How often a wait looks for a cancel.
 const CANCEL_EVERY: Duration = Duration::from_millis(50);
+
+/// The shortest time between two `sql.progress` of one export.
+pub const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 
 // What the host needs of qap-client, as objects.
 
@@ -366,6 +374,26 @@ pub struct CloseParams {
     pub cursor: u64,
 }
 
+/// Params of `sql.export`.
+#[derive(Debug, Deserialize)]
+pub struct ExportParams {
+    pub name: String,
+    pub cursor: u64,
+    pub to: String,
+    #[serde(default)]
+    pub format: Option<String>,
+    /// The ID `sql.progress` and `sql.cancel` use.
+    #[serde(default)]
+    pub export: Option<String>,
+}
+
+/// `sql.progress`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProgressNote {
+    pub export: String,
+    pub rows: u64,
+}
+
 /// Params of `sql.cancel`: a run's or an export's ID.
 #[derive(Debug, Deserialize)]
 pub struct CancelParams {
@@ -409,8 +437,10 @@ struct ResultSet {
     statement: Option<u32>,
     /// QAP's cursor, until its end.
     cursor: Option<u32>,
-    /// The rows sent so far.
+    /// The rows sent so far, for an export.
     rows: Vec<Vec<SqlValue>>,
+    /// Rows an export streamed past `rows`, which are no longer held.
+    exported: Option<(u64, String)>,
 }
 
 /// Every session's SQL state.
@@ -510,6 +540,12 @@ pub fn sql_error(e: &Error) -> RpcError {
         }
     }
     r
+}
+
+fn cancelled(id: &str, rows: u64) -> RpcError {
+    let mut e = RpcError::new(codes::CANCELLED, format!("{id} cancelled"));
+    e.data = Some(json!({ "id": id, "rows": rows }));
+    e
 }
 
 fn no_result(cursor: u64) -> RpcError {
@@ -837,6 +873,7 @@ impl Sql {
             statement: Some(statement),
             cursor: Some(cursor),
             rows: Vec::new(),
+            exported: None,
         };
         let page = match self.fetch_page(&p.name, &st, generation, cursor, max, Some(cancel)) {
             Ok(f) => f,
@@ -924,6 +961,96 @@ impl Sql {
         }
         Ok(Sql::options_dto(&g))
     }
+
+    /// `sql.export`: the rows sent so far, then the rest of the cursor in
+    /// pages, to a CSV file. Cancelled, or failing, the file is removed.
+    pub fn export(&self, p: &ExportParams, id: &str, cancel: &AtomicBool) -> Result<u64, RpcError> {
+        if let Some(f) = p.format.as_deref()
+            && !f.eq_ignore_ascii_case("csv")
+        {
+            return Err(RpcError::invalid_params(format!("format {f}: only csv")));
+        }
+        if p.to.trim().is_empty() {
+            return Err(RpcError::invalid_params("to is empty"));
+        }
+        let rs = self.result(p.cursor)?;
+        let mut r = lock(&rs);
+        if let Some((n, path)) = &r.exported {
+            let mut e = RpcError::new(
+                codes::NO_RESULT,
+                format!(
+                    "the rows past the first {} were exported to {path} and are no longer held; run the statement again",
+                    r.rows.len()
+                ),
+            );
+            e.data = Some(json!({ "exported": n, "to": path }));
+            return Err(e);
+        }
+        let local = |e: std::io::Error| {
+            RpcError::new(crate::session::codes::LOCAL, format!("{}: {e}", p.to))
+        };
+        let file = File::create(&p.to).map_err(local)?;
+        let out = (|| {
+            let mut w = csv::Writer::new(BufWriter::new(file), &r.columns).map_err(local)?;
+            let mut rows = 0u64;
+            for row in &r.rows {
+                w.row(row).map_err(local)?;
+                rows += 1;
+            }
+            let held = rows;
+            let mut last = Instant::now();
+            let note = |rows: u64| {
+                let _ = self.outbound().notify(
+                    "sql.progress",
+                    &ProgressNote {
+                        export: id.to_owned(),
+                        rows,
+                    },
+                );
+            };
+            note(rows);
+            if let Some(cursor) = r.cursor {
+                let st = self.state(&r.name);
+                let name = r.name.clone();
+                loop {
+                    if cancel.load(Ordering::SeqCst) {
+                        self.finish(&st, &mut r);
+                        return Err(cancelled(id, rows));
+                    }
+                    let page =
+                        self.fetch_page(&name, &st, r.generation, cursor, PAGE, Some(cancel))?;
+                    for row in &page.fetched.rows {
+                        w.row(row).map_err(local)?;
+                    }
+                    rows += page.fetched.rows.len() as u64;
+                    if last.elapsed() >= PROGRESS_EVERY {
+                        note(rows);
+                        last = Instant::now();
+                    }
+                    if page.cancelled {
+                        r.cursor = None;
+                        self.finish(&st, &mut r);
+                        return Err(cancelled(id, rows));
+                    }
+                    if page.fetched.end {
+                        self.finish(&st, &mut r);
+                        break;
+                    }
+                }
+                if rows > held {
+                    r.exported = Some((rows - held, p.to.clone()));
+                }
+            }
+            w.finish().map_err(local)?;
+            note(rows);
+            Ok(rows)
+        })();
+        if out.is_err() {
+            // The held rows stay for another try.
+            let _ = std::fs::remove_file(&p.to);
+        }
+        out
+    }
 }
 
 /// A result whose cursor went with its connection.
@@ -990,6 +1117,24 @@ pub fn register(r: &mut Registry, sessions: &Arc<Sessions>) {
     deferred(r, "sql.rollback", &sql, |s, p: NameParams| {
         s.end_unit(&p.name, false)
     });
+    {
+        let sql = Arc::clone(&sql);
+        r.register_deferred(
+            "sql.export",
+            move |p: ExportParams, _: &Context, responder: Responder| {
+                let (id, cancel) = match sql.begin(p.export.as_deref(), "e") {
+                    Ok(x) => x,
+                    Err(e) => return responder.send::<Value>(Err(e)),
+                };
+                let sql = Arc::clone(&sql);
+                on_thread(format!("sql export {id}"), responder, move || {
+                    let out = sql.export(&p, &id, &cancel);
+                    sql.end(&id);
+                    out.map(|rows| json!({ "rows": rows }))
+                });
+            },
+        );
+    }
     let s = Arc::clone(&sql);
     r.register("sql.cancel", move |p: CancelParams, _: &Context| {
         s.cancel(&p.id);

@@ -21,6 +21,7 @@ use code_host::session::{
     Backend, CommandBackend, DevelopBackend, Endpoint, Factory, IfsBackend, JobDto, Sessions,
     SystemDto,
 };
+use code_host::sql::csv::{self, field};
 use code_host::sql::values::{MAX_SAFE, hex, to_csv, to_json};
 use code_host::sql::{SqlBackend, SqlConn, first_keyword};
 use host_rpc::framing::read_frame;
@@ -195,7 +196,7 @@ fn timestamps_take_the_columns_scale_from_the_picoseconds() {
     assert_eq!(to_json(&before, Some(3)), json!("1969-12-31T23:59:59.999"));
 }
 
-// Columns.
+// sql::csv
 
 fn column(name: &str, ty: &str, scale: u16) -> Column {
     Column {
@@ -207,6 +208,73 @@ fn column(name: &str, ty: &str, scale: u16) -> Column {
         nullable: true,
         ccsid: 37,
     }
+}
+
+#[test]
+fn csv_fields_quote_what_rfc_4180_needs() {
+    assert_eq!(field("plain"), "plain");
+    assert_eq!(field(""), "\"\"");
+    assert_eq!(field("a,b"), "\"a,b\"");
+    assert_eq!(field("say \"hi\""), "\"say \"\"hi\"\"\"");
+    assert_eq!(field("two\nlines"), "\"two\nlines\"");
+    assert_eq!(field("cr\rhere"), "\"cr\rhere\"");
+    assert_eq!(field(" spaced "), " spaced ");
+}
+
+#[test]
+fn csv_has_a_header_crlf_records_and_empty_nulls() {
+    let cols = [
+        column("ID", "INTEGER", 0),
+        column("NOTES", "VARCHAR", 0),
+        column("COST", "DECIMAL", 2),
+        column("BOUGHT", "DATE", 0),
+        column("SEEN", "TIMESTAMP", 6),
+    ];
+    let mut w = csv::Writer::new(Vec::new(), &cols).unwrap();
+    w.row(&[
+        SqlValue::Integer { value: 1 },
+        SqlValue::Text {
+            text: "Forklift, \"blue\"\nbay 4".into(),
+        },
+        SqlValue::Decimal {
+            text: "-1250.00".into(),
+        },
+        SqlValue::Date { ms: ms(20_400) },
+        SqlValue::Timestamp {
+            ms: ms(20_400) + 1_000,
+            picos: 0,
+        },
+    ])
+    .unwrap();
+    w.row(&[
+        SqlValue::Integer { value: 2 },
+        SqlValue::Null,
+        SqlValue::Null,
+        SqlValue::Null,
+        SqlValue::Null,
+    ])
+    .unwrap();
+    w.row(&[
+        SqlValue::Integer { value: 3 },
+        SqlValue::Text {
+            text: String::new(),
+        },
+        SqlValue::Decimal {
+            text: "0.10".into(),
+        },
+        SqlValue::Null,
+        SqlValue::Null,
+    ])
+    .unwrap();
+    let out = String::from_utf8(w.finish().unwrap()).unwrap();
+    assert!(!out.starts_with('\u{feff}'), "no byte order mark");
+    assert_eq!(
+        out,
+        "ID,NOTES,COST,BOUGHT,SEEN\r\n\
+         1,\"Forklift, \"\"blue\"\"\nbay 4\",-1250.00,2025-11-08,2025-11-08T00:00:01.000000\r\n\
+         2,,,,\r\n\
+         3,\"\",0.10,,\r\n"
+    );
 }
 
 #[test]
@@ -1255,4 +1323,134 @@ fn below_version_4_sql_is_refused_before_anything_is_sent() {
     assert_eq!(e.code, code_host::session::codes::QAP_UNAVAILABLE);
     assert_eq!(e.message, "QAP version 4 not available on this server");
     assert_eq!(h.script().attached, 0);
+}
+
+// sql.export
+
+fn read(path: &std::path::Path) -> String {
+    String::from_utf8(std::fs::read(path).unwrap()).unwrap()
+}
+
+#[test]
+fn export_writes_the_rows_shown_then_the_rest_of_the_cursor() {
+    let h = Host::new();
+    let out = query(&h, fetched(1, 500, false));
+    h.asked();
+    h.plan(Op::Fetch, fetched(501, 500, false));
+    h.plan(Op::Fetch, fetched(1001, 203, true));
+    let dir = std::env::temp_dir().join(format!("qs400-sql-export-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let to = dir.join("assets.csv");
+    let r = h
+        .call(
+            "sql.export",
+            json!({"name":"QSHQ400","cursor":out["cursor"],"to":to,"format":"csv","export":"x1"}),
+        )
+        .unwrap();
+    assert_eq!(r, json!({"rows":1203}));
+    let text = read(&to);
+    let lines: Vec<&str> = text.split("\r\n").collect();
+    assert_eq!(lines[0], "ASSET_ID,COST");
+    assert_eq!(lines[1], "1,1.50");
+    assert_eq!(lines[5], "5,");
+    assert_eq!(lines[1203], "1203,1203.50");
+    assert_eq!(
+        lines.len(),
+        1205,
+        "header, 1203 rows, and the empty string after the last CRLF"
+    );
+    assert_eq!(
+        h.asked(),
+        vec!["Fetch 3 500", "Fetch 3 500", "CloseCursor 3", "Release 7"]
+    );
+    let progress = h.notes("sql.progress");
+    assert_eq!(
+        progress.first().unwrap(),
+        &json!({"export":"x1","rows":500})
+    );
+    assert_eq!(
+        progress.last().unwrap(),
+        &json!({"export":"x1","rows":1203})
+    );
+
+    // The rows past the first 500 were streamed, not kept.
+    let again = dir.join("again.csv");
+    let e = h
+        .call(
+            "sql.export",
+            json!({"name":"QSHQ400","cursor":out["cursor"],"to":again}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, code_host::sql::codes::NO_RESULT);
+    assert!(!again.exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn export_of_an_ended_result_writes_the_rows_held() {
+    let h = Host::new();
+    let out = query(&h, fetched(1, 12, true));
+    h.asked();
+    let dir = std::env::temp_dir().join(format!("qs400-sql-held-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let to = dir.join("a.csv");
+    for _ in 0..2 {
+        let r = h
+            .call(
+                "sql.export",
+                json!({"name":"QSHQ400","cursor":out["cursor"],"to":to}),
+            )
+            .unwrap();
+        assert_eq!(r, json!({"rows":12}));
+    }
+    assert_eq!(read(&to).matches("\r\n").count(), 13);
+    assert!(h.asked().is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_cancelled_export_removes_its_file() {
+    let h = Arc::new(Host::new());
+    let out = query(&h, fetched(1, 500, false));
+    h.plan(
+        Op::Fetch,
+        Plan::Hold((
+            Status::Cancelled,
+            Some(message(
+                "SQL0952",
+                "Processing of the SQL statement ended by ENDJOB or cancel.",
+                "",
+            )),
+            body(&Fetched {
+                rows: vec![asset(501)],
+                end: false,
+            }),
+        )),
+    );
+    let dir = std::env::temp_dir().join(format!("qs400-sql-cancel-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let to = dir.join("a.csv");
+    let (h2, to2, c) = (Arc::clone(&h), to.clone(), out["cursor"].clone());
+    let t = std::thread::spawn(move || {
+        h2.call(
+            "sql.export",
+            json!({"name":"QSHQ400","cursor":c,"to":to2,"export":"x2"}),
+        )
+    });
+    while h
+        .script()
+        .asked
+        .iter()
+        .filter(|a| a.starts_with("Fetch"))
+        .count()
+        < 2
+    {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    h.call("sql.cancel", json!({"id":"x2"})).unwrap();
+    let e = t.join().unwrap().unwrap_err();
+    assert_eq!(e.code, code_host::sql::codes::CANCELLED);
+    assert_eq!(e.data, Some(json!({"id":"x2","rows":501})));
+    assert!(!to.exists());
+    std::fs::remove_dir_all(&dir).unwrap();
 }

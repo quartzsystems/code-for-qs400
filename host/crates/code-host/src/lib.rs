@@ -238,6 +238,7 @@ mod tests {
                 "sql.cancel",
                 "sql.close",
                 "sql.commit",
+                "sql.export",
                 "sql.fetch",
                 "sql.options.get",
                 "sql.options.set",
