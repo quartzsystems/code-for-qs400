@@ -117,6 +117,138 @@ export interface ServerMessageData {
   secondLevel?: string;
 }
 
+/** A generic name: a name, a prefix ending in `*`, or `*ALL`; empty is `*ALL`. */
+export type Pattern = string;
+
+export interface LibrariesParams {
+  name: string;
+  pattern?: Pattern;
+}
+
+/** An `object.libraries` entry. */
+export interface LibraryEntry {
+  library: string;
+  kind: 'production' | 'test';
+  text: string;
+}
+
+export interface ObjectListParams {
+  name: string;
+  /** A library, or `*LIBL`, `*CURLIB`, `*USRLIBL`, `*ALL`. */
+  library: string;
+  pattern?: Pattern;
+  /** Object types such as `*FILE`; absent or empty is every type. */
+  types?: string[];
+  /** Such as `PF-SRC` or `RPGLE`; absent is any. */
+  attribute?: string;
+}
+
+/** An `object.list` entry. */
+export interface ObjectEntry {
+  library: string;
+  object: string;
+  type: string;
+  attribute: string;
+  text: string;
+  /** Bytes. */
+  size: number;
+  /** Milliseconds since 1970-01-01 UTC. */
+  changed: number;
+  owner: string;
+}
+
+export interface ObjectPropertiesParams {
+  name: string;
+  library: string;
+  object: string;
+  type: string;
+}
+
+/** An `object.properties` line, the server's label and value. */
+export interface ObjectProperty {
+  name: string;
+  value: string;
+}
+
+/** A member: `library` may be `*LIBL` or `*CURLIB` where a search applies. */
+export interface MemberRef {
+  library: string;
+  file: string;
+  member: string;
+}
+
+export interface MemberParams extends MemberRef {
+  name: string;
+}
+
+export interface MemberListParams {
+  name: string;
+  library: string;
+  file: string;
+  pattern?: Pattern;
+}
+
+/** A `member.list` entry. */
+export interface MemberEntry {
+  member: string;
+  type: string;
+  text: string;
+  records: number;
+  /** Milliseconds since 1970-01-01 UTC. */
+  created: number;
+  changed: number;
+}
+
+/**
+ * A source record. `seq` is `"0001.00"` (at most `"9999.99"`), `date` is
+ * `YYMMDD` (`"000000"` for none), `text` is UTF-8 without trailing blanks.
+ */
+export interface SourceLine {
+  seq: string;
+  date: string;
+  text: string;
+}
+
+export interface MemberReadParams extends MemberParams {
+  lock: boolean;
+}
+
+export interface MemberReadResult {
+  type: string;
+  text: string;
+  /** The record's data length in the file's bytes. */
+  width: number;
+  ccsid: number;
+  lines: SourceLine[];
+}
+
+export interface MemberWriteParams extends MemberParams {
+  lines: SourceLine[];
+  renumber: boolean;
+}
+
+export interface MemberCreateParams extends MemberParams {
+  type: string;
+  text: string;
+}
+
+export interface MemberCopyParams {
+  name: string;
+  from: MemberRef;
+  to: MemberRef;
+  replace: boolean;
+}
+
+export interface MemberRenameParams extends MemberParams {
+  newName: string;
+}
+
+/** `type` and `text` left out keep each as it is. */
+export interface MemberChangeTextParams extends MemberParams {
+  type?: string;
+  text?: string;
+}
+
 /** Requests the extension sends, by method name. */
 export interface HostMethods {
   'host.version': { params: undefined; result: HostVersionResult };
@@ -129,6 +261,18 @@ export interface HostMethods {
   'session.list': { params: undefined; result: SessionStatus[] };
   'libl.get': { params: NameParams; result: LibraryList };
   'libl.set': { params: LiblSetParams; result: LibraryList };
+  'object.libraries': { params: LibrariesParams; result: LibraryEntry[] };
+  'object.list': { params: ObjectListParams; result: ObjectEntry[] };
+  'object.properties': { params: ObjectPropertiesParams; result: ObjectProperty[] };
+  'member.list': { params: MemberListParams; result: MemberEntry[] };
+  'member.read': { params: MemberReadParams; result: MemberReadResult };
+  'member.write': { params: MemberWriteParams; result: { lines: number } };
+  'member.unlock': { params: MemberParams; result: null };
+  'member.create': { params: MemberCreateParams; result: null };
+  'member.copy': { params: MemberCopyParams; result: null };
+  'member.rename': { params: MemberRenameParams; result: null };
+  'member.delete': { params: MemberParams; result: null };
+  'member.changeText': { params: MemberChangeTextParams; result: null };
 }
 
 /** Notifications the host sends, by method name. */
