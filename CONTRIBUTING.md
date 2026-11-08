@@ -936,3 +936,81 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
    message names its size and the 10 MiB limit, and offers Download.
 8. Record the result, the `EDTF` and `WRKLNK` observations, the checksums
    and every message ID seen here.
+
+## Phase 4 exit test
+
+> `CRTBNDRPG` with an error on line 42 shows a Problems entry at line 42
+> of the open member.
+
+**Not run yet, 2026-11-08: no QAP server was reachable from the
+development machine.** `QSHQ400` does not resolve (bare, under
+`ad.quartz.systems` or `quartz.systems`), checked at the start of the
+phase and again at 00:15 at its end. 10.42.70.150 answers ping but
+refuses port 2320, as at the end of Phase 3. So no compile has run against
+a real system: there are no diagnostic IDs or line placements observed
+live, and no message IDs from a real system are recorded here. The IDs
+below are the canned ones, taken from QS/400's own message files at
+`7f82a43f` (`runtime/msgf/msgs/qrpglemsg.toml`, `qcpfmsg.toml`).
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The host's `action.*` and `job.log` against canned replies through
+  `qap-client`'s own `Develop::compile`, `Jobs::job_log` and outcomes
+  (`tests/actions.rs`, 19 tests): a compile sent as `Compile` and a `CALL`
+  as `RunCommand`; an `Error` compile with its body still filled (escape
+  `RNS9310`, `RNF7030` at line 42 columns 9 to 17 of the member, a second
+  on a `/COPY` member, one on a stream file, one nowhere); `RNS9304` on a
+  clean compile; `CPF9812` for a wrong `SRCFILE` as the escape, unchanged;
+  a run cancelled in the lane coming back `Cancelled` with no job and no
+  messages, and one cancelled once started keeping its body; `Busy` as the
+  server's refusal; version 7 refused before anything is sent;
+  `CheckCommand` answering `CPD0030` for `CRTBNDRPGX`; the job log of the
+  connection job drained in pages of 500 (1,203 entries) and `CPF1321` for
+  an ended job.
+- The extension against fake hosts (`actions`, `run`, `diagnostics` and
+  `jobLog` suites): merge order, every variable for a member, a stream
+  file and an object, `&CUSTOM:` and the unresolved-variable error; the
+  check results on the right JSON line; the severity table; placement for
+  `Member`, `Path` and `None` with `column` 0 and `end_line` 0; a clean
+  compile clearing the target and its `/COPY` member; save before run; the
+  output block; the job log's lines and hover.
+- The defaults: every one parses, the spec's 13 compiles each run as a
+  compile, `DBGVIEW(*SOURCE)` on the six commands whose definitions take it.
+- The `win32-x64` VSIX packaged, carrying `defaults/actions.json` and
+  `schemas/actions.json`; its minified bundle activates, shows About, and
+  runs the actions suites in VS Code 1.143.0. That check found the
+  `jsonc-parser` bundling fault of Phase 4 decision 9, which stopped the
+  extension activating at all.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER`, `QS400_TEST_PASSWORD` (and
+   `QS400_TEST_SRCPF=HLINV/QTMPSRC`, `QS400_TEST_CURLIB` if not
+   `CWELLMAN`) and run `npm test`. The Phase 4 live suite copies
+   `HLINV/QRPGLESRC(ASSETS)` to `QS4ACT42`, breaks line 42, compiles,
+   fixes, compiles again, `CALL`s `HLINV/ASSETS`, checks `CRTBNDRPGX`,
+   compiles with a wrong `SRCFILE`, reads the job log, and removes its
+   member. Record its `live:` lines.
+2. By hand: `CPYSRCF FROMFILE(HLINV/QRPGLESRC) TOFILE(HLINV/QTMPSRC)
+   FROMMBR(ASSETS) TOMBR(ASSETS42)`. Open `HLINV/QTMPSRC/ASSETS42` from the
+   Objects view, change line 42 to use a name nothing defines, save, and
+   run **Compile (CRTBNDRPG)** from the editor title. The Problems panel
+   shows one error at line 42 of that document with the ID the compile
+   listing shows (`RNF7030` for an undefined name); hovering it shows the
+   second-level text; clicking it goes to line 42.
+3. Fix the line and run it again: the Problems entry clears, and the
+   **Code for QS/400** output channel shows the completion message and
+   the job.
+4. In the Objects view, **Run Action…** on `HLINV/ASSETS` (`*PGM`), **Call
+   (CALL)**: the output channel shows the messages; nothing is added to
+   the Problems panel.
+5. Add an action with `CRTBNDRPGX` to `.vscode/actions.json` and save: the
+   `CheckCommand` message shows on that action's `command` line, and the
+   action is listed, marked, in the pick.
+6. Run the compile with `&SRCFILE` wrong on purpose (`SRCFILE(&SRCLIB/QNOSRC)`
+   in a copy of the action): the escape message is the system's own ID and
+   text.
+7. **Job Log**: the messages of the runs above, newest at the bottom; each
+   ID's hover shows its second-level text.
+8. Record the result, the diagnostic IDs and their line placement, and
+   every message ID seen here.
