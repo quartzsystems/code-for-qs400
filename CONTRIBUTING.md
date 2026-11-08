@@ -709,3 +709,74 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
    the `CPF1002` text is shown and the document is read-only.
 9. Record the result, the `DSPPFM` and `CMPPFM` observations and every
    message ID seen here.
+
+## Phase 3 exit test
+
+> Edit a UTF-8 file and an EBCDIC-tagged file; both reopen correctly at
+> 5250 `EDTF`.
+
+**Not run yet, 2026-11-07: no QAP server was reachable from the
+development machine.** `QSHQ400` does not resolve (bare, under
+`ad.quartz.systems` or `quartz.systems`), checked at the start of the
+phase and again at 23:24 at its end. 10.42.70.150 now actively refuses
+port 2320, where in Phases 1 and 2 it did not answer at all: the machine is
+up, but no QAP server listens there. So there are no `EDTF` or `WRKLNK`
+observations, no checksum from a real transfer, and no message IDs from a
+real system.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The host's `ifs.*` against canned replies through `qap-client`'s own
+  `Files`, `read` and `write` (`tests/ifs.rs`, 33 tests): paging 1,203
+  entries in 500s, the stamp before the data and the `Stat`/`GetInfo`
+  fallback at version 5, text read in 1 MiB chunks joined on whole
+  characters, a CCSID 37 file read and written through the server's
+  conversion, the 10 MiB cap (exactly 10 MiB reads; one byte more is
+  `-32021` and nothing is read), the `expect` refusal (no `WriteFile`
+  sent), `TCP1A5A` on read and on write with the file unchanged, `CPFA0A9`,
+  `CPFA0A0` and `CPFA0AC` passed through with their second-level text, a
+  3 MiB download byte for byte, a five-chunk upload cancelled at the third
+  write (offset two chunks, the system holding three) and resumed from the
+  system's size to the same bytes, `replace` starting again, and progress
+  no more often than every 250 ms.
+- `host-rpc`'s deferred methods: an answer from another thread after the
+  request behind it, `dispatch` waiting for it, and a dropped responder
+  still answering.
+- The extension against a fake host (`ifsView`, `ifsProvider`,
+  `ifsCommands`, `ifsTransfers`): the binary-extension table, the
+  languages, Overwrite and Reload, an unchanged save not written, a new
+  file made as 1208, the image read through a temporary file, a
+  non-empty delete on a fixture tree children first and root last, folder
+  copy, and uploads cancelled and resumed.
+- The `win32-x64` VSIX packaged with the new contributions.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER`, `QS400_TEST_PASSWORD` and run
+   `npm test`. The Phase 3 live suite makes `/home/CWELLMAN/code-test`,
+   runs the UTF-8 and CCSID 37 round-trips, the `TCP1A5A` refusal, the
+   20 MB upload cancelled half way, resumed and downloaded with its
+   sha256, the folder round-trip, rename, copy and delete, the `.png` and
+   the size refusal, logs every message it sees, and removes the
+   directory. Record its `live:` lines.
+2. By hand, in the IFS view, under `/home/CWELLMAN/code-test` (make it with
+   **New Folder…**): **New File…** `utf8.txt`, CCSID 1208; type a line
+   with `é` and `—`; save. At a 5250 session,
+   `EDTF '/home/CWELLMAN/code-test/utf8.txt'` shows the line as typed, and
+   `WRKLNK '/home/CWELLMAN/code-test/*'` option 8 shows CCSID 1208.
+3. **New File…** `ebcdic.txt`, CCSID 37; type a line; save. `EDTF` shows it;
+   `WRKLNK` shows CCSID 37. Close the tab and open it again: it reads as
+   typed. Add a character CCSID 37 lacks (an emoji) and save: the
+   notification shows `TCP1A5A` and `EDTF` still shows the line before it.
+4. **Upload Files…** a 20 MB file; Cancel half way. The tree marks it
+   `partial upload`; `WRKLNK` shows the partial size. **Resume**: it ends
+   at the full size. **Download…** it and compare `sha256` with the
+   original.
+5. **Upload Folder…** a folder of three files; **Download Folder…** it into
+   a new local folder; compare the trees.
+6. Rename, Copy to… and Delete from the tree, checking each in `WRKLNK`;
+   Delete on a folder that is not empty names its count first.
+7. Open a `.png`: VS Code's image preview shows it. Open a 50 MB file: the
+   message names its size and the 10 MiB limit, and offers Download.
+8. Record the result, the `EDTF` and `WRKLNK` observations, the checksums
+   and every message ID seen here.
