@@ -12,7 +12,7 @@ import { resolveCommand } from '../src/actions/targets';
 import { CompileDiagnostic } from '../src/host/protocol';
 import { MEMBER_SCHEME } from '../src/members/uri';
 import { Deployer, UsableProject } from '../src/projects/deploy';
-import { LocalActions, LocalRun } from '../src/projects/local';
+import { LocalActions, LocalRun, deployOutcome } from '../src/projects/local';
 import { Puller } from '../src/projects/pull';
 import { FakeSystem } from './deploy.test';
 import { Memento } from './members.test';
@@ -23,6 +23,27 @@ const JOB = { number: '123456', user: 'QUSER', name: 'QAPCNN' };
 function diag(at: CompileDiagnostic['at'], line: number, id: string): CompileDiagnostic {
   return { at, line, column: 0, endLine: 0, endColumn: 0, severity: 30, id, text: `${id} text`, help: '' };
 }
+
+suite('Projects: why a local file was not deployed', () => {
+  const r = (over: Partial<Record<'deployed' | 'conflicts' | 'failed' | 'skipped', string[]>>) => ({
+    deployed: [],
+    unchanged: [],
+    skipped: [],
+    conflicts: [],
+    failed: [],
+    leftOnSystem: [],
+    ...over,
+  });
+  test('deployed, or the reason in words', () => {
+    const rel = 'qsqlsrc/INVMGRTYPE.sql';
+    assert.equal(deployOutcome(r({ deployed: [rel] }), rel), true);
+    assert.match(deployOutcome(r({ conflicts: [rel] }), rel) as string, /changed on the system/);
+    assert.match(deployOutcome(r({ failed: [rel] }), rel) as string, /refused/);
+    assert.match(deployOutcome(r({ skipped: [rel] }), rel) as string, /skipped/);
+    assert.match(deployOutcome(r({}), rel) as string, /not one of the project/);
+    assert.match(deployOutcome(undefined, rel) as string, /did not start/);
+  });
+});
 
 suite('Projects: actions on local files', () => {
   let output: vscode.LogOutputChannel;

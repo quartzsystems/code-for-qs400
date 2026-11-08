@@ -106,7 +106,8 @@ export interface LocalTarget {
   /** `&LIBRARY` and `&SRCLIB` of a member: the project's target library. */
   library?: string;
   uri: vscode.Uri;
-  deploy(): Promise<boolean>;
+  /** Deploys the file: true when the system now has it, else why not. */
+  deploy(): Promise<true | string>;
 }
 
 /** A link in the output channel: where it is and the command it runs. */
@@ -438,8 +439,11 @@ export class ActionRunner implements vscode.Disposable {
       return notRun(`${targetLabel(t)} could not be saved`);
     }
     // A local file is deployed first (saved, and checked for a conflict); the action runs only once the system has it.
-    if (local && !(await local.deploy())) {
-      return notRun(`${vscode.workspace.asRelativePath(local.uri)} was not deployed`);
+    if (local) {
+      const deployed = await local.deploy();
+      if (deployed !== true) {
+        return notRun(`${vscode.workspace.asRelativePath(local.uri)} was not deployed: ${deployed}`);
+      }
     }
 
     const ctx: ResolveContext = { connection: connectionValues(this.store, this.sessions, name), library: local?.library };

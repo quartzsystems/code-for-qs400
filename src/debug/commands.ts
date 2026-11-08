@@ -176,7 +176,9 @@ export class DebugCommands {
     const t = lt.target;
     const connection = t.connection;
     const library = lt.library;
-    if (!(await lt.deploy())) {
+    const deployed = await lt.deploy();
+    if (deployed !== true) {
+      void vscode.window.showErrorMessage(`QS/400 debug: ${vscode.workspace.asRelativePath(uri)} was not deployed: ${deployed}.`);
       return undefined;
     }
     if (await this.programOlder(connection, library, t.file, t.member)) {

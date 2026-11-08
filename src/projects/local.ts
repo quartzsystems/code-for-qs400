@@ -4,10 +4,33 @@
 
 import * as vscode from 'vscode';
 import type { ActionTarget } from '../actions/targets';
-import { Deployer } from './deploy';
+import { DeployResult, Deployer } from './deploy';
 import { isMember, memberOf, remotePathOf } from './layout';
 import { ProjectDeps } from './pull';
 import { relativeTo } from './store';
+
+/**
+ * Whether a one-file deploy put `rel` on the system: true, else the reason
+ * in a few words, for the notification (the output channel has the rest).
+ */
+export function deployOutcome(r: DeployResult | undefined, rel: string): true | string {
+  if (r === undefined) {
+    return 'the deploy did not start (not signed on, or a document could not be saved)';
+  }
+  if (r.deployed.includes(rel)) {
+    return true;
+  }
+  if (r.conflicts.includes(rel)) {
+    return 'it changed on the system since the last deploy or pull, and was not overwritten';
+  }
+  if (r.failed.includes(rel)) {
+    return 'the system refused it; the Code for QS/400 output has the message';
+  }
+  if (r.skipped.includes(rel)) {
+    return 'it was skipped; the Code for QS/400 output says why';
+  }
+  return 'it is not one of the project’s files (ignored, or outside the folder)';
+}
 
 /** An action on a local file: what it runs against once the file is deployed. */
 export interface LocalRun {
@@ -17,8 +40,8 @@ export interface LocalRun {
   library?: string;
   /** The local file. */
   uri: vscode.Uri;
-  /** Deploys the file, with the conflict check; true when the system now has it. */
-  deploy(): Promise<boolean>;
+  /** Deploys the file, with the conflict check: true when the system now has it, else why not. */
+  deploy(): Promise<true | string>;
 }
 
 /**
@@ -46,10 +69,7 @@ export class LocalActions {
       return undefined;
     }
     const connection = this.deps.projects.connectionOf(project);
-    const deploy = async () => {
-      const r = await this.deployer.deploy(project, 'file', rel);
-      return r !== undefined && r.deployed.includes(rel);
-    };
+    const deploy = async () => deployOutcome(await this.deployer.deploy(project, 'file', rel), rel);
     const t = project.config.target;
     if (t.kind === 'path') {
       return { target: { environment: 'file', connection, path: remotePathOf(t.path, rel) }, uri, deploy };
