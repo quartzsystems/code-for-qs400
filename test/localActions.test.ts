@@ -65,17 +65,9 @@ suite('Projects: actions on local files', () => {
     rig.lines.length = 0;
     // The rig's store reads the setting written above.
     rig.sessions.update({ name: 'PRJ', state: 'connected', user: 'CWELLMAN', job: JOB });
-    // projectFor looks at the workspace's folders; a test folder is found through at().
+    // The pull made the project, so the store tracks its folder although it is no workspace folder.
     const local = new LocalActions(rig.deps, deployer);
-    const resolve = async (uri: vscode.Uri) => {
-      const p = await rig.projects.at(rig.folder);
-      if (!p?.config) {
-        return undefined;
-      }
-      const original = rig.projects.projectFor.bind(rig.projects);
-      rig.projects.projectFor = (u: vscode.Uri) => original(u) ?? (u.fsPath.toLowerCase().startsWith(rig.dir.toLowerCase()) ? (p as UsableProject) : undefined);
-      return local.resolve(uri);
-    };
+    const resolve = (uri: vscode.Uri) => local.resolve(uri);
     return { sys, rig, deployer, resolve, runs, setOutcome: (o: typeof outcome) => (outcome = o) };
   }
 

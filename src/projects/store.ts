@@ -57,6 +57,8 @@ export function relativeTo(folder: vscode.Uri, uri: vscode.Uri): string | undefi
  */
 export class ProjectStore implements vscode.Disposable {
   private list: Project[] = [];
+  /** Folders outside the workspace's that hold a project: one a pull was pointed at, a test's. */
+  private readonly extra: vscode.Uri[] = [];
   private readonly changed = new vscode.EventEmitter<void>();
   private readonly subscriptions: vscode.Disposable[] = [];
   readonly diagnostics = vscode.languages.createDiagnosticCollection(PROJECT_DIAGNOSTICS);
@@ -142,9 +144,23 @@ export class ProjectStore implements vscode.Disposable {
     return { folder, file, config: parsed.config, problems: parsed.problems };
   }
 
+  /** Keeps `folder` among the projects although it is not a workspace folder. */
+  async track(folder: vscode.Uri): Promise<void> {
+    const key = folder.fsPath.toLowerCase();
+    if (!this.extra.some((u) => u.fsPath.toLowerCase() === key)) {
+      this.extra.push(folder);
+    }
+    await this.reload();
+  }
+
   /** Reads every folder's project file again. */
   async reload(): Promise<void> {
-    const folders = vscode.workspace.workspaceFolders ?? [];
+    const folders: vscode.WorkspaceFolder[] = [...(vscode.workspace.workspaceFolders ?? [])];
+    for (const u of this.extra) {
+      if (!folders.some((f) => f.uri.fsPath.toLowerCase() === u.fsPath.toLowerCase())) {
+        folders.push({ uri: u, name: nodePath.basename(u.fsPath), index: folders.length });
+      }
+    }
     const read = await Promise.all(folders.filter((f) => f.uri.scheme === 'file').map((f) => this.read(f)));
     this.list = read.filter((p): p is Project => p !== undefined);
     this.changed.fire();
@@ -266,7 +282,7 @@ export class ProjectStore implements vscode.Disposable {
   async create(folder: vscode.Uri, config: Parameters<typeof projectText>[0]): Promise<void> {
     await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(folder, PROJECT_FILE), new TextEncoder().encode(projectText(config)));
     await ensureGitignore(folder.fsPath);
-    await this.reload();
+    await this.track(folder);
   }
 
   /** Adds `texts` a pull found to a project file that exists, keeping what it gives. */

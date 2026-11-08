@@ -14,13 +14,16 @@
  * - A stream file: `ifs.readText`; a relative path is joined to the
  *   including stream file's directory (`request.file`), else to `/`.
  * - Not found, or no connection: `null`.
+ * - First of all, a project folder of the workspace that holds the
+ *   member or stream file answers (Phase 8, `local`); a local file's
+ *   connection is its project's.
  */
 
 import * as vscode from 'vscode';
 import type { MethodName, ParamsOf, ResultOf } from '../host/protocol';
 import { ifsUri, parseIfsUri } from '../ifs/uri';
 import { memberUri, parseMemberUri } from '../members/uri';
-import type { FetchIncludeParams, FetchedInclude, ListMembersParams, MemberItem } from './protocol';
+import type { FetchIncludeParams, FetchedInclude, IncludeRequest, IncludesChangedParams, ListMembersParams, MemberItem } from './protocol';
 
 export interface IncludeDeps {
   call<M extends MethodName>(name: string, method: M, params: ParamsOf<M>): Promise<ResultOf<M>>;
@@ -29,6 +32,12 @@ export interface IncludeDeps {
   /** The connection a local file's includes come from. */
   active(): string | undefined;
   log(line: string): void;
+  /** A project folder's file that answers the request, asked before the system; null for none. */
+  local?(uri: string, request: IncludeRequest, connection: string | undefined): Promise<FetchedInclude | null>;
+  /** The connection of the project a local file is in. */
+  projectConnection?(uri: vscode.Uri): string | undefined;
+  /** What saving a local file of a project changed, for `qs400/includesChanged`. */
+  localChanged?(uri: vscode.Uri): IncludesChangedParams | undefined;
 }
 
 /** The connection whose system a document's includes come from. */
@@ -47,7 +56,7 @@ export function connectionOf(deps: IncludeDeps, uri: string): string | undefined
   if (i) {
     return deps.canonical(i.connection);
   }
-  return deps.active();
+  return (u.scheme === 'file' ? deps.projectConnection?.(u) : undefined) ?? deps.active();
 }
 
 /** The path a stream-file include names. */
@@ -61,6 +70,14 @@ export function includePath(path: string, dir: string): string {
 
 export async function fetchInclude(deps: IncludeDeps, p: FetchIncludeParams): Promise<FetchedInclude | null> {
   const name = connectionOf(deps, p.uri);
+  try {
+    const local = await deps.local?.(p.uri, p.request, name);
+    if (local) {
+      return local;
+    }
+  } catch (err) {
+    deps.log(`include from the workspace: ${message(err)}`);
+  }
   if (!name) {
     return null;
   }

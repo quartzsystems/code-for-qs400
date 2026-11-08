@@ -126,6 +126,12 @@ export class LanguageServers implements vscode.Disposable {
     const i = parseIfsUri(d.uri);
     if (i) {
       void this.includesChanged({ connection: this.deps.canonical(i.connection), member: { kind: 'path', path: i.path } });
+      return;
+    }
+    // A local file of a project: what it stands for, so a copy member's edit is seen by every document.
+    const local = d.uri.scheme === 'file' ? this.deps.localChanged?.(d.uri) : undefined;
+    if (local) {
+      void this.includesChanged(local);
     }
   }
 

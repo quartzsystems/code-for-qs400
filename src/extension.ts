@@ -39,6 +39,7 @@ import { registerDeployCommands, registerPullCommands } from './projects/command
 import { Deployer } from './projects/deploy';
 import { GitApiChanges } from './projects/git';
 import { LocalActions } from './projects/local';
+import { WorkspaceIncludes } from './projects/includes';
 import { sameName } from './connections/config';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -119,6 +120,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const transfers = new Transfers(host, sessions, ifs, ifsFs);
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
   const projects = new ProjectStore(store, output);
+  const workspaceIncludes = new WorkspaceIncludes(projects);
   const runner = new ActionRunner(store, sessions, actions, context.workspaceState, {
     objects,
     ifs,
@@ -155,6 +157,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       canonical: (name) => store.get(name)?.name ?? name,
       active: () => sessions.active,
       log: (line) => languagesOutput.warn(line),
+      local: (uri, request, connection) => workspaceIncludes.find(uri, request, connection),
+      projectConnection: (uri) => workspaceIncludes.connectionOf(uri),
+      localChanged: (uri) => workspaceIncludes.changed(uri),
     },
     languagesOutput,
   );
