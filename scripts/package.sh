@@ -4,7 +4,7 @@
 # root directory of this project.
 
 # Builds qs400-code-host for the current platform, copies it to bin/, and
-# packages a platform-specific pre-release VSIX.
+# packages a platform-specific VSIX.
 #
 #   scripts/package.sh              host + VSIX
 #   scripts/package.sh --host-only  host into bin/ only (for npm test)
@@ -61,4 +61,4 @@ fi
 
 out="code-for-qs400-$target.vsix"
 echo "==> $out"
-npx --no-install vsce package --pre-release --target "$target" --out "$out"
+npx --no-install vsce package --target "$target" --out "$out"

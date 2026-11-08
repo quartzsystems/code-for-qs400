@@ -227,7 +227,7 @@ scripts\package.ps1      # Windows PowerShell
 The script builds the host in release mode for the current platform
 (`x86_64-pc-windows-msvc` or `x86_64-unknown-linux-musl`), empties `bin/`,
 copies in that one binary, checks the VSIX file list, and runs
-`vsce package --pre-release --target <win32-x64|linux-x64>`. The output is
+`vsce package --target <win32-x64|linux-x64>`. The output is
 `code-for-qs400-<target>.vsix`. There is no universal VSIX; each platform's
 file is built on that platform (CI runs both).
 

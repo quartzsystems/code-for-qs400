@@ -8,15 +8,37 @@
   "author": "Quartz Systems",
   "repository": {
     "type": "git",
-    "url": "https://github.com/quartzsystems/quartz-systems-code-for-qs400"
+    "url": "https://github.com/quartzsystems/code-for-qs400"
   },
+  "bugs": {
+    "url": "https://github.com/quartzsystems/code-for-qs400/issues"
+  },
+  "homepage": "https://quartzsystems.github.io/code-for-qs400/",
   "engines": {
     "vscode": "^1.143.0"
   },
   "categories": [
     "Programming Languages",
+    "Debuggers",
     "Other"
   ],
+  "keywords": [
+    "QS/400",
+    "RPGLE",
+    "CL",
+    "DDS",
+    "SQL",
+    "QAP"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Actions in a workspace's .vscode/actions.json and qs400project.json run commands on a QS/400 system as your user profile, so the extension runs only in trusted workspaces."
+    }
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "onView:code-for-qs400.project",

@@ -4,7 +4,7 @@
 
 # Windows twin of scripts/package.sh: builds qs400-code-host for
 # x86_64-pc-windows-msvc, copies it to bin\, and packages the win32-x64
-# pre-release VSIX.
+# VSIX.
 #
 #   scripts\package.ps1             host + VSIX
 #   scripts\package.ps1 -HostOnly   host into bin\ only (for npm test)
@@ -47,4 +47,4 @@ if ($bins.Count -ne 1 -or $bins[0] -ne "bin/$exe") { throw "VSIX must carry exac
 
 $out = "code-for-qs400-$target.vsix"
 Write-Host "==> $out"
-Invoke-Checked npx @('--no-install', 'vsce', 'package', '--pre-release', '--target', $target, '--out', $out)
+Invoke-Checked npx @('--no-install', 'vsce', 'package', '--target', $target, '--out', $out)
