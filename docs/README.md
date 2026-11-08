@@ -35,6 +35,10 @@ This guide grows with each phase and ships with the marketplace listing.
   view and job logs, the Spooled files view and its viewer, the Messages
   view, inquiry replies and notifications, and the listing link after a
   compile.
+- [Local projects and deploy](projects.md): a folder mapped to a library
+  or an IFS directory, Pull, Deploy and its conflicts, actions on local
+  files, includes from the workspace, the Project view and a git
+  workflow.
 
 ## Troubleshooting
 

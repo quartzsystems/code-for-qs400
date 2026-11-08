@@ -2,9 +2,10 @@
 // licensed under the terms of the MIT license which can be found in the
 // root directory of this project.
 
-// The Phase 1, 2, 3, 4, 6 and 7 exit tests' automatic steps against a real
+// The Phase 1, 2, 3, 4, 6, 7 and 8 exit tests' automatic steps against a real
 // QS/400 system. Phase 6 makes and drops the table HLINV.QS4SQL6; Phase 7
-// compiles QS4SPL7 and submits CODETEST. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
+// compiles QS4SPL7 and submits CODETEST; Phase 8 makes and deletes the
+// library QS400_PROJECT_LIBRARY (default HLINVDEV). Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
 // QS400_TEST_PASSWORD are set. Optional: QS400_TEST_PORT, QS400_TEST_CA_FILE,
 // QS400_TEST_LIBRARY (added to the list, default QGPL),
 // QS400_TEST_CURLIB (set as the current library, default the user profile),
@@ -16,6 +17,7 @@
 // (CONTRIBUTING.md, "Phase 1 exit test").
 
 import * as assert from 'node:assert/strict';
+import * as childProcess from 'node:child_process';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -32,6 +34,9 @@ import { localTree } from '../src/ifs/transfers';
 import { ifsUri } from '../src/ifs/uri';
 import { seqValue } from '../src/members/diff';
 import { memberUri } from '../src/members/uri';
+import { Deployer, GitChanges, UsableProject } from '../src/projects/deploy';
+import { ProjectDeps, Puller } from '../src/projects/pull';
+import { FakeUi } from './pull.test';
 
 const env = process.env;
 const HOST = env.QS400_TEST_HOST ?? '';
@@ -1073,5 +1078,242 @@ suite('Live: Phase 7 exit test', function () {
     assert.match(m.key, /^[0-9A-F]{8}$/);
     console.log(`live: sent ${m.key} at ${new Date(m.sent).toISOString()} from ${m.fromUser}`);
     keys.push(m.key);
+  });
+});
+
+// Phase 8: a library pulled into a folder, deployed to a scratch library,
+// one member changed and compiled, a conflict, and git. The scratch
+// library QS400_PROJECT_LIBRARY (default HLINVDEV) is made with CRTLIB and
+// deleted with DLTLIB; QS400_PROJECT_SOURCE (default HLINV) is only read.
+const PROJ_SRC = (env.QS400_PROJECT_SOURCE || 'HLINV').toUpperCase();
+const PROJ_LIB = (env.QS400_PROJECT_LIBRARY || 'HLINVDEV').toUpperCase();
+const PROJ_FILES = ['QRPGLESRC', 'QCLSRC', 'QDDSSRC', 'QSQLSRC'];
+
+/** Today as a member line's date, `YYMMDD`, local and UTC (the system's clock decides which). */
+function todays(): string[] {
+  const d = new Date();
+  const f = (y: number, m: number, day: number) => `${String(y % 100).padStart(2, '0')}${String(m + 1).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+  return [f(d.getFullYear(), d.getMonth(), d.getDate()), f(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())];
+}
+
+suite('Live: Phase 8 exit test', function () {
+  let api: ExtensionApi;
+  let dir = '';
+  let folder: vscode.Uri;
+  const lines: string[] = [];
+  const ui = new FakeUi();
+  let deps: ProjectDeps;
+  let puller: Puller;
+  let deployer: Deployer;
+  let project: UsableProject;
+  let git = false;
+  const run = (args: string[]) => childProcess.execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+  const commit = (message: string) => run(['-c', 'user.name=live test', '-c', 'user.email=live@test.invalid', 'commit', '-qam', message]);
+  const gitChanges: GitChanges = {
+    changed: async () =>
+      git
+        ? run(['status', '--porcelain', '-uall'])
+            .split('\n')
+            .filter((l) => l.length > 3)
+            .map((l) => l.slice(3).trim().replace(/^"|"$/g, ''))
+        : undefined,
+  };
+  const command = async (cmd: string) => {
+    const o = await api.host.request('action.run', { name: NAME, command: cmd, kind: 'command' });
+    console.log(`live: ${cmd}: ${o.status}${o.escape ? ` ${o.escape.id} ${o.escape.text}` : ''}`);
+    return o;
+  };
+  const members = (library: string, file: string) => api.host.request('member.list', { name: NAME, library, file });
+  const stamps = async () => {
+    const m = new Map<string, number>();
+    for (const f of PROJ_FILES) {
+      for (const e of await members(PROJ_LIB, f).catch(() => [])) {
+        m.set(`${f}/${e.member}`, e.changed);
+      }
+    }
+    return m;
+  };
+  const local = (rel: string) => path.join(dir, ...rel.split('/'));
+  let assetsRel = '';
+
+  suiteSetup(async function () {
+    if (!HOST || !USER || !PASSWORD) {
+      this.skip();
+    }
+    const ext = vscode.extensions.getExtension<ExtensionApi>('quartzsystems.code-for-qs400');
+    assert.ok(ext);
+    api = await ext.activate();
+    await config().update('connections', [connection()], true);
+    await api.sessions.signOn(connection(), { password: PASSWORD, save: false }, false);
+    const qap = api.sessions.status(NAME).system?.qap ?? 0;
+    if (qap < 8) {
+      console.log(`live: Phase 8 skipped: the server agreed QAP ${qap}; Develop needs 8`);
+      this.skip();
+    }
+    await command(`DLTLIB LIB(${PROJ_LIB})`).catch(() => undefined);
+    const made = await command(`CRTLIB LIB(${PROJ_LIB}) TEXT('Code for QS/400 Phase 8 live test')`);
+    assert.equal(made.status, 'Ok', `CRTLIB ${PROJ_LIB}`);
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qs4live8-'));
+    folder = vscode.Uri.file(dir);
+    ui.library = PROJ_LIB;
+    ui.folderUri = folder;
+    deps = { store: api.store, sessions: api.sessions, projects: api.projects, ui, append: (l) => lines.push(l) };
+    puller = new Puller(deps);
+    deployer = new Deployer(deps, puller, gitChanges);
+    try {
+      childProcess.execFileSync('git', ['--version']);
+      git = true;
+    } catch {
+      console.log('live: no git on PATH: the git steps are skipped');
+    }
+  });
+
+  suiteTeardown(async function () {
+    if (!api) {
+      return;
+    }
+    deployer?.dispose();
+    await command(`DLTLIB LIB(${PROJ_LIB})`).catch(() => undefined);
+    await api.host.request('session.disconnect', { name: NAME }).catch(() => undefined);
+    await config().update('connections', undefined, true);
+    if (dir) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test(`Pull ${PROJ_SRC} into an empty folder: the layout, qs400project.json targeting ${PROJ_LIB}, git init and commit`, async () => {
+    const there = (await api.host.request('object.list', { name: NAME, library: PROJ_SRC, pattern: '*ALL', types: ['*FILE'], attribute: 'PF-SRC' })).map((o) => o.object);
+    const files = PROJ_FILES.filter((f) => there.includes(f));
+    console.log(`live: ${PROJ_SRC} source files ${there.join(' ')}; pulling ${files.join(' ')}`);
+    const r = await puller.pullSourceFiles(NAME, PROJ_SRC, files, folder);
+    assert.ok(r);
+    console.log(`live: pull: ${lines[lines.length - 1]}`);
+    assert.deepEqual(r.failed, []);
+    for (const f of files) {
+      assert.ok(fs.existsSync(path.join(dir, f)), `${f}/ in the folder`);
+    }
+    assetsRel = r.pulled.find((p) => /^QRPGLESRC\/ASSETS\./i.test(p)) ?? '';
+    assert.ok(assetsRel, 'QRPGLESRC/ASSETS.rpgle pulled');
+    const p = await api.projects.at(folder);
+    assert.ok(p?.config, 'qs400project.json');
+    assert.deepEqual(p.config.target, { kind: 'library', library: PROJ_LIB });
+    project = p as UsableProject;
+    if (git) {
+      run(['init', '-q']);
+      run(['add', '-A']);
+      commit('pulled');
+      assert.ok(!run(['ls-files']).includes('.qs400/'), '.qs400/ is gitignored');
+    }
+  });
+
+  test(`Deploy all: every member in ${PROJ_LIB} with ${PROJ_SRC}'s text and type, the counts of the folder`, async () => {
+    ui.create = true;
+    lines.length = 0;
+    const r = await deployer.deploy(project, 'all');
+    assert.ok(r);
+    console.log(`live: deploy all: ${lines[lines.length - 1]}`);
+    assert.deepEqual(r.failed, []);
+    for (const f of PROJ_FILES.filter((x) => fs.existsSync(path.join(dir, x)))) {
+      const from = await members(PROJ_SRC, f);
+      const to = await members(PROJ_LIB, f);
+      const inFolder = fs.readdirSync(path.join(dir, f)).length;
+      console.log(`live: ${f}: ${PROJ_SRC} ${from.length}, ${PROJ_LIB} ${to.length}, folder ${inFolder}`);
+      assert.equal(to.length, inFolder, `${PROJ_LIB}/${f} member count matches the folder`);
+      for (const m of from) {
+        const d = to.find((x) => x.member === m.member);
+        assert.ok(d, `${f}(${m.member}) deployed`);
+        assert.equal(d.type, m.type, `${f}(${m.member}) type`);
+        assert.equal(d.text, m.text, `${f}(${m.member}) text`);
+      }
+    }
+  });
+
+  test('Deploy changed after one line: exactly one timestamp moves; that line is today, every other keeps its seq and date', async () => {
+    const at = { name: NAME, library: PROJ_LIB, file: 'QRPGLESRC', member: 'ASSETS' };
+    const before = await stamps();
+    const old = (await api.host.request('member.read', { ...at, lock: false })).lines;
+    const text = fs.readFileSync(local(assetsRel), 'utf8').split('\n');
+    const i = old.findIndex((l, n) => n > 0 && l.text.trim() !== '' && l.text.length < 70);
+    assert.ok(i > 0, 'a line to change');
+    text[i] = `${old[i].text} //x`;
+    fs.writeFileSync(local(assetsRel), text.join('\n'));
+    await new Promise((r) => setTimeout(r, 1100));
+    lines.length = 0;
+    const r = await deployer.deploy(project, 'changed');
+    console.log(`live: deploy changed: ${lines.slice(1).join(' | ')}`);
+    assert.deepEqual(r?.deployed, [assetsRel]);
+    const after = await stamps();
+    const moved = [...after.entries()].filter(([k, v]) => before.get(k) !== v).map(([k]) => k);
+    console.log(`live: timestamps moved: ${moved.join(', ')}; ASSETS ${new Date(before.get('QRPGLESRC/ASSETS') ?? 0).toISOString()} -> ${new Date(after.get('QRPGLESRC/ASSETS') ?? 0).toISOString()}`);
+    assert.deepEqual(moved, ['QRPGLESRC/ASSETS'], 'only ASSETS was rewritten');
+    const now = (await api.host.request('member.read', { ...at, lock: false })).lines;
+    assert.equal(now.length, old.length);
+    console.log(`live: line ${i + 1}: ${old[i].seq} ${old[i].date} -> ${now[i].seq} ${now[i].date}`);
+    assert.equal(now[i].seq, old[i].seq, 'the changed line keeps its seq');
+    assert.ok(todays().includes(now[i].date), `the changed line is dated today (${now[i].date})`);
+    for (let n = 0; n < old.length; n++) {
+      if (n !== i) {
+        assert.deepEqual([now[n].seq, now[n].date], [old[n].seq, old[n].date], `line ${n + 1} kept`);
+      }
+    }
+    if (git) {
+      commit('one line');
+    }
+  });
+
+  test('Compile (CRTBNDRPG) on the local file: deployed, compiled into the library, the error on line 42 of the local file', async () => {
+    const committed = fs.readFileSync(local(assetsRel), 'utf8');
+    const text = committed.split('\n');
+    while (text.length < 43) {
+      text.push('');
+    }
+    const free = /^\s*\*\*free/i.test(text[0] ?? '');
+    text[41] = free ? 'QS4UNDEF = 1;' : '     C                   EVAL      QS4UNDEF = 1';
+    fs.writeFileSync(local(assetsRel), text.join('\n'));
+    const uri = vscode.Uri.file(local(assetsRel));
+    try {
+      const r = await api.runner.run(uri, 'Compile (CRTBNDRPG)');
+      assert.ok(r?.outcome, `an outcome: ${String(r?.error)}`);
+      console.log(`live: compile ${r.command}: ${r.outcome.status}, escape ${r.outcome.escape?.id ?? 'none'}`);
+      assert.ok(r.command.includes(`PGM(${PROJ_LIB}/ASSETS) SRCFILE(${PROJ_LIB}/QRPGLESRC)`), r.command);
+      for (const d of r.outcome.diagnostics) {
+        console.log(`live:   ${d.id} ${d.at.kind === 'member' ? `${d.at.library}/${d.at.file}(${d.at.member})` : d.at.kind} line ${d.line}`);
+      }
+      const onLocal = (api.diagnostics.collection.get(uri) ?? []).filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+      assert.ok(onLocal.some((d) => d.range.start.line === 41), `an error at line 42 of the local file: ${onLocal.map((d) => `${String(d.code)}@${d.range.start.line + 1}`).join(', ')}`);
+    } finally {
+      fs.writeFileSync(local(assetsRel), committed);
+      await deployer.deploy(project, 'changed');
+    }
+  });
+
+  test('changed on the system after the deploy (STRSEU by hand; here a member.write): Conflict, and the deploy stops for it', async () => {
+    const at = { name: NAME, library: PROJ_LIB, file: 'QRPGLESRC', member: 'ASSETS' };
+    const sys = await api.host.request('member.read', { ...at, lock: true });
+    await new Promise((r) => setTimeout(r, 1100));
+    await api.host.request('member.write', { ...at, lines: [...sys.lines, { seq: '0000.00', date: '000000', text: '// from the system' }], renumber: true });
+    fs.appendFileSync(local(assetsRel), '// local change\n');
+    ui.conflicts = ['skip'];
+    ui.asked.length = 0;
+    lines.length = 0;
+    const r = await deployer.deploy(project, 'changed');
+    console.log(`live: conflict: ${lines.slice(1).join(' | ')}`);
+    assert.deepEqual(r?.conflicts, [assetsRel]);
+    assert.deepEqual(r?.deployed, []);
+    assert.ok(ui.asked.some((a) => a.startsWith('conflict ')), 'Overwrite / Pull / Skip asked');
+    await api.projectView.refresh();
+    assert.equal(api.projectView.rows(project).find((x) => x.rel === assetsRel)?.status, 'conflict', 'the Project view marks it');
+  });
+
+  test('git stash the local change, Deploy git-changed: nothing to deploy', async function () {
+    if (!git) {
+      this.skip();
+    }
+    run(['stash', '-q']);
+    lines.length = 0;
+    const r = await deployer.deploy(project, 'git');
+    console.log(`live: git-changed: ${lines.slice(1).join(' | ')}`);
+    assert.deepEqual(r?.deployed, []);
+    assert.ok(lines.includes('Nothing to deploy'));
   });
 });

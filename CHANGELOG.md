@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.0.0-pre · Phase 8 · local projects and deploy
+
+- `qs400project.json` maps a workspace folder to a library or an IFS
+  directory: its connection, target, layout, the CCSID of stream files it
+  creates, ignore globs, member texts and actions of its own. It is
+  checked on save, each problem on its place. `.qs400/state.json` keeps
+  each file's hash and the system's change timestamp at the last deploy
+  or pull.
+- **Pull Library…**, **Pull Source File**, **Pull Member** and **Pull into
+  Project** write members as text, a directory per source file and a file
+  per member with the extension of its type, so existing code can go
+  under git; a folder without a project file gets one, and `.qs400/` in
+  its `.gitignore`. A local file changed since asks Overwrite or Keep.
+- **Deploy Changed**, **Deploy All**, **Deploy Git-Changed** and **Deploy
+  File**: changed files by content hash, every file, the files git reports,
+  or one. Members keep their sequence numbers and dates by the save rules
+  of an editor's save; new members are created with their type and text;
+  missing source files are made with `CRTSRCPF` after a question; stream
+  files are uploaded with progress and Cancel. Conflicts, a member or file
+  changed on the system since, are listed before anything is written and
+  resolved per file with Overwrite, Pull or Skip. Deletions are never
+  deployed.
+- **Run Action…** on a local file deploys it, then runs on the member or
+  stream file it went to, with `&LIBRARY` and `&SRCLIB` the project's
+  library; the compiler's messages go on the local file.
+- `/COPY` and `/INCLUDE` are read from the workspace's projects first, the
+  system second; saving a local copy member updates every document that
+  includes it.
+- The **Project** view: each project's connection and target, its files by
+  directory as Deployed, Changed, New, Conflict or Ignored, Deploy, Pull,
+  Diff with System and Open on System; the files to deploy in the status
+  bar.
+- The host's `deploy.member` and `deploy.path`, which sequence the
+  existing `member.*` and `ifs.*` calls.
+- The activity bar icon is a Q on a terminal display.
+  See [docs/projects.md](docs/projects.md).
+
 ## 1.0.0-pre · Phase 7 · jobs, spooled files and messages
 
 - The **Jobs** view: My jobs, another profile's or `*ALL` (saved per

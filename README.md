@@ -5,7 +5,7 @@ remote operation goes through `qs400-code-host`, a Rust sidecar bundled
 with the extension that speaks QAP, the Quartz Access Protocol shared with
 QS/400 Access.
 
-**Status: 1.0.0 pre-release, Phase 7.** Saved connections, sign-on over
+**Status: 1.0.0 pre-release, Phase 8.** Saved connections, sign-on over
 QAP, a session per connection with its status, session job and library
 list; the Objects view with filters; source members opened, locked and
 saved with their sequence numbers and dates; the IFS view, with stream
@@ -21,12 +21,17 @@ the SQL view of schemas, tables, views, routines, columns and indexes,
 commit levels with Commit and Rollback, and a statement history; the
 Jobs view with job logs, hold, release and end, the Spooled files view
 with a viewer that keeps the printed columns and PDF download, and the
-Messages view with inquiry replies, sends and notifications.
+Messages view with inquiry replies, sends and notifications; and local
+projects: a folder of source under git mapped to a library or an IFS
+directory by `qs400project.json`, pulled from the system, deployed back
+with the changed files only and their sequence numbers kept, conflicts
+caught, actions run on local files, and the Project view.
 See [docs/connections.md](docs/connections.md),
 [docs/objects-and-members.md](docs/objects-and-members.md),
 [docs/ifs.md](docs/ifs.md), [docs/actions.md](docs/actions.md),
 [docs/languages.md](docs/languages.md), [docs/sql.md](docs/sql.md) and
-[docs/jobs-spool-messages.md](docs/jobs-spool-messages.md).
+[docs/jobs-spool-messages.md](docs/jobs-spool-messages.md) and
+[docs/projects.md](docs/projects.md).
 
 ## Requirements
 
@@ -74,6 +79,9 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | Jobs: Refresh, Change Jobs Filter…, Job Log, Hold, Release, End…, Spooled Files, Copy Qualified Name | `code-for-qs400.jobs.refresh`, `.filter`, `.log`, `.hold`, `.release`, `.end`, `.spooledFiles`, `.copyName` |
 | Spooled files: Refresh, Output Queue Library…, Open, Save as Text…, Save as PDF…, Hold…, Release, Move…, Delete | `code-for-qs400.spool.refresh`, `.queueLibrary`, `.open`, `.saveText`, `.savePdf`, `.hold`, `.release`, `.move`, `.delete` |
 | Spooled file viewer: Go to Page…, Load All Pages, Refresh | `code-for-qs400.spool.goToPage`, `.loadAll`, `.viewerRefresh` |
+| Pull Library…, Pull Source File, Pull Member, Pull into Project | `code-for-qs400.pull.library`, `.sourceFile`, `.member`, `.path` |
+| Deploy Changed, Deploy All, Deploy Git-Changed, Deploy File | `code-for-qs400.deploy.changed`, `.all`, `.git`, `.file` |
+| Project: Refresh Project, Pull into Project, Pull from System, Diff with System, Open on System | `code-for-qs400.project.refresh`, `.pull`, `.pullFile`, `.diff`, `.openRemote` |
 | Messages: Refresh, Reply…, Remove, Copy Text, Send Message…, Remove All Answered, Add and Remove Message Queue | `code-for-qs400.messages.refresh`, `.reply`, `.remove`, `.copyText`, `.send`, `.removeAnswered`, `.addQueue`, `.removeQueue` |
 
 **About** asks the host for its version and shows, for example,
@@ -93,7 +101,10 @@ Passwords are never in settings: they go to VS Code secret storage.
 
 A workspace folder's actions are in `.vscode/actions.json`, checked against
 [schemas/actions.json](schemas/actions.json); see
-[docs/actions.md](docs/actions.md).
+[docs/actions.md](docs/actions.md). A folder that is a project has a
+`qs400project.json`, checked against
+[schemas/qs400project.json](schemas/qs400project.json); see
+[docs/projects.md](docs/projects.md).
 
 ## Host
 
@@ -128,6 +139,8 @@ package.json, src/      the extension (TypeScript, bundled by esbuild to dist/)
   src/spool/              the Spooled files model, the viewer's layout and the viewer
   src/messages/model.ts   the Messages view's order, descriptions and notify rule
   src/languages/          the language clients, includes for the servers, fixed-form RPG guides
+  src/projects/           local projects: the project file and state, the layout, pull, deploy,
+                          git changes, actions on local files, includes from the workspace
   src/sql/                SQL: statement scope, the runner, options and status bar, the results
                           webview, CSV export, the generators, history
   src/views/connections.ts  the Connections tree
@@ -135,10 +148,12 @@ package.json, src/      the extension (TypeScript, bundled by esbuild to dist/)
   src/views/ifs.ts        the IFS tree
   src/views/sql.ts        the SQL tree
   src/views/jobs.ts, spool.ts, messages.ts  the Jobs, Spooled files and Messages trees
+  src/views/project.ts    the Project tree and its status bar item
   src/views/sessionStatusBar.ts  the active connection in the status bar
   src/commands/           About, connection, object, member and IFS commands
 syntaxes/, languages/   grammars and language configuration
 schemas/actions.json    schema for .vscode/actions.json
+schemas/qs400project.json  schema for a project folder's qs400project.json
 defaults/actions.json   the default actions shipped with the extension
 media/                  activity bar icon (placeholder)
 bin/                    host binary, copied in at package time (gitignored)
@@ -151,7 +166,7 @@ host/                   Cargo workspace for the sidecar
                           src/spool.rs and src/messages.rs spooled files and message
                           queues, src/watches.rs the watches and their events,
                           src/codec.rs keys and job names, src/sql/ the SQL methods,
-                          values and CSV
+                          values and CSV, src/deploy.rs the deploy sequences
   crates/lsp-common       what the language servers share: the loop, positions, includes, features
   crates/lsp-<lang>       one language server each (rpgle, cl, dds, sql, cmd) on its front end
   crates/severity         the one severity table, shared with the extension

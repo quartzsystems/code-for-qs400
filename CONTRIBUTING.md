@@ -21,11 +21,14 @@ decided along the way.
 | `src/spool/` | `model.ts` (statuses, labels, the listing's name and match) and `layout.ts` (the viewer's page markers), neither importing `vscode`; `viewer.ts` (the `qs400spl` viewer) |
 | `src/messages/model.ts` | The Messages view's order, descriptions, answered keys and the notify rule (no `vscode` import) |
 | `src/languages/` | `client.ts` (one language client per language, the include notifications), `includes.ts` (`qs400/fetchInclude` and `qs400/listMembers` through the host), `protocol.ts` (keep in step with `host/crates/lsp-common/src/protocol.rs`), `rpgColumns.ts` (the fixed-form columns; no `vscode` import), `fixedForm.ts` (the guides and the column in the status bar) |
+| `src/projects/` | `config.ts` (`qs400project.json` and the ignore globs), `layout.ts` (the `sourceFiles` layout, names and types both ways, the hash), `state.ts` (`.qs400/state.json` and each file's state), `model.ts` (the Project view's rows), none of which imports `vscode`; `store.ts` (the projects, validation, state on disk, the generator), `ui.ts` (the questions), `pull.ts`, `deploy.ts`, `git.ts` (the git extension's changes), `local.ts` (actions on local files), `includes.ts` (includes from the workspace), `commands.ts` |
+| `src/views/project.ts` | The Project tree, its commands and status bar item |
 | `src/sql/` | `statements.ts` (the split and the statement under the cursor), `format.ts` (labels), `generate.ts` (the SQL the tree writes), none of which imports `vscode`; `resultsHtml.ts` (the results page; no `vscode` import), `session.ts` (each document's connection, the options, the status bar, Commit, Rollback, the disconnect question), `run.ts` (**Run Statement**, the Problems panel), `results.ts` (the **SQL results** panel), `export.ts` (Export CSV), `history.ts` |
 | `src/views/sql.ts` | The SQL tree and its commands |
 | `src/views/jobs.ts`, `spool.ts`, `messages.ts` | The Jobs, Spooled files and Messages trees, their watches, badges and commands |
 | `syntaxes/`, `languages/` | The five TextMate grammars and language configurations |
 | `schemas/actions.json`, `defaults/actions.json` | The schema of `.vscode/actions.json`, and the default actions shipped |
+| `schemas/qs400project.json` | The schema of a project's `qs400project.json` |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
 | `bin/` | Host binary for the current platform, copied in by `scripts/package.sh`; gitignored |
 | `host/` | Cargo workspace: `crates/host-rpc` (framing, registry, error codes; no QS/400 knowledge) and `crates/code-host` (the `qs400-code-host` binary) |
@@ -34,6 +37,7 @@ decided along the way.
 | `host/crates/code-host/src/ifs.rs` | `ifs.*`, thin over `qap-client`'s `Files`, `read` and `write`; the transfers and their threads |
 | `host/crates/code-host/src/actions.rs`, `jobs.rs` | `action.*` over `Command` and `Develop::compile`, each run on a thread of its own; `job.log` and `jobs.*` over `Jobs` |
 | `host/crates/code-host/src/spool.rs`, `messages.rs`, `watches.rs`, `codec.rs` | `spool.*` and `messages.*` over `Client`'s `Spool` and `Messages` through `WorkBackend`; the watches the extension and the one-shot waits hold, and their events as notifications; `codec.rs` the one place keys, job names, queues and enum names convert |
+| `host/crates/code-host/src/deploy.rs` | `deploy.member` and `deploy.path`: the existing `member.*` and `ifs.*` calls in sequence behind a `Steps` trait, and `deploy::plan`, the save diff's rules in Rust |
 | `host/crates/code-host/src/sql/` | `sql.*` over one `SqlConnection` per session and the `Sql` catalog; `values.rs` is the one place a `SqlValue` becomes JSON or CSV text, `csv.rs` the CSV writer |
 | `host/crates/lsp-common` | What the language servers share: the loop (`server.rs`), positions (`position.rs`), the URI's source (`uri.rs`), the include cache (`includes.rs`), the features (`features.rs`), the custom messages (`protocol.rs`) and a test client (`testing.rs`) |
 | `host/crates/lsp-rpgle`, `lsp-cl`, `lsp-dds`, `lsp-sql`, `lsp-cmd` | One `Language` each over its front end's `analyze`: options, folding, completion words |
@@ -141,8 +145,11 @@ their edges.
 
 ### Live tests
 
-`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3, 4, 6 and
-7 exit tests against a real system. Phase 7 compiles its own member
+`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3, 4, 6, 7
+and 8 exit tests against a real system. Phase 8 makes the library
+`QS400_PROJECT_LIBRARY` with `CRTLIB`, pulls `QS400_PROJECT_SOURCE` into a
+temporary folder, deploys, compiles and makes a conflict there, and
+deletes the library with `DLTLIB`; its git steps need `git` on `PATH`. Phase 7 compiles its own member
 `QS4SPL7` in `QS400_TEST_SRCPF` (the program stays in the current
 library), submits `CODETEST` and ends it, and sends itself an inquiry and
 a message, which it removes. Phase 6 makes and drops the table
@@ -161,6 +168,8 @@ names. It is skipped unless these are set:
 | `QS400_TEST_CURLIB` | Library to set as current; Phase 4 compiles into it. Default the user profile. |
 | `QS400_TEST_SRCPF` | Source file Phase 2 makes and removes its `QS4*` members in. Default `HLINV/QTMPSRC`; it must exist. |
 | `QS400_TEST_SOURCE` | Member Phase 2 copies (and only reads). Default `HLINV/QRPGLESRC(ASSETS)`. |
+| `QS400_PROJECT_SOURCE` | Library Phase 8 pulls (and only reads). Default `HLINV`. |
+| `QS400_PROJECT_LIBRARY` | Scratch library Phase 8 creates, deploys to and deletes. Default `HLINVDEV`; anything in it is lost. |
 
 In CI the last two are repository variables, not secrets.
 
@@ -1224,6 +1233,129 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     contributed command activates the extension, whose registration then
     fails on the ID already taken, and every later suite with it. So the
     viewer's tests register only its provider (`registerProvider`).
+
+## Decisions made in Phase 8
+
+1. **No new pins, no new QAP.** `qap-client` stays at
+   `quartz-systems-access` `90d9bba`. The host gains `deploy.rs` only:
+   `deploy.member` and `deploy.path` call the host's own `member.*` and
+   `ifs.*` functions in sequence, behind a `Steps` trait (`Live` on a
+   session; the unit tests script it). `ifs::register` now returns its
+   `Transfers`, so `ifs.cancel` stops a `deploy.path` upload, and
+   `run_upload`, `not_found` and `Transfers::begin`/`end` are
+   `pub(crate)`.
+2. **The save diff in Rust too.** `deploy.member` reads the member with
+   `lock: true`, plans the write and writes in one host call, so the lock
+   is held by one request rather than across a round trip to the
+   extension. That needs the plan where the read is: `deploy::plan` is
+   `src/members/diff.ts` line for line, tested on Phase 2's six save
+   fixtures and the same gap cases. The editor's save still plans in the
+   extension. A change to one is a change to both.
+3. **Conflict detection, members: `member.list`'s `changed`.** Each file's
+   record keeps the timestamp and *where it is from*
+   (`HLINVDEV/QRPGLESRC(ASSETS)` or the stream file's path). A conflict is
+   a `changed` newer than the record's for the same member; for a stream
+   file, `ifs.info`'s `change` different from the record's. A record of
+   another place (a pull from `HLINV` deploying to `HLINVDEV`) is no
+   baseline, and a file with no record is never a conflict, so a first
+   deploy over existing members replaces them. The timestamps are read
+   before anything is written (one `member.list` per source file), and
+   `deploy.member` checks `expect` again in the host, answering `-32050`
+   (`DeployErrorCodes.Conflict`, `data: { changed }` or `{ change }`) when
+   the member changed in between. Overwrite sends no `expect`.
+4. **Changed is by hash.** A member's hash is of its lines as a member
+   holds them: CRLF read as LF, trailing blanks removed, and the newline
+   that ends the file not a line. So a CRLF checkout is not a change. A
+   stream file's hash is of its bytes.
+5. **Pull writes `\n` after every line**, so git sees a final newline, and
+   deploy drops the empty line that newline would make. An empty member is
+   an empty file. Pull reads with `lock: false`.
+6. **Member text round-trips through `texts`.** Pull records each
+   member's text in `qs400project.json`'s `texts`, so **Deploy All** into
+   a new library creates every member with its text, as the exit test
+   needs. A project file that exists gets the texts it lacks; it is never
+   rewritten otherwise.
+7. **A conflict's Pull** writes the system's copy into the local file and
+   records the system's timestamp but keeps the old hash, so the file
+   shows as Changed until it is deployed again ("mark it changed"). It
+   writes into the deploy's own state, which the deploy saves at its end:
+   writing `state.json` separately was overwritten by the deploy, which
+   the conflict test caught.
+8. **Deletions** are listed once as **Left on the system** and their
+   records dropped, since "removed since the last deploy" is no longer
+   true after it.
+9. **The type follows the extension.** A member that exists with another
+   source type than its local file's extension gets the file's type
+   (`member.changeText` with `type`) after the write. A member already
+   holding the lines is not written and only unlocked; it counts as
+   deployed in the summary.
+10. **An open editor of a member deploy wrote** is read again and locked
+    again (Phase 2's `refresh`), since the write ended the lock its job
+    held and its next save must diff the new lines.
+11. **Ignore globs** are matched from the folder's root, without case; a
+    glob without `/` matches a name in any directory. `.git/**`,
+    `.gitignore`, `.gitattributes`, `.qs400/**`, `.vscode/**` and
+    `qs400project.json` are always ignored, so the generator's own
+    `.gitignore` is never deployed as a stray file. A directory every name
+    of which a glob ignores is not walked.
+12. **Files outside the layout** (not one directory deep, or not a system
+    name) are skipped with their reason in the output, and two local files
+    naming one member are an error for both, each deploy.
+13. **Source files** are made with `CRTSRCPF FILE(LIB/FILE) RCDLEN(112)`
+    through `action.run` (`kind: "command"`) after one question naming
+    them all; declining skips their members.
+14. **Pull of a stream file**: bytes as stored (`ifs.download`) when the
+    file is 1208, 65535 or a binary extension; otherwise `ifs.readText`,
+    converted to UTF-8, with a note that a deploy sends UTF-8 bytes, since
+    deploy uploads as the prompt says (`ifs.upload`, which sends bytes as
+    they are) and an existing file keeps its own CCSID tag.
+15. **Git.** **Deploy Git-Changed** takes the working tree, index, merge
+    and untracked changes of the folder's repository from the built-in git
+    extension's API (`vscode.git`, `getAPI(1)`), after `repository.status()`
+    so a `git stash` outside VS Code shows; no repository, or the git
+    extension disabled, is **Deploy Changed** with a notice. The live test
+    runs VS Code with `--disable-extensions`, so it reads `git status
+    --porcelain` itself through the same `GitChanges` interface; the API
+    path is tested with a mock API.
+16. **Actions on local files.** `ActionRunner` takes a `local` resolver:
+    a `file` URI of a project becomes the member or stream file it deploys
+    to, deployed first (saved, with the conflict check; not deployed, not
+    run). `&LIBRARY` is the target library, so the current library is read
+    only for `&CURLIB`. **Run Action…** is on the editor title of a
+    project's files (context key `code-for-qs400.hasProject`).
+17. **The diagnostic map** is the deployer's, in memory: each member or
+    stream file a deploy wrote, to its local file. After a window reload it
+    is empty until the next deploy, and a compile on a local file always
+    deploys first, so its own diagnostics land locally; a `/COPY` member
+    deployed in an earlier window lands on the system's member until it is
+    deployed again.
+18. **Includes from the workspace.** From a local document the directive's
+    library is ignored; from a member or stream file it must be `*LIBL`,
+    `*CURLIB`, none, or the project's target library, and only projects on
+    the document's connection answer. A local document's own project goes
+    first, and its includes come from its project's connection (Phase 5
+    decision 6 used the active connection). The answer's `at` names the
+    target library, so the servers' `includesChanged` drops it on a save.
+19. **Project actions** are a layer of every project on the connection,
+    between the workspace's `.vscode/actions.json` and the connection's
+    own, not only of the file's project.
+20. **Folders outside the workspace.** A pull into a folder that is not a
+    workspace folder (the open dialog, when none is open) keeps that folder
+    among the projects (`ProjectStore.track`) for the window.
+21. **The Project view** reads the system only on **Refresh**; between
+    refreshes Conflict comes from the last deploy. Its title-bar **Pull**
+    pulls the whole target (every source file of the library, or the
+    directory) into the project; a file's **Pull from System** takes the
+    system's copy as Deployed.
+22. **No mapping beyond Phase 2's table.** Every type in it maps to an
+    extension that maps back to the same type (tested over the whole
+    table), and an unknown extension is its own type in upper case, as
+    `typeForExtension` already did.
+23. **The exit test's `STRSEU` step** is a hand step; the live suite stands
+    in for it with a `member.write` from the host, which moves the
+    member's `changed` the same way.
+24. **The activity bar icon** is now a Q on a terminal display
+    (`media/qs400.svg`), chosen by the user from eight drawn options.
 
 ## Phase 0 exit test
 
