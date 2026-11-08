@@ -179,6 +179,12 @@
         "icon": "$(arrow-swap)"
       },
       {
+        "command": "code-for-qs400.library.create",
+        "title": "Create Library…",
+        "category": "Code for QS/400",
+        "icon": "$(new-folder)"
+      },
+      {
         "command": "code-for-qs400.libl.add",
         "title": "Add Library to Library List",
         "category": "Code for QS/400",
@@ -1084,6 +1090,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "code-for-qs400.library.create",
+          "when": "view == code-for-qs400.objects",
+          "group": "navigation@0"
+        },
+        {
           "command": "code-for-qs400.ifs.goTo",
           "when": "view == code-for-qs400.ifs",
           "group": "navigation@1"
@@ -1239,6 +1250,11 @@
           "command": "code-for-qs400.libl.add",
           "when": "view == code-for-qs400.connections && viewItem == libraryList",
           "group": "1_edit@1"
+        },
+        {
+          "command": "code-for-qs400.library.create",
+          "when": "view == code-for-qs400.connections && viewItem =~ /^libraryList/",
+          "group": "1_edit@0"
         },
         {
           "command": "code-for-qs400.libl.moveUp",

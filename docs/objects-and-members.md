@@ -138,11 +138,20 @@ On a member:
 The system's messages are shown as they come, as `CPF…: text`, with the
 second-level text under **Details**.
 
+## Creating a library
+
+**Create Library…** (the folder button in the Objects view's title, or
+right-click **Library list** in the Connections view) asks for the name
+and the text and runs `CRTLIB LIB(NAME) TEXT('text')` in the session's
+job. Then **Add to Library List** puts it at the end of the user part.
+**Add Library to Library List** with a library the system does not have
+(`CPF2110`) offers **Create Library** and adds it once it is made. For
+other `CRTLIB` parameters, run it as an [action](actions.md). A deploy
+makes the source files it needs with `CRTSRCPF`; see
+[Local projects and deploy](projects.md).
+
 ## Not in this release
 
 - Opening an object in a 5250 session.
-- Creating libraries: run `CRTLIB` as an [action](actions.md) or at a 5250
-  session. A deploy makes the source files it needs with `CRTSRCPF`; see
-  [Local projects and deploy](projects.md).
 
 See [Known limitations](known-limitations.md) for the rest.

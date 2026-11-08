@@ -28,9 +28,10 @@ compiler front-ends offer at this release.
 
 - **No "Open in 5250".** Objects and members cannot be opened in a 5250
   session from the Objects view.
-- **No commands for creating libraries.** Run `CRTLIB` as an action or at
-  a 5250 session. Source files are made by `CRTSRCPF` when a deploy needs
-  them, or as an action.
+- **Libraries are created with name and text only.** **Create Library…**
+  runs `CRTLIB` with its defaults; for other parameters (`TYPE`, `ASP`,
+  `AUT`) run `CRTLIB` as an action. Source files are made by `CRTSRCPF`
+  when a deploy needs them, or as an action.
 
 ## The IFS
 

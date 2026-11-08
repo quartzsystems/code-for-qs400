@@ -7,9 +7,13 @@ import { HostRpcError } from '../host/client';
 import { LibraryList, SessionStatus } from '../host/protocol';
 import { ConnectionNode, DetailItem, LibraryListSource, isSignedOn } from '../views/connections';
 import { libraryName, sameName } from './config';
-import { errorText, showError } from './prompts';
+import { createLibrary } from '../objects/createLibrary';
+import { errorText, serverMessage, showError } from './prompts';
 import { SessionManager } from './sessions';
 import { ConnectionStore } from './store';
+
+const CREATE_LIBRARY = 'Create Library';
+const ADD_TO_LIST = 'Add to Library List';
 
 /** What the Library list node knows of a session's list. */
 interface Known {
@@ -123,8 +127,14 @@ export class LibraryListController implements LibraryListSource, vscode.Disposab
           : await this.sessions.call(name, 'libl.get', { name });
       this.known.set(name, { list });
     } catch (err) {
-      this.known.set(name, { error: errorText(err) });
       this.output.warn(`${name}: library list: ${errorText(err)}`);
+      // The job keeps its own list; show that one so it can be edited.
+      try {
+        this.known.set(name, { list: await this.sessions.call(name, 'libl.get', { name }) });
+        void vscode.window.showWarningMessage(`${name}: the saved library list was not applied: ${errorText(err)}`);
+      } catch {
+        this.known.set(name, { error: errorText(err) });
+      }
     }
     this.changed.fire(name);
   }
@@ -162,8 +172,14 @@ export class LibraryListController implements LibraryListSource, vscode.Disposab
     return k.list ? libraryItems(name, k.list) : [];
   }
 
-  /** Sends an edit; on success shows the server's list and saves it for the next connect. */
-  async apply(name: string, edit: LibraryListEdit): Promise<LibraryList | undefined> {
+  /**
+   * Sends an edit; on success shows the server's list and saves it for the
+   * next connect. A refused edit leaves the job's list as it was: it is read
+   * again and the node stays editable. `added` is the library the edit adds:
+   * when the system has no such library (`CPF2110`), it offers to create it
+   * and sends the edit again.
+   */
+  async apply(name: string, edit: LibraryListEdit, added?: string): Promise<LibraryList | undefined> {
     try {
       const list = await this.sessions.call(name, 'libl.set', { name, current: edit.current, user: edit.user });
       this.known.set(name, { list });
@@ -172,10 +188,21 @@ export class LibraryListController implements LibraryListSource, vscode.Disposab
       return list;
     } catch (err) {
       if (err instanceof HostRpcError) {
-        this.known.set(name, { ...this.known.get(name), error: errorText(err) });
+        try {
+          this.known.set(name, { list: await this.sessions.call(name, 'libl.get', { name }) });
+        } catch {
+          // The node keeps what it had.
+        }
         this.changed.fire(name);
       }
-      void showError(err, name);
+      if (!added || serverMessage(err)?.messageId !== 'CPF2110') {
+        void showError(err, name);
+        return undefined;
+      }
+      const picked = await showError(err, name, CREATE_LIBRARY);
+      if (picked === CREATE_LIBRARY && (await createLibrary(this.sessions, name, added)) === added) {
+        return this.apply(name, edit);
+      }
       return undefined;
     }
   }
@@ -254,7 +281,7 @@ export class LibraryListController implements LibraryListSource, vscode.Disposab
           },
         });
         const lib = input === undefined ? undefined : libraryName(input);
-        return lib ? this.apply(name, withAdded(list, lib)) : undefined;
+        return lib ? this.apply(name, withAdded(list, lib), lib) : undefined;
       }),
       reg('remove', async (arg) => {
         const item = library(arg);
@@ -280,6 +307,22 @@ export class LibraryListController implements LibraryListSource, vscode.Disposab
         const item = library(arg);
         const list = item ? await this.current(item.connectionName) : undefined;
         return item?.library && list ? this.apply(item.connectionName, withCurrent(list, item.library)) : undefined;
+      }),
+      vscode.commands.registerCommand('code-for-qs400.library.create', async (arg?: DetailItem) => {
+        const name = target(arg);
+        if (!name) {
+          return undefined;
+        }
+        const lib = await createLibrary(this.sessions, name);
+        if (!lib) {
+          return undefined;
+        }
+        const picked = await vscode.window.showInformationMessage(`Created library ${lib} on ${name}.`, ADD_TO_LIST);
+        if (picked === ADD_TO_LIST) {
+          const list = await this.current(name);
+          return list ? this.apply(name, withAdded(list, lib)) : undefined;
+        }
+        return lib;
       }),
     ];
   }

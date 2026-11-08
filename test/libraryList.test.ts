@@ -16,10 +16,16 @@ import { SessionManager } from '../src/connections/sessions';
 import { ConnectionStore } from '../src/connections/store';
 import { HostClient, HostRpcError } from '../src/host/client';
 import { LibraryList, SessionErrorCodes, SessionStatus } from '../src/host/protocol';
+import { crtlibCommand } from '../src/objects/createLibrary';
 
 const LIST: LibraryList = { current: 'CWELLMAN', system: ['QSYS', 'QSYS2'], user: ['QGPL', 'QTEMP', 'TOOLS'] };
 
 suite('Library list: edits', () => {
+  test('the CRTLIB command, text quoted as CL', () => {
+    assert.equal(crtlibCommand('INVMGR', ''), 'CRTLIB LIB(INVMGR)');
+    assert.equal(crtlibCommand('INVMGR', " Inventory Manager's data "), "CRTLIB LIB(INVMGR) TEXT('Inventory Manager''s data')");
+  });
+
   test('move up and down, unchanged at either end', () => {
     assert.deepEqual(moved(LIST, 2, -1).user, ['QGPL', 'TOOLS', 'QTEMP']);
     assert.deepEqual(moved(LIST, 0, 1).user, ['QTEMP', 'QGPL', 'TOOLS']);
@@ -139,6 +145,50 @@ suite('Library list: the node and saving', () => {
     assert.deepEqual(await libl.children('LIBL'), []);
     assert.equal(await libl.apply('LIBL', { current: 'X', user: ['A'] }), undefined);
     assert.equal(store.get('LIBL')?.libraryList, undefined);
+  });
+
+  test('a refused edit leaves the list shown and editable, and nothing saved', async () => {
+    const list: LibraryList = { current: null, system: ['QSYS'], user: ['QGPL'] };
+    const host = new FakeHost((method) => {
+      if (method === 'libl.set') {
+        throw new HostRpcError(SessionErrorCodes.Server, 'CPF2110: library INVMGR not found', {
+          status: 'Error',
+          messageId: 'CPF2110',
+          text: 'library INVMGR not found',
+        });
+      }
+      return list;
+    });
+    const { store, sessions, libl } = controller(host);
+    sessions.update(job('100001'));
+    await settle();
+    assert.equal(await libl.apply('LIBL', withAdded(list, 'NOPE')), undefined);
+    const node = libl.node('LIBL');
+    assert.equal(node.contextValue, 'libraryList');
+    assert.notEqual(node.collapsibleState, vscode.TreeItemCollapsibleState.None);
+    assert.deepEqual(
+      (await libl.children('LIBL')).map((i) => i.label),
+      ['QGPL'],
+    );
+    assert.equal(store.get('LIBL')?.libraryList, undefined);
+  });
+
+  test('a saved list the system refuses on connect: the job’s own list is shown', async () => {
+    await config().update('connections', [{ name: 'LIBL', host: 'h.example', user: 'CWELLMAN', libraryList: { user: ['INVMGR'] } }], true);
+    const host = new FakeHost((method) => {
+      if (method === 'libl.set') {
+        throw new HostRpcError(SessionErrorCodes.Server, 'CPF2110: library INVMGR not found', { status: 'Error', messageId: 'CPF2110' });
+      }
+      return { current: null, system: ['QSYS'], user: ['QGPL'] };
+    });
+    const { sessions, libl } = controller(host);
+    sessions.update(job('100001'));
+    await settle();
+    assert.equal(libl.node('LIBL').contextValue, 'libraryList');
+    assert.deepEqual(
+      (await libl.children('LIBL')).map((i) => i.label),
+      ['QGPL'],
+    );
   });
 
   test('an edit the server took is saved, and a new session job gets it applied', async () => {
