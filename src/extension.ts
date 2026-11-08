@@ -5,11 +5,14 @@
 import * as vscode from 'vscode';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
+import { registerMemberCommands } from './commands/members';
 import { registerObjectCommands } from './commands/objects';
 import { LibraryListController } from './connections/libraryList';
 import { SessionManager } from './connections/sessions';
 import { ConnectionStore } from './connections/store';
 import { HostClient, HostState } from './host/client';
+import { MemberFsProvider } from './members/provider';
+import { MEMBER_SCHEME } from './members/uri';
 import { ConnectionsProvider } from './views/connections';
 import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
@@ -22,6 +25,7 @@ export interface ExtensionApi {
   readonly connections: ConnectionsProvider;
   readonly libraryList: LibraryListController;
   readonly objects: ObjectsProvider;
+  readonly members: MemberFsProvider;
   readonly statusBar: SessionStatusBar;
 }
 
@@ -43,6 +47,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const connections = new ConnectionsProvider(store, sessions, libraryList);
   const statusBar = new SessionStatusBar(store, sessions);
   const objects = new ObjectsProvider(store, sessions, libraryList);
+  const members = new MemberFsProvider(sessions, store, output);
 
   context.subscriptions.push(
     output,
@@ -54,13 +59,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     connections,
     statusBar,
     objects,
+    members,
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
+    vscode.workspace.registerFileSystemProvider(MEMBER_SCHEME, members, { isCaseSensitive: false }),
     vscode.commands.registerCommand('code-for-qs400.about', () => about(host)),
     ...registerConnectionCommands(store, sessions),
     ...libraryList.registerCommands(),
     ...registerObjectCommands(objects, store, sessions),
+    ...registerMemberCommands(),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();
@@ -72,7 +80,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members };
 }
 
 export function deactivate(): void {

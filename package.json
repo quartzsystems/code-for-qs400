@@ -164,6 +164,18 @@
         "title": "Remove Filter",
         "category": "Code for QS/400",
         "icon": "$(trash)"
+      },
+      {
+        "command": "code-for-qs400.member.open",
+        "title": "Open",
+        "category": "Code for QS/400",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "code-for-qs400.member.openReadOnly",
+        "title": "Open Read-Only",
+        "category": "Code for QS/400",
+        "icon": "$(lock)"
       }
     ],
     "configuration": {
@@ -444,6 +456,16 @@
           "command": "code-for-qs400.objects.refresh",
           "when": "view == code-for-qs400.objects && viewItem =~ /^(objects\\.|object\\.)/",
           "group": "9_refresh@1"
+        },
+        {
+          "command": "code-for-qs400.member.open",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "1_open@1"
+        },
+        {
+          "command": "code-for-qs400.member.openReadOnly",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "1_open@2"
         }
       ],
       "commandPalette": [
@@ -474,10 +496,48 @@
         {
           "command": "code-for-qs400.filter.remove",
           "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.open",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.openReadOnly",
+          "when": "false"
         }
       ]
     },
     "languages": [
+      {
+        "id": "qs400-rpgle",
+        "aliases": [
+          "RPG (QS/400)"
+        ]
+      },
+      {
+        "id": "qs400-cl",
+        "aliases": [
+          "CL (QS/400)"
+        ]
+      },
+      {
+        "id": "qs400-dds",
+        "aliases": [
+          "DDS (QS/400)"
+        ]
+      },
+      {
+        "id": "qs400-sql",
+        "aliases": [
+          "SQL (QS/400)"
+        ]
+      },
+      {
+        "id": "qs400-cmd",
+        "aliases": [
+          "Command definition (QS/400)"
+        ]
+      },
       {
         "id": "qs400-properties",
         "aliases": [

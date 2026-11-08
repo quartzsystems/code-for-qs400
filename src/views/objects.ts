@@ -126,6 +126,7 @@ export function objectsTreeItem(n: ObjectsNode): vscode.TreeItem {
       i.tooltip = m.text || `${n.library}/${n.file}(${m.member})`;
       i.iconPath = new vscode.ThemeIcon('file-code');
       i.contextValue = 'objects.member';
+      i.command = { command: 'code-for-qs400.member.open', title: 'Open', arguments: [n] };
       return i;
     }
   }
