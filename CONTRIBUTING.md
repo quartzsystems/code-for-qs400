@@ -16,14 +16,17 @@ decided along the way.
 | `src/members/` | `types.ts` (the one source type → extension and language table), `uri.ts` (`qs400mbr` URIs), `provider.ts` (the file system provider, locks, the cache), `diff.ts` (the save diff; no `vscode` import) |
 | `src/ifs/` | `paths.ts` (paths, sorting, roots), `types.ts` (the binary table and languages), `tree.ts` (the delete and copy walks; none of the three imports `vscode`), `uri.ts` (`qs400ifs` URIs), `provider.ts` (the file system provider), `transfers.ts` (uploads and downloads) |
 | `src/views/`, `src/commands/` | The Connections, Objects and IFS trees, the status bar item and commands |
+| `src/actions/` | `model.ts` (the action fields, merge order, matching and the compile list), `variables.ts`, `targets.ts` (each variable's value per target), `output.ts` (the output channel's block), `placement.ts` and `severity.ts` (where a diagnostic goes, the one severity table); none of these imports `vscode`. `store.ts` (the three layers, the check on save), `run.ts` (**Run Action…**), `diagnostics.ts` (the Problems panel) |
+| `src/jobs/jobLog.ts` | The Job log document and its hover |
 | `syntaxes/`, `languages/` | Grammars and language configuration (Phase 5) |
-| `schemas/actions.json` | Schema for `.vscode/actions.json` (Phase 4) |
+| `schemas/actions.json`, `defaults/actions.json` | The schema of `.vscode/actions.json`, and the default actions shipped |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
 | `bin/` | Host binary for the current platform, copied in by `scripts/package.sh`; gitignored |
 | `host/` | Cargo workspace: `crates/host-rpc` (framing, registry, error codes; no QS/400 knowledge) and `crates/code-host` (the `qs400-code-host` binary) |
 | `host/crates/code-host/src/session.rs` | Sessions: one per connection name, the state machine, `session.*` and `libl.*`, and `DevelopBackend` |
 | `host/crates/code-host/src/objects.rs`, `members.rs` | `object.*` and `member.*`, thin over `qap-client`'s `Develop`; `members::codec` is the one place `seq` and `date` convert |
 | `host/crates/code-host/src/ifs.rs` | `ifs.*`, thin over `qap-client`'s `Files`, `read` and `write`; the transfers and their threads |
+| `host/crates/code-host/src/actions.rs`, `jobs.rs` | `action.*` over `Command` and `Develop::compile`, each run on a thread of its own; `job.log` over `Jobs::job_log` |
 | `test/` | Extension tests, run inside VS Code; `live.test.ts` against a real system |
 | `scripts/` | `check-naming.sh`, `package.sh`, `package.ps1` |
 | `.github/workflows/ci.yml` | CI for Windows and Linux |
@@ -83,11 +86,21 @@ over a real `qap_client::Connection` on an in-memory transport, so
 `qap-client`'s paging, stamps, chunked reads and writes run unchanged
 against a canned server (Phase 3 decision 19).
 
+`host/crates/code-host/tests/actions.rs` does it for `action.*` and
+`job.log` the same way: the fake implements `qap-client`'s `Requests` over
+a real `Connection` on an in-memory transport, whose canned server can
+hold a request in the lane until it is cancelled. The canned messages use
+QS/400's own IDs and texts (`RNF7030`, `RNS9304`, `RNS9310`, `CPF9812`,
+`CPD0030`, `CPF1321`).
+
 ### Live tests
 
-`test/live.test.ts` runs the automatic steps of the Phase 1, 2 and 3
+`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3 and 4
 exit tests against a real system. Phase 3 makes and removes
-`/home/<QS400_TEST_USER>/code-test`. It is skipped unless these are set:
+`/home/<QS400_TEST_USER>/code-test`. Phase 4 makes and removes the member
+`QS4ACT42` in `QS400_TEST_SRCPF`, compiles it into `QS400_TEST_CURLIB`
+(the program stays there) and calls the program `QS400_TEST_SOURCE`
+names. It is skipped unless these are set:
 
 | Variable | Meaning |
 | --- | --- |
@@ -95,7 +108,7 @@ exit tests against a real system. Phase 3 makes and removes
 | `QS400_TEST_PORT` | QAP port, when not the default. |
 | `QS400_TEST_CA_FILE` | PEM file to trust (CI writes `QS400_TEST_CA_PEM` to one). |
 | `QS400_TEST_LIBRARY` | Library to add and move to the top. Default `QGPL`. |
-| `QS400_TEST_CURLIB` | Library to set as current. Default the user profile. |
+| `QS400_TEST_CURLIB` | Library to set as current; Phase 4 compiles into it. Default the user profile. |
 | `QS400_TEST_SRCPF` | Source file Phase 2 makes and removes its `QS4*` members in. Default `HLINV/QTMPSRC`; it must exist. |
 | `QS400_TEST_SOURCE` | Member Phase 2 copies (and only reads). Default `HLINV/QRPGLESRC(ASSETS)`. |
 
@@ -570,6 +583,149 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     developer's real settings. `.vscode-test.mjs` now deletes the variable.
     One leftover test connection (`LIBL`, `h.example`) was removed from that
     settings file by hand.
+
+## Decisions made in Phase 4
+
+1. **No new pins.** `qap-client` stays at `quartz-systems-access`
+   `90d9bba`. The prompt calls the command service "Service 4 `Command`";
+   `docs/QAP.md` at `7f82a43f` numbers it **Service 3 `Command`**
+   (version 2), and Service 4 is `Spool`. "Service 9 `Develop`" operation
+   15 `Compile` and "Service 10 `Jobs`" operation 2 `JobLog` match.
+2. **`CommandBackend`.** `RunCommand`, `CheckCommand`, `Compile` and
+   `JobLog` are one object-safe trait in `session.rs`, implemented for
+   every `qap-client` `Requests` type (`run_command` is
+   `request_op(RunCommand)`, which is what `Client::run_command` sends;
+   `compile` is `Develop::compile`; `job_log` is `Jobs::job_log`), and
+   reached with `Backend::command` and `Sessions::command`. Tests
+   implement `Requests` over a canned `Connection`, so the real outcomes
+   and `Pending` run.
+3. **Lane waits happen outside the session.** A compile or a command waits
+   in the connection job's lane, behind any other, with no reply timeout.
+   `action.run` holds the session only to send, and a thread waits for the
+   reply, so member saves and the views go on meanwhile. `CheckCommand` is
+   a lane request too, so `action.check` does the same with `request_op`
+   and `CheckOutcome::from_reply`, waiting for `qap-client`'s reply timeout
+   (60 s), instead of `Client::check_command`, which waits holding the
+   session. What that gives up is `check_command`'s one resend after a
+   dropped connection.
+4. **`action.run` is `{ name, command, kind, run? }`.** `name` is the
+   connection, as in every host method; the action's own name is not sent.
+   `run` is an optional ID for `action.cancel { run }`, as transfer IDs are
+   (Phase 3 decision 6); without one the host makes `r<n>`, and an ID
+   already running is `-32602`. Both `action.run` and `action.check` are
+   deferred, and the extension does not time them out (`UNTIMED_METHODS`).
+   The host log names the run and its kind, never the command.
+5. **The outcome as JSON.** `status` is QAP's status name (`Ok`, `Error`,
+   `NotFound`, `NotAuthorized`, `Cancelled`); `escape` and `messages` are
+   `{ id, severity, text, secondLevel? }`, as Phase 1's errors name the
+   second level; `diagnostics` are `{ at, line, column, endLine, endColumn,
+   severity, id, text, help }`, keeping the spec's `help`, with `at` (the
+   Rust field is `r#where`) as `{ kind: "member", library, file, member }`,
+   `{ kind: "path", path }` or `{ kind: "none" }`. A status outside those
+   five is the server's refusal, `-32010`. `kind: "command"` always
+   answers `diagnostics: []`.
+6. **Every `CompileOutcome` shape fit the mapping**, with three readings
+   recorded here. `column` 0 is "unknown" in the spec, placed as the
+   whole line as the prompt says. `end_column` is "the last column", so
+   it is taken as inclusive: columns 9 to 17 are characters 8 to 17, and
+   `end_column` 0 runs to the end of the line. `line` 0 is line 1. The
+   escape message comes in the reply's message and may also be the last
+   of `messages`; the output channel shows it once, last.
+7. **Variables for every environment** (the prompt lists them for
+   members and stream files). For a stream file `&NAME` is the name
+   without its extension, upper case (an object name), `&TYPE` the
+   extension in upper case, and `&LIBRARY` the current library, asked for
+   when there is none, as for a member. For an object `&TYPE` is its type
+   (`*PGM`) and `&EXT` its attribute in lower case. Names are not case
+   sensitive, `&&` is a literal `&`, `&CUSTOM:` names are upper-cased, and
+   a word after `&` that is no variable is an error in the file and stops
+   a run.
+8. **Matching.** `extensions` are compared upper case without a leading
+   `*` or `.`, so `*PGM` and `PGM` both match an object type; `*` or
+   `*ALL` (or no `extensions`) is any. A member matches its source type or
+   its URI's extension.
+9. **The files.** `actions.json` is a top-level array, read as JSON with
+   comments and trailing commas through `jsonc-parser` 3.3.1, now a direct
+   dependency (it was already in the tree under `vsce`), which also gives
+   each `command`'s place for the diagnostics. esbuild takes its ES module
+   build (`mainFields`): its UMD `main` loads its parts with a `require`
+   the bundle cannot follow, and the extension did not activate. Names
+   compare without case; a name used twice in one file keeps the first.
+   An override keeps the place of the action it overrides. A connection's
+   `actions` are kept in the setting as written, so an entry that does not
+   parse survives **Edit Connection**; its `variables` are parsed.
+10. **Checking `actions.json`.** On the save of any `.vscode/actions.json`
+    (`workspaceContains:.vscode/actions.json` activates the extension for
+    it). Its diagnostics go to a collection of their own,
+    `code-for-qs400-actions`, so **Clear Compile Diagnostics** leaves them.
+    Commands are checked on the active connection, one at a time; with none
+    signed on, one information diagnostic says they were not checked.
+    Sample values: `QTEMP` for `&LIBRARY`, `&SRCLIB` and `&CURLIB`, `SAMPLE`
+    for `&NAME`, `QSRC` for `&SRCFILE`, the first extension for `&TYPE` and
+    `&EXT`, `/tmp/sample.<ext>` for paths, the connection's own value for
+    `&CUSTOM:` (else `SAMPLE`). A connection's `actions` are not checked
+    this way; settings have their own schema.
+11. **Running.** The target comes from the URI (editor title, palette:
+    a member's type from its extension through the member type table), or
+    from the tree node (the type the server sent). A disconnected
+    connection connects first. The current library is read (`libl.get`)
+    only when the command uses `&CURLIB`, or `&LIBRARY` of a member or a
+    stream file. The remembered choice is per connection, environment and
+    member type, extension or object type, in workspace state under
+    `code-for-qs400.lastActions`.
+12. **Batch.** `SBMJOB CMD(<command>) JOB(<&NAME>) JOBQ(QBATCH)` runs as a
+    command; `JOB` is `*JOBD` when `&NAME` is not a valid name (a long
+    stream file name). The submitted job is read from `CPC1221`'s text
+    (`Job 654321/CWELLMAN/ASSETS submitted to job queue QBATCH in QGPL.`).
+13. **The output channel's link.** Output channels have no command links,
+    so the channel has a language of its own, `code-for-qs400-output`, and
+    a `DocumentLinkProvider` makes **Show** in `Job log: Show` a link to
+    **Job Log** for the connection the block's first line names. The
+    channel is made on first use.
+14. **`refresh`.** `parent` and `library` read the whole Objects view (or
+    the IFS view, for a stream file) again: the trees' nodes have no IDs
+    that would let the providers find one node again.
+15. **Which diagnostics a compile replaces.** The prompt says each run
+    replaces the diagnostics of the documents it reported on. A `/COPY`
+    member a compile no longer complains about is not among those, and
+    would keep a fixed error forever. So diagnostics are kept per target:
+    a compile replaces its target's last compile's, on every document
+    either reported on, and a document shows the union of every target's.
+    Two members sharing a `/COPY` member keep each other's. The target's
+    own document is always reported on, so a clean compile clears it.
+    Commands, batch runs and cancelled compiles change nothing.
+16. **Where diagnostics land.** The member compiled is its open document,
+    else its writable URI; any other member is its open document, else its
+    `?readonly` URI, so a click opens it read-only. A path is its open
+    document or its `qs400ifs` URI. `none` on an object goes on its
+    **Properties** document (`qs400obj`). `source` is the command's name
+    (`CRTBNDRPG`).
+17. **`job.log` is `{ name, job? }`** and drains the log in pages of 500,
+    as Phase 2 decision 7 pages lists. Without `job` it is the session's
+    own (`JobInfo`), read after a stale session is brought back. The Job
+    log document is `qs400joblog://<connection>/Job log 123456∕QUSER∕QAPCNN?job=123456/QUSER/QAPCNN`:
+    the tab shows only the last path segment (Phase 2 decision 9), so the
+    name's slashes are U+2215, and the job is read from the query. Each
+    line is `YYYY-MM-DD HH:MM:SS  ID  text`, a message's line breaks
+    folded, with no header, so line *n* is entry *n*; the hover is on the
+    ID column only. The hover's text is the server's, escaped.
+18. **Defaults.** The member `RUNSQLSTM` is **Compile (RUNSQLSTM)**, since
+    names are the override key and **Run SQL statements (RUNSQLSTM)** is
+    the stream file's. `DBGVIEW(*SOURCE)` is on the six whose definitions
+    in QS/400's `command/sys-cpps/cmds` at `7f82a43f` have `DBGVIEW`
+    (`CRTBNDRPG`, `CRTRPGMOD`, `CRTSQLRPGI`, `CRTBNDCL`, `CRTCLMOD`,
+    `RUNSQLSTM`). `OPTION(*EVENTF)`, as in the prompt's example, is on
+    every compiler command whose `OPTION` takes it; QS/400 accepts it and
+    writes no event file (`lic/slic/src/cpp/compdiags.rs`), since the
+    diagnostics come with `Compile`. It is not on `RUNSQLSTM`, whose
+    `OPTION` is `*LIST` or `*NOLIST`. `CRTCMD`'s `PGM(&LIBRARY/&NAME)`
+    takes the processing program to have the command's name.
+19. **The live test** works on its own member, `QS4ACT42`, in
+    `QS400_TEST_SRCPF`, copied from `QS400_TEST_SOURCE`, not on the
+    `ASSETS42` the exit test names, and breaks line 42 in the member's own
+    form (free or fixed). It sets the current library with `libl.set`
+    first, so `&LIBRARY` is never asked for, and adds a connection action
+    for the wrong `&SRCFILE`. The program it makes stays in that library.
 
 ## Phase 0 exit test
 

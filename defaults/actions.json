@@ -6,5 +6,125 @@
     "extensions": ["rpgle"],
     "refresh": "parent",
     "runAs": "connection"
+  },
+  {
+    "name": "Compile module (CRTRPGMOD)",
+    "command": "CRTRPGMOD MODULE(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) DBGVIEW(*SOURCE) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["rpgle"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (CRTSQLRPGI)",
+    "command": "CRTSQLRPGI OBJ(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) OBJTYPE(*PGM) DBGVIEW(*SOURCE) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["sqlrpgle"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (CRTBNDCL)",
+    "command": "CRTBNDCL PGM(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) DBGVIEW(*SOURCE) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["clle"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile module (CRTCLMOD)",
+    "command": "CRTCLMOD MODULE(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) DBGVIEW(*SOURCE) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["clle"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (CRTPF)",
+    "command": "CRTPF FILE(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["pf"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (CRTLF)",
+    "command": "CRTLF FILE(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["lf"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (CRTDSPF)",
+    "command": "CRTDSPF FILE(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["dspf"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (CRTPRTF)",
+    "command": "CRTPRTF FILE(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["prtf"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (CRTCMD)",
+    "command": "CRTCMD CMD(&LIBRARY/&NAME) PGM(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME)",
+    "environment": "member",
+    "extensions": ["cmd"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Compile (RUNSQLSTM)",
+    "command": "RUNSQLSTM SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) COMMIT(*NONE) DBGVIEW(*SOURCE)",
+    "environment": "member",
+    "extensions": ["sql"],
+    "refresh": "parent",
+    "runAs": "connection"
+  },
+  {
+    "name": "Create program (CRTPGM)",
+    "command": "CRTPGM PGM(&LIBRARY/&NAME) MODULE(&LIBRARY/&NAME)",
+    "environment": "object",
+    "extensions": ["*MODULE"],
+    "refresh": "library",
+    "runAs": "connection"
+  },
+  {
+    "name": "Create service program (CRTSRVPGM)",
+    "command": "CRTSRVPGM SRVPGM(&LIBRARY/&NAME) MODULE(&LIBRARY/&NAME) EXPORT(*ALL)",
+    "environment": "object",
+    "extensions": ["*MODULE"],
+    "refresh": "library",
+    "runAs": "connection"
+  },
+  {
+    "name": "Call (CALL)",
+    "command": "CALL PGM(&LIBRARY/&NAME)",
+    "environment": "object",
+    "extensions": ["*PGM"],
+    "refresh": "none",
+    "runAs": "connection"
+  },
+  {
+    "name": "Submit (SBMJOB CALL)",
+    "command": "CALL PGM(&LIBRARY/&NAME)",
+    "environment": "object",
+    "extensions": ["*PGM"],
+    "refresh": "none",
+    "runAs": "batch"
+  },
+  {
+    "name": "Run SQL statements (RUNSQLSTM)",
+    "command": "RUNSQLSTM SRCSTMF('&FULLPATH') COMMIT(*NONE) DBGVIEW(*SOURCE)",
+    "environment": "file",
+    "extensions": ["sql"],
+    "refresh": "none",
+    "runAs": "connection"
   }
 ]

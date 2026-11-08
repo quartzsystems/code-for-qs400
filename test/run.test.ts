@@ -269,10 +269,14 @@ suite('Run: running an action', () => {
     const r = await runnerOn(() => ({ status: 'Ok', job: JOB, messages: [], diagnostics: [] }));
     parts = r.parts;
     const member: ActionTarget = { environment: 'member', connection: 'QSHQ400', library: 'HLINV', file: 'QTMPSRC', member: 'X', type: 'RPGLE' };
-    assert.deepEqual(r.runner.applicable(member).map((a) => a.name), ['Compile (CRTBNDRPG)', 'Source']);
+    assert.deepEqual(r.runner.applicable(member).map((a) => a.name), ['Compile (CRTBNDRPG)', 'Compile module (CRTRPGMOD)', 'Source']);
     await r.state.update(LAST_ACTIONS_KEY, { 'qshq400|member|RPGLE': 'Source' });
-    assert.deepEqual(r.runner.applicable(member).map((a) => a.name), ['Source', 'Compile (CRTBNDRPG)']);
+    assert.deepEqual(r.runner.applicable(member).map((a) => a.name), ['Source', 'Compile (CRTBNDRPG)', 'Compile module (CRTRPGMOD)']);
     const clle: ActionTarget = { ...member, type: 'CLLE' };
-    assert.deepEqual(r.runner.applicable(clle).map((a) => a.name), ['Source'], 'remembered per type; the RPG compile does not apply');
+    assert.deepEqual(
+      r.runner.applicable(clle).map((a) => a.name),
+      ['Compile (CRTBNDCL)', 'Compile module (CRTCLMOD)', 'Source'],
+      'remembered per type; the RPG compiles do not apply',
+    );
   });
 });

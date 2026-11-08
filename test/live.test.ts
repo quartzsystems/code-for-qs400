@@ -2,7 +2,7 @@
 // licensed under the terms of the MIT license which can be found in the
 // root directory of this project.
 
-// The Phase 1, 2 and 3 exit tests' automatic steps against a real
+// The Phase 1, 2, 3 and 4 exit tests' automatic steps against a real
 // QS/400 system. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
 // QS400_TEST_PASSWORD are set. Optional: QS400_TEST_PORT, QS400_TEST_CA_FILE,
 // QS400_TEST_LIBRARY (added to the list, default QGPL),
@@ -22,6 +22,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { ConnectionConfig, connectParams } from '../src/connections/config';
 import { moved, withAdded } from '../src/connections/libraryList';
+import { jobText } from '../src/actions/output';
 import type { ExtensionApi } from '../src/extension';
 import { HostRpcError } from '../src/host/client';
 import { IfsErrorCodes, LibraryList, SessionErrorCodes } from '../src/host/protocol';
@@ -537,5 +538,163 @@ suite('Live: Phase 3 exit test', function () {
     fs.writeFileSync(from, png);
     await api.host.request('ifs.upload', { name: NAME, from, path: at('dot.png'), ccsid: 65535, mode: 'create' });
     assert.deepEqual(Buffer.from(await api.ifsFs.readFile(uri('dot.png'))), png);
+  });
+});
+
+// Phase 4: the test copies QS400_TEST_SOURCE to QS4ACT42 in
+// QS400_TEST_SRCPF, breaks line 42 with a name nothing defines, compiles
+// it with the default Compile (CRTBNDRPG) into the current library
+// (QS400_TEST_CURLIB, default the user profile), fixes it, compiles again,
+// CALLs the program QS400_TEST_SOURCE names, and reads the connection
+// job's log. It removes its member at the end; the program it made stays in
+// the current library.
+
+const ACT = 'QS4ACT42';
+
+suite('Live: Phase 4 exit test', function () {
+  let api: ExtensionApi;
+  const at = { name: NAME, library: SRC_LIB, file: SRC_FILE, member: ACT };
+  const uri = () => memberUri(NAME, SRC_LIB, SRC_FILE, ACT, 'RPGLE');
+  const enc = (s: string) => new TextEncoder().encode(s);
+  let original: string[] = [];
+  const seen: string[] = [];
+
+  suiteSetup(async function () {
+    if (!HOST || !USER || !PASSWORD || !SOURCE) {
+      this.skip();
+    }
+    const ext = vscode.extensions.getExtension<ExtensionApi>('quartzsystems.code-for-qs400');
+    assert.ok(ext);
+    api = await ext.activate();
+    const c: ConnectionConfig = {
+      ...connection(),
+      actions: [
+        {
+          name: 'Live: wrong SRCFILE',
+          command: 'CRTBNDRPG PGM(&LIBRARY/&NAME) SRCFILE(&SRCLIB/QS4NOSRC) SRCMBR(&NAME) DBGVIEW(*SOURCE)',
+          environment: 'member',
+        },
+      ],
+    };
+    await config().update('connections', [c], true);
+    await api.sessions.signOn(c, { password: PASSWORD, save: false }, false);
+    try {
+      const list = await api.host.request('libl.get', { name: NAME });
+      const curlib = (env.QS400_TEST_CURLIB ?? USER).toUpperCase();
+      await api.host.request('libl.set', { name: NAME, current: curlib, user: list.user.filter((l) => l !== curlib) });
+    } catch (err) {
+      if (err instanceof HostRpcError && err.code === SessionErrorCodes.QapUnavailable) {
+        console.log(`live: Phase 4 skipped: ${err.message}`);
+        this.skip();
+      }
+      throw err;
+    }
+    const [, library, file, member] = SOURCE;
+    await api.host.request('member.copy', { name: NAME, from: { library, file, member }, to: { library: SRC_LIB, file: SRC_FILE, member: ACT }, replace: true });
+    original = (await api.host.request('member.read', { ...at, lock: false })).lines.map((l) => l.text);
+  });
+
+  suiteTeardown(async function () {
+    if (!api) {
+      return;
+    }
+    await api.members.release(uri()).catch(() => undefined);
+    await api.host.request('member.delete', at).catch(() => undefined);
+    await api.host.request('session.disconnect', { name: NAME }).catch(() => undefined);
+    await config().update('connections', undefined, true);
+  });
+
+  const problems = () => api.diagnostics.collection.get(uri()) ?? [];
+  const errors = () => problems().filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+
+  test('line 42 broken: one error at line 42 of the member, with its ID and second-level text', async () => {
+    const lines = [...original];
+    while (lines.length < 42) {
+      lines.push('');
+    }
+    const free = /^\s*\*\*free/i.test(lines[0] ?? '');
+    lines[41] = free ? 'QS4UNDEF = 1;' : '     C                   EVAL      QS4UNDEF = 1';
+    await api.members.writeFile(uri(), enc(lines.join('\n')), { create: false, overwrite: true });
+    const r = await api.runner.run(uri(), 'Compile (CRTBNDRPG)');
+    assert.ok(r?.outcome, `an outcome: ${String(r?.error)}`);
+    console.log(`live: broken compile ${r.outcome.status}, escape ${r.outcome.escape?.id ?? 'none'}: ${r.outcome.escape?.text ?? ''}`);
+    for (const d of r.outcome.diagnostics) {
+      console.log(`live:   ${d.id} sev ${d.severity} ${d.at.kind === 'member' ? `${d.at.library}/${d.at.file}(${d.at.member})` : d.at.kind} line ${d.line} col ${d.column}-${d.endColumn}: ${d.text}`);
+    }
+    const e = errors();
+    assert.equal(e.length, 1, `one error in the Problems panel: ${e.map((d) => `${String(d.code)} line ${d.range.start.line + 1}`).join(', ')}`);
+    assert.equal(e[0].range.start.line, 41, 'at line 42');
+    assert.match(String(e[0].code), /^[A-Z]{3}[0-9A-F]{4}$/);
+    assert.ok(e[0].relatedInformation?.[0].message, 'the second-level text');
+    if (r.outcome.escape) {
+      seen.push(r.outcome.escape.id);
+    }
+  });
+
+  test('fixed: the Problems entry clears, the completion message and the job come back', async () => {
+    await api.members.writeFile(uri(), enc(original.join('\n')), { create: false, overwrite: true });
+    const r = await api.runner.run(uri(), 'Compile (CRTBNDRPG)');
+    assert.ok(r?.outcome);
+    console.log(`live: fixed compile ${r.outcome.status}, job ${r.outcome.job ? jobText(r.outcome.job) : 'none'}, messages ${r.outcome.messages.map((m) => m.id).join(' ')}`);
+    assert.equal(r.outcome.status, 'Ok');
+    assert.ok(r.outcome.job);
+    assert.equal(errors().length, 0);
+    const last = r.outcome.messages[r.outcome.messages.length - 1];
+    if (last) {
+      seen.push(last.id);
+    }
+  });
+
+  test('CALL from the Objects view: the messages, no Problems entries', async () => {
+    const [, library, , member] = SOURCE as RegExpExecArray;
+    const node = { kind: 'object', connection: NAME, entry: { library, object: member, type: '*PGM', attribute: 'RPGLE', text: '', size: 0, changed: 0, owner: '' } };
+    const before = api.diagnostics.collection.get(uri())?.length ?? 0;
+    const r = await api.runner.run(node, 'Call (CALL)');
+    assert.ok(r?.outcome, `an outcome: ${String(r?.error)}`);
+    console.log(`live: CALL ${library}/${member}: ${r.outcome.status}; ${r.outcome.messages.map((m) => `${m.id} ${m.text}`).join(' | ') || 'no messages'}`);
+    assert.deepEqual(r.outcome.diagnostics, []);
+    assert.equal(api.diagnostics.collection.get(uri())?.length ?? 0, before);
+    seen.push(...r.outcome.messages.map((m) => m.id).filter((id) => id !== ''));
+  });
+
+  test('a bad command: CheckCommand answers the server’s message, nothing run', async () => {
+    const check = await api.host.request('action.check', { name: NAME, command: 'CRTBNDRPGX PGM(QTEMP/SAMPLE)' });
+    console.log(`live: CheckCommand CRTBNDRPGX: ${check.status}; ${check.messages.map((m) => `${m.id} ${m.text}`).join(' | ')}`);
+    assert.equal(check.valid, false);
+    assert.ok(check.messages.length > 0);
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'jsonc',
+      content: '[\n  { "name": "Bad", "environment": "member",\n    "command": "CRTBNDRPGX PGM(&LIBRARY/&NAME)" }\n]\n',
+    });
+    await api.sessions.setActive(NAME);
+    const diags = await api.actions.validate(doc);
+    assert.ok(diags.some((d) => d.range.start.line === 2 && d.code === check.messages[0].id), 'on the command’s line');
+  });
+
+  test('&SRCFILE wrong: the escape message is the server’s own', async () => {
+    const r = await api.runner.run(uri(), 'Live: wrong SRCFILE');
+    assert.ok(r?.outcome, `an outcome: ${String(r?.error)}`);
+    console.log(`live: wrong SRCFILE: ${r.outcome.status}, escape ${r.outcome.escape?.id}: ${r.outcome.escape?.text}`);
+    assert.notEqual(r.outcome.status, 'Ok');
+    assert.ok(r.outcome.escape?.id);
+    seen.push(r.outcome.escape.id);
+  });
+
+  test('job log of the connection job: the runs above, newest at the bottom', async () => {
+    const log = await api.host.request('job.log', { name: NAME });
+    console.log(`live: job log ${jobText(log.job)}, ${log.entries.length} entries; the last ten:`);
+    for (const e of log.entries.slice(-10)) {
+      console.log(`live:   ${e.id || '-------'} ${e.kind} ${e.text}`);
+    }
+    for (let i = 1; i < log.entries.length; i++) {
+      assert.ok(log.entries[i].sent >= log.entries[i - 1].sent, 'oldest first');
+    }
+    const ids = new Set(log.entries.map((e) => e.id));
+    for (const id of seen) {
+      assert.ok(ids.has(id), `${id} is in the job log`);
+    }
+    const doc = await api.jobLog.open(NAME);
+    assert.ok(doc);
+    assert.equal(doc.lineCount - 1, log.entries.length);
   });
 });

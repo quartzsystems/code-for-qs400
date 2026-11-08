@@ -3,9 +3,12 @@
 // root directory of this project.
 
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   Action,
+  COMPILE_COMMANDS,
   applies,
   firstToken,
   kindOf,
@@ -371,5 +374,49 @@ suite('Actions: variables for a member, a stream file and an object', () => {
     assert.equal(choiceKey(member), 'qshq400|member|RPGLE');
     assert.equal(choiceKey(object), 'qshq400|object|*PGM');
     assert.equal(batchCommand('CALL PGM(HLINV/ASSETS)', 'ASSETS'), 'SBMJOB CMD(CALL PGM(HLINV/ASSETS)) JOB(ASSETS) JOBQ(QBATCH)');
+  });
+});
+
+suite('Actions: the defaults shipped', () => {
+  const ext = vscode.extensions.getExtension('quartzsystems.code-for-qs400');
+  const raw = JSON.parse(fs.readFileSync(path.join(ext?.extensionPath ?? '', 'defaults', 'actions.json'), 'utf8')) as unknown[];
+  const { entries, problems } = parseActions(raw, 'default');
+  const named = (n: string) => entries.find((e) => e.name === n);
+
+  test('every default parses, with a name of its own', () => {
+    assert.deepEqual(problems, []);
+    assert.equal(entries.length, raw.length);
+  });
+
+  test('a compile for each command of the spec’s list, run as a compile; every variable known', () => {
+    const firstWords = entries.map((e) => e.command.split(' ')[0]);
+    for (const c of COMPILE_COMMANDS) {
+      assert.ok(firstWords.includes(c), `a default runs ${c}`);
+    }
+    for (const e of entries) {
+      assert.deepEqual(unknownVariables(e.command), [], e.name);
+      if (COMPILE_COMMANDS.includes(e.command.split(' ')[0])) {
+        assert.equal(kindOf(e.command), 'compile', e.name);
+      }
+    }
+  });
+
+  test('DBGVIEW(*SOURCE) wherever the command takes DBGVIEW', () => {
+    const takesDbgview = ['CRTBNDRPG', 'CRTRPGMOD', 'CRTSQLRPGI', 'CRTBNDCL', 'CRTCLMOD', 'RUNSQLSTM'];
+    for (const e of entries) {
+      const takes = takesDbgview.includes(e.command.split(' ')[0]);
+      assert.equal(e.command.includes('DBGVIEW(*SOURCE)'), takes, e.name);
+    }
+  });
+
+  test('Call and Submit for *PGM, CRTPGM and CRTSRVPGM for *MODULE, RUNSQLSTM for .sql stream files', () => {
+    assert.deepEqual(named('Call (CALL)')?.extensions, ['PGM']);
+    assert.equal(named('Submit (SBMJOB CALL)')?.runAs, 'batch');
+    assert.deepEqual(named('Create program (CRTPGM)')?.extensions, ['MODULE']);
+    assert.deepEqual(named('Create service program (CRTSRVPGM)')?.extensions, ['MODULE']);
+    const sql = named('Run SQL statements (RUNSQLSTM)');
+    assert.equal(sql?.environment, 'file');
+    assert.deepEqual(sql?.extensions, ['SQL']);
+    assert.equal(named('Compile (CRTBNDRPG)')?.command, 'CRTBNDRPG PGM(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) DBGVIEW(*SOURCE) OPTION(*EVENTF)');
   });
 });

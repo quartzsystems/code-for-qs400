@@ -15,6 +15,9 @@ await esbuild.build({
   format: 'cjs',
   target: 'node22',
   external: ['vscode'],
+  // jsonc-parser's UMD build (its `main`) loads its parts with a require
+  // esbuild cannot follow; its ES module build bundles whole.
+  mainFields: ['module', 'main'],
   minify: production,
   sourcemap: !production,
   sourcesContent: false,

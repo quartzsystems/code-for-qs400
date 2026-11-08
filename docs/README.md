@@ -21,12 +21,17 @@ This guide grows with each phase and ships with the marketplace listing.
   member commands.
 - [The IFS](ifs.md): the IFS view and its roots, opening stream files and
   their CCSIDs, uploads and downloads with resume, and the file commands.
+- [Actions and diagnostics](actions.md): running compiles and other
+  commands on members, stream files and objects, `.vscode/actions.json`
+  and its variables, the Problems panel, the output channel and the job
+  log.
 
 ## Troubleshooting
 
 - **QS/400 host stopped** in the status bar means the host process ended.
   The next Code for QS/400 command starts it again; click the item, or run
   **Code for QS/400: Restart Host**, to restart it now.
-- The **Code for QS/400 Host** output channel shows the host's log.
+- The **Code for QS/400 Host** output channel shows the host's log; the
+  **Code for QS/400** channel shows each action's command and messages.
 - To try a different host build, set `code-for-qs400.host.path` in your user
   settings to the full path of a `qs400-code-host` binary.

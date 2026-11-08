@@ -5,15 +5,17 @@ remote operation goes through `qs400-code-host`, a Rust sidecar bundled
 with the extension that speaks QAP, the Quartz Access Protocol shared with
 QS/400 Access.
 
-**Status: 1.0.0 pre-release, Phase 3.** Saved connections, sign-on over
+**Status: 1.0.0 pre-release, Phase 4.** Saved connections, sign-on over
 QAP, a session per connection with its status, session job and library
 list; the Objects view with filters; source members opened, locked and
 saved with their sequence numbers and dates; the IFS view, with stream
 files opened and saved in their own CCSID, uploads and downloads with
-resume, and the file commands. See
-[docs/connections.md](docs/connections.md),
-[docs/objects-and-members.md](docs/objects-and-members.md) and
-[docs/ifs.md](docs/ifs.md).
+resume, and the file commands; actions (compiles, calls, submitted jobs)
+from `.vscode/actions.json`, the defaults and each connection, with the
+compiler's messages in the Problems panel and the connection job's log.
+See [docs/connections.md](docs/connections.md),
+[docs/objects-and-members.md](docs/objects-and-members.md),
+[docs/ifs.md](docs/ifs.md) and [docs/actions.md](docs/actions.md).
 
 ## Requirements
 
@@ -51,6 +53,9 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | IFS: Add, Remove IFS Root, Set as IFS Home | `code-for-qs400.ifs.addRoot`, `.removeRoot`, `.setHome` |
 | IFS: Open, New File…, New Folder…, Rename…, Copy to…, Delete, Properties, Change CCSID… | `code-for-qs400.ifs.open`, `.newFile`, `.newFolder`, `.rename`, `.copy`, `.delete`, `.properties`, `.changeCcsid` |
 | IFS: Upload Files…, Upload Folder…, Download…, Download Folder… | `code-for-qs400.ifs.upload`, `.uploadFolder`, `.download`, `.downloadFolder` |
+| Run Action… | `code-for-qs400.action.run` |
+| Clear Compile Diagnostics | `code-for-qs400.diagnostics.clear` |
+| Job Log, Refresh Job Log | `code-for-qs400.job.log`, `code-for-qs400.job.logRefresh` |
 
 **About** asks the host for its version and shows, for example,
 `Code for QS/400 V1R0M0 · host 1.0.0 · QAP v9`.
@@ -60,10 +65,14 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `code-for-qs400.host.path` | empty | Path to a `qs400-code-host` binary. Empty uses the bundled one. Machine scope only. |
-| `code-for-qs400.connections` | `[]` | Saved connections: `name`, `host`, `port`, `user`, `tls`, `libraryList`, `filters`, `ifsRoots`. User settings only. |
+| `code-for-qs400.connections` | `[]` | Saved connections: `name`, `host`, `port`, `user`, `tls`, `libraryList`, `filters`, `ifsRoots`, `actions`, `variables`. User settings only. |
 | `code-for-qs400.defaultConnection` | empty | The connection offered first. User settings only. |
 
 Passwords are never in settings: they go to VS Code secret storage.
+
+A workspace folder's actions are in `.vscode/actions.json`, checked against
+[schemas/actions.json](schemas/actions.json); see
+[docs/actions.md](docs/actions.md).
 
 ## Host
 
@@ -89,20 +98,24 @@ package.json, src/      the extension (TypeScript, bundled by esbuild to dist/)
   src/objects/filters.ts  object filters and generic names
   src/members/            the qs400mbr file system provider, the type table, the save diff
   src/ifs/                the qs400ifs file system provider, paths, tree walks, transfers
+  src/actions/            actions: the model and merge, variables, the run and its output, diagnostics
+  src/jobs/jobLog.ts      the Job log document and its hover
   src/views/connections.ts  the Connections tree
   src/views/objects.ts    the Objects tree
   src/views/ifs.ts        the IFS tree
   src/views/sessionStatusBar.ts  the active connection in the status bar
   src/commands/           About, connection, object, member and IFS commands
 syntaxes/, languages/   grammars and language configuration (Phase 5)
-schemas/actions.json    schema for .vscode/actions.json (Phase 4)
+schemas/actions.json    schema for .vscode/actions.json
+defaults/actions.json   the default actions shipped with the extension
 media/                  activity bar icon (placeholder)
 bin/                    host binary, copied in at package time (gitignored)
 host/                   Cargo workspace for the sidecar
   crates/host-rpc         JSON-RPC 2.0 framing, method registry and deferred replies (no QS/400 knowledge)
   crates/code-host        the qs400-code-host binary; src/session.rs holds the sessions,
                           src/objects.rs and src/members.rs the object and member methods,
-                          src/ifs.rs the IFS methods and transfers
+                          src/ifs.rs the IFS methods and transfers, src/actions.rs
+                          the commands and compiles, src/jobs.rs the job log
 test/                   extension integration tests (@vscode/test-electron)
 scripts/                check-naming.sh, package.sh, package.ps1
 docs/                   user documentation

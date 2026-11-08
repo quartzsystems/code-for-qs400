@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.0.0-pre · Phase 4 · actions and diagnostics
+
+- **Run Action…** on an open member or stream file (editor title and
+  context menu), on a member, an object or a stream file in the Objects
+  and IFS views, and from the Command Palette. The pick lists the actions
+  that apply, the one last run on that member type, extension or object
+  type first. A document with unsaved changes is saved first, and a save
+  that fails stops the run.
+- Actions come from the defaults shipped with the extension, each
+  workspace folder's `.vscode/actions.json` and the connection's own
+  `actions`, each overriding the one before it by name. Variables:
+  `&LIBRARY`, `&NAME`, `&TYPE`, `&EXT`, `&SRCFILE`, `&SRCLIB`, `&CURLIB`,
+  `&USERNAME`, `&HOST`, `&FULLPATH`, `&PARENT`, `&BASENAME`,
+  `&BASENAMEEXT` and `&CUSTOM:NAME` from the connection's `variables`. A
+  member's `&LIBRARY` is the current library, asked for when the job has
+  none; a variable with no value stops the run before anything is sent.
+- Saving an `actions.json` checks every command with the system's
+  `CheckCommand`, with sample values, and shows the system's message on
+  that command's line; the action is marked in the pick. The file has a
+  JSON schema.
+- Compiles (the spec's list, `CRTBNDRPG` to `CRTSRVPGM`) run through QAP's
+  `Compile` and put the compiler's messages in the Problems panel, on the
+  member, `/COPY` member or stream file they name, with the message ID,
+  the severity and the second-level text on hover. A clean compile clears
+  them; **Clear Compile Diagnostics** clears all.
+- `runAs: batch` submits the command with `SBMJOB` to `QBATCH` and names
+  the job submitted.
+- The **Code for QS/400** output channel: one block per run with the
+  time, the command as sent, the job, the system's messages oldest first,
+  the escape message last, how it ended, and **Job log: Show**. Cancel in
+  the progress notification ends the command on the system.
+- **Job Log**: the connection job's log as a read-only document, one line
+  per message, with the second-level text on hover, and **Refresh**.
+- Defaults: a compile for each member type of the spec's list, `CRTPGM`
+  and `CRTSRVPGM` for modules, **Call (CALL)** and **Submit (SBMJOB
+  CALL)** for programs, and **Run SQL statements (RUNSQLSTM)** for `.sql`
+  stream files, each with `DBGVIEW(*SOURCE)` where the command takes it.
+- Host: `action.run` (`Develop::compile` for compiles, `RunCommand` for
+  anything else, deferred, with `action.cancel`), `action.check`
+  (`CheckCommand`) and `job.log` (`Jobs::job_log`, drained whole).
+
 ## 1.0.0-pre · Phase 3 · IFS browser
 
 - **IFS** view under Objects: the active connection's roots (by default
