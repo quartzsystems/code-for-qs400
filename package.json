@@ -30,6 +30,7 @@
     "onView:code-for-qs400.messages",
     "onFileSystem:qs400ifs",
     "workspaceContains:.vscode/actions.json",
+    "workspaceContains:qs400project.json",
     "onLanguage:qs400-rpgle",
     "onLanguage:qs400-cl",
     "onLanguage:qs400-dds",
@@ -1889,6 +1890,10 @@
       {
         "fileMatch": "**/.vscode/actions.json",
         "url": "./schemas/actions.json"
+      },
+      {
+        "fileMatch": "**/qs400project.json",
+        "url": "./schemas/qs400project.json"
       }
     ],
     "grammars": [

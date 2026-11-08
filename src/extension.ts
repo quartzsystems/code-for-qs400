@@ -32,6 +32,8 @@ import { SpoolNode, SpoolProvider, nodeRef, registerSpoolViewCommands } from './
 import { SpoolViewer } from './spool/viewer';
 import { MessageNode, MessagesProvider, registerMessagesViewCommands } from './views/messages';
 import { LanguageServers } from './languages/client';
+import { ProjectStore } from './projects/store';
+import { sameName } from './connections/config';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
 import { SQL_STATEMENTS, type SqlStatementRange } from './languages/protocol';
@@ -75,6 +77,7 @@ export interface ExtensionApi {
   readonly viewer: SpoolViewer;
   readonly messages: MessagesProvider;
   readonly messagesView: vscode.TreeView<MessageNode>;
+  readonly projects: ProjectStore;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -107,6 +110,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const ifsFs = new IfsFsProvider(sessions, store, output);
   const transfers = new Transfers(host, sessions, ifs, ifsFs);
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
+  const projects = new ProjectStore(store, output);
   const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
   const diagnostics = new CompileDiagnostics();
   const jobLog = new JobLogProvider(store, sessions, vscode.Uri.joinPath(context.extensionUri, 'media'));
@@ -156,6 +160,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ifsView,
     ifsFs,
     actions,
+    projects,
+    actions.setProjectActions(
+      (name) => (name ? projects.usable().filter((p) => sameName(projects.connectionOf(p), name)).map((p) => projects.actions(p)) : []),
+      projects.onDidChange,
+    ),
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
@@ -217,7 +226,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects };
 }
 
 export function deactivate(): void {

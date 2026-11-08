@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Code for QS/400 Project",
+  "description": "A workspace folder mapped to a library or an IFS path (qs400project.json in the folder's root): where Deploy writes and Pull reads.",
+  "type": "object",
+  "required": [
+    "connection",
+    "target"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "connection": {
+      "type": "string",
+      "minLength": 1,
+      "markdownDescription": "The saved connection deployed to, by name (without case), as in `code-for-qs400.connections`."
+    },
+    "target": {
+      "markdownDescription": "Where the folder goes: `{ \"library\": \"LIB\" }` (a directory per source physical file, a file per member) or `{ \"path\": \"/home/USER/app\" }` (the folder's own tree under that path).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "library"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "library": {
+              "type": "string",
+              "pattern": "^[A-Za-z$#@][A-Za-z0-9$#@_.]{0,9}$",
+              "markdownDescription": "The library members are deployed to. `&LIBRARY` and `&SRCLIB` of an action on a local file."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/",
+              "markdownDescription": "The IFS directory the folder's files are deployed under, as an absolute path."
+            }
+          }
+        }
+      ]
+    },
+    "layout": {
+      "type": "string",
+      "enum": [
+        "sourceFiles"
+      ],
+      "default": "sourceFiles",
+      "enumDescriptions": [
+        "A directory per source physical file, a file per member named MEMBER.ext, the extension from the member's source type. For an IFS target, the folder's own tree."
+      ]
+    },
+    "encoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ifsCcsid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 1208,
+          "markdownDescription": "The CCSID of a stream file a deploy creates. A file that exists keeps its own. The bytes are sent as they are."
+        }
+      }
+    },
+    "ignore": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "markdownDescription": "Globs, relative to the folder, of files never deployed: `*` and `?` within a name, `**` across directories. A glob without `/` matches a name in any directory. `.git/**`, `.qs400/**`, `.vscode/**` and `qs400project.json` are always ignored."
+    },
+    "texts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "markdownDescription": "Member text by local path (`QRPGLESRC/ASSETS.rpgle`), given when a deploy creates the member. A member that exists keeps its own. Pull fills it."
+    },
+    "actions": {
+      "$ref": "./actions.json",
+      "markdownDescription": "Actions of this project, as in `.vscode/actions.json`. They override the workspace's by name; a connection's override them."
+    }
+  }
+}

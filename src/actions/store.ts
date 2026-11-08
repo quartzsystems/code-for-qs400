@@ -50,14 +50,17 @@ interface Layer {
 /**
  * The actions in effect for each connection: the defaults shipped with the
  * extension, then each workspace folder's `.vscode/actions.json` (later
- * folders override earlier ones by name), then the connection's own
- * `actions`. Saving an `actions.json` checks every command with
+ * folders override earlier ones by name), then the `actions` of each
+ * project (`qs400project.json`) on that connection, then the connection's
+ * own `actions`. Saving an `actions.json` checks every command with
  * `CheckCommand` on the active connection, with sample values for its
  * variables, and puts the server's messages on the command's line.
  */
 export class ActionStore implements vscode.Disposable {
   private defaults: Layer | undefined;
   private workspace: Layer[] = [];
+  /** Project folders' actions on a connection (`qs400project.json`), between the workspace's and the connection's. */
+  private projectLayers: (name: string | undefined) => Action[][] = () => [];
   /** Problems found in a file or connection, by file URI or `connection:<name>`: reported once. */
   private readonly reported = new Map<string, string>();
   /** What the last check of a file found, by file URI string, then by index. */
@@ -147,11 +150,19 @@ export class ActionStore implements vscode.Disposable {
     return withSource(entries, { kind: 'connection', label: c.name });
   }
 
+  /** Where the projects' actions come from; `changed` fires when they may have changed. */
+  setProjectActions(layers: (name: string | undefined) => Action[][], changed: vscode.Event<void>): vscode.Disposable {
+    this.projectLayers = layers;
+    this.changed.fire();
+    return changed(() => this.changed.fire());
+  }
+
   /** The actions in effect on connection `name`, in order. */
   actions(name: string | undefined): Action[] {
     return mergeActions([
       this.defaults?.actions ?? [],
       ...this.workspace.map((l) => l.actions),
+      ...this.projectLayers(name),
       name ? this.connectionActions(name) : [],
     ]);
   }
