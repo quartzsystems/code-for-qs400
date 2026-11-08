@@ -1,0 +1,193 @@
+>     H DFTACTGRP(*NO) ACTGRP(*CALLER) OPTION(*SRCSTMT)
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^ source.qs400-rpgle
+#       ^^^^^^^^^ source.qs400-rpgle keyword.other.keyword.qs400-rpgle
+#                ^ source.qs400-rpgle punctuation.section.parens.begin.qs400-rpgle
+#                 ^^^ source.qs400-rpgle constant.language.qs400-rpgle
+#                    ^ source.qs400-rpgle punctuation.section.parens.end.qs400-rpgle
+#                     ^ source.qs400-rpgle
+#                      ^^^^^^ source.qs400-rpgle keyword.other.keyword.qs400-rpgle
+#                            ^ source.qs400-rpgle punctuation.section.parens.begin.qs400-rpgle
+#                             ^^^^^^^ source.qs400-rpgle constant.language.qs400-rpgle
+#                                    ^ source.qs400-rpgle punctuation.section.parens.end.qs400-rpgle
+#                                     ^ source.qs400-rpgle
+#                                      ^^^^^^ source.qs400-rpgle keyword.other.keyword.qs400-rpgle
+#                                            ^ source.qs400-rpgle punctuation.section.parens.begin.qs400-rpgle
+#                                             ^^^^^^^^ source.qs400-rpgle constant.language.qs400-rpgle
+#                                                     ^ source.qs400-rpgle punctuation.section.parens.end.qs400-rpgle
+>      * A comment in column 7
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle comment.line.asterisk.qs400-rpgle
+#      ^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-rpgle comment.line.asterisk.qs400-rpgle
+>     FITEMMST   IF   E           K DISK
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^^^^^^^^^ source.qs400-rpgle entity.name.type.file.qs400-rpgle
+#                ^^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                      ^^^^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                           ^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                            ^^^^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                 ^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                                   ^^^^ source.qs400-rpgle support.type.device.qs400-rpgle
+>     D ASSETQTY        S              7P 0 INZ(0)
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^^^^^^^^^^^^^^ source.qs400-rpgle entity.name.variable.qs400-rpgle
+#                     ^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                       ^^ source.qs400-rpgle storage.type.qs400-rpgle
+#                         ^^^^^^^^^^^^^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                       ^ source.qs400-rpgle storage.type.qs400-rpgle
+#                                        ^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                          ^ source.qs400-rpgle
+#                                           ^^^ source.qs400-rpgle keyword.other.keyword.qs400-rpgle
+#                                              ^ source.qs400-rpgle punctuation.section.parens.begin.qs400-rpgle
+#                                               ^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                                ^ source.qs400-rpgle punctuation.section.parens.end.qs400-rpgle
+>     D CUST            DS                  QUALIFIED
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^^^^^^^^^^^^^^ source.qs400-rpgle entity.name.variable.qs400-rpgle
+#                     ^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                       ^^ source.qs400-rpgle storage.type.qs400-rpgle
+#                         ^^^^^^^^^^^^^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                       ^ source.qs400-rpgle storage.type.qs400-rpgle
+#                                        ^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                          ^ source.qs400-rpgle
+#                                           ^^^^^^^^^ source.qs400-rpgle keyword.other.keyword.qs400-rpgle
+>     D  NAME                         30A
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^^^^^^^^^^^^^^ source.qs400-rpgle entity.name.variable.qs400-rpgle
+#                     ^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                       ^^ source.qs400-rpgle storage.type.qs400-rpgle
+#                         ^^^^^^^^^^^^^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                       ^ source.qs400-rpgle storage.type.qs400-rpgle
+>      /COPY QRPGLESRC,ASSETSCP
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^^^^^ source.qs400-rpgle keyword.control.directive.include.qs400-rpgle
+#           ^ source.qs400-rpgle
+#            ^^^^^^^^^^^^^^^^^^ source.qs400-rpgle string.unquoted.include.qs400-rpgle
+>      /IF DEFINED(DEBUG)
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^^^ source.qs400-rpgle keyword.control.directive.conditional.qs400-rpgle
+#         ^ source.qs400-rpgle
+#          ^^^^^^^ source.qs400-rpgle support.function.directive.qs400-rpgle
+#                 ^ source.qs400-rpgle
+#                  ^^^^^ source.qs400-rpgle entity.name.constant.condition.qs400-rpgle
+#                       ^ source.qs400-rpgle
+>      /ENDIF
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^^^^^^ source.qs400-rpgle keyword.control.directive.qs400-rpgle
+>     C     ITEMNO        CHAIN     ITEMMST
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#           ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                         ^^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+#                              ^^^^^ source.qs400-rpgle
+#                                   ^^^^^^^ source.qs400-rpgle
+>     C                   IF        %FOUND(ITEMMST) AND ASSETQTY > 10
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#           ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                         ^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+#                           ^^^^^^^^ source.qs400-rpgle
+#                                   ^^^^^^ source.qs400-rpgle support.function.builtin.qs400-rpgle
+#                                         ^^^^^^^^^^ source.qs400-rpgle
+#                                                   ^^^ source.qs400-rpgle keyword.operator.logical.qs400-rpgle
+#                                                      ^^^^^^^^^^ source.qs400-rpgle
+#                                                                ^ source.qs400-rpgle keyword.operator.qs400-rpgle
+#                                                                 ^ source.qs400-rpgle
+#                                                                  ^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+>     C                   EVAL      ASSETQTY = ASSETQTY + 1
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#           ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                         ^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+#                             ^^^^^^ source.qs400-rpgle
+#                                   ^^^^^^^^^ source.qs400-rpgle
+#                                            ^ source.qs400-rpgle keyword.operator.qs400-rpgle
+#                                             ^^^^^^^^^^ source.qs400-rpgle
+#                                                       ^ source.qs400-rpgle keyword.operator.qs400-rpgle
+#                                                        ^ source.qs400-rpgle
+#                                                         ^ source.qs400-rpgle constant.numeric.qs400-rpgle
+>     C                   ENDIF
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#           ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                         ^^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+>     C     CALCSR        BEGSR
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#           ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                         ^^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+>     C                   ENDSR
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#           ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                         ^^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+>      /FREE
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^^^^^ source.qs400-rpgle keyword.control.directive.qs400-rpgle
+>        ASSETQTY = 0; // reset
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^^^^^^^^^^^ source.qs400-rpgle
+#                 ^ source.qs400-rpgle keyword.operator.qs400-rpgle
+#                  ^ source.qs400-rpgle
+#                   ^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                    ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+#                     ^ source.qs400-rpgle
+#                      ^^^^^^^^ source.qs400-rpgle comment.line.double-slash.qs400-rpgle
+>      /END-FREE
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^^^^^^^^^ source.qs400-rpgle keyword.control.directive.qs400-rpgle
+>     C                   SETON                                        LR
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#           ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                         ^^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+#                              ^^^^^ source.qs400-rpgle
+#                                   ^^^^^^^^^^^^^^ source.qs400-rpgle
+#                                                 ^^^^^^^^^^^^^^ source.qs400-rpgle variable.other.qs400-rpgle
+#                                                               ^^^^^^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                                                      ^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+>     PGETQTY           B                   EXPORT
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^^^^^^^^^^^^^^ source.qs400-rpgle entity.name.function.qs400-rpgle
+#                     ^^ source.qs400-rpgle
+#                       ^ source.qs400-rpgle keyword.control.qs400-rpgle
+#                        ^^^^^^^^^^^^^^^^^^^ source.qs400-rpgle
+#                                           ^^^^^^ source.qs400-rpgle keyword.other.keyword.qs400-rpgle
+>     PGETQTY           E
+#^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
+#     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle
+#      ^^^^^^^^^^^^^^^ source.qs400-rpgle entity.name.function.qs400-rpgle
+#                     ^^ source.qs400-rpgle
+#                       ^ source.qs400-rpgle keyword.control.qs400-rpgle
+>** CTDATA MSGS
+#^^ source.qs400-rpgle keyword.control.directive.ctdata.qs400-rpgle
+#  ^^^^^^^^^^^^ source.qs400-rpgle entity.name.section.qs400-rpgle
+>ITEM NOT FOUND
+#^^^^^^^^^^^^^^^ source.qs400-rpgle string.unquoted.ctdata.qs400-rpgle
+>

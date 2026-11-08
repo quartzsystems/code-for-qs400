@@ -1,0 +1,761 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "RPG (QS/400)",
+  "scopeName": "source.qs400-rpgle",
+  "patterns": [
+    {
+      "include": "#free-member"
+    },
+    {
+      "include": "#ctdata"
+    },
+    {
+      "include": "#fixed"
+    }
+  ],
+  "repository": {
+    "free-member": {
+      "begin": "\\A(\\*\\*(?i:free))\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.directive.free.qs400-rpgle"
+        }
+      },
+      "end": "(?=^\\*\\*(?i:ctdata|ftrans|altseq)?(?:\\s|$))",
+      "patterns": [
+        {
+          "include": "#free-statements"
+        }
+      ]
+    },
+    "ctdata": {
+      "begin": "^(\\*\\*)(\\s*(?i:ctdata|ftrans|altseq)\\b.*|\\s*)$",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.directive.ctdata.qs400-rpgle"
+        },
+        "2": {
+          "name": "entity.name.section.qs400-rpgle"
+        }
+      },
+      "end": "(?!)",
+      "contentName": "string.unquoted.ctdata.qs400-rpgle"
+    },
+    "fixed": {
+      "patterns": [
+        {
+          "include": "#fixed-comment"
+        },
+        {
+          "include": "#fixed-sql"
+        },
+        {
+          "include": "#fixed-free-block"
+        },
+        {
+          "include": "#fixed-directive"
+        },
+        {
+          "match": "^((?>.{0,5}))([Cc])(?!\\*)((?>.{0,2}))((?>.{0,3}))((?>.{0,14}))(?=(?i:(?:eval|evalr|eval-corr|if|elseif|dow|dou|when|for|callp|return|on-error|on-exit|sorta|xml-into|xml-sax|data-into|data-gen)(?:\\([a-zA-Z ]*\\))?(?:\\s|$)|\\s{10}\\s*\\S))((?>.{0,10}))((?>.{0,45}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "constant.language.indicator.qs400-rpgle"
+            },
+            "4": {
+              "name": "constant.language.indicator.qs400-rpgle"
+            },
+            "5": {
+              "patterns": [
+                {
+                  "include": "#factor"
+                }
+              ]
+            },
+            "6": {
+              "patterns": [
+                {
+                  "include": "#opcode"
+                }
+              ]
+            },
+            "7": {
+              "patterns": [
+                {
+                  "include": "#free-tokens"
+                }
+              ]
+            },
+            "8": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "^((?>.{0,5}))([Hh])(?!\\*)((?>.{0,74}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#keywords"
+                }
+              ]
+            },
+            "4": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "^((?>.{0,5}))([Ff])(?!\\*)((?>.{0,10}))((?>.{0,6}))((?>.{0,5}))((?>.{0,1}))((?>.{0,5}))((?>.{0,2}))((?>.{0,7}))((?>.{0,1}))((?>.{0,37}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "entity.name.type.file.qs400-rpgle"
+            },
+            "4": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "5": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "6": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "7": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "8": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "9": {
+              "name": "support.type.device.qs400-rpgle"
+            },
+            "11": {
+              "patterns": [
+                {
+                  "include": "#keywords"
+                }
+              ]
+            },
+            "12": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "^((?>.{0,5}))([Dd])(?!\\*)((?>.{0,15}))((?>.{0,2}))((?>.{0,2}))((?>.{0,14}))((?>.{0,1}))((?>.{0,2}))((?>.{0,1}))((?>.{0,37}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "entity.name.variable.qs400-rpgle"
+            },
+            "4": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "5": {
+              "name": "storage.type.qs400-rpgle"
+            },
+            "6": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "7": {
+              "name": "storage.type.qs400-rpgle"
+            },
+            "8": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "10": {
+              "patterns": [
+                {
+                  "include": "#keywords"
+                }
+              ]
+            },
+            "11": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "^((?>.{0,5}))([Ii])(?!\\*)((?>.{0,10}))((?>.{0,4}))((?>.{0,2}))((?>.{0,24}))((?>.{0,2}))((?>.{0,14}))((?>.{0,12}))((?>.{0,6}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "entity.name.type.qs400-rpgle"
+            },
+            "4": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "5": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "6": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "7": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "8": {
+              "name": "variable.other.qs400-rpgle"
+            },
+            "9": {
+              "name": "constant.language.indicator.qs400-rpgle"
+            },
+            "11": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "^((?>.{0,5}))([Cc])(?!\\*)((?>.{0,2}))((?>.{0,3}))((?>.{0,14}))((?>.{0,10}))((?>.{0,14}))((?>.{0,14}))((?>.{0,7}))((?>.{0,6}))((?>.{0,4}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "constant.language.indicator.qs400-rpgle"
+            },
+            "4": {
+              "name": "constant.language.indicator.qs400-rpgle"
+            },
+            "5": {
+              "patterns": [
+                {
+                  "include": "#factor"
+                }
+              ]
+            },
+            "6": {
+              "patterns": [
+                {
+                  "include": "#opcode"
+                }
+              ]
+            },
+            "7": {
+              "patterns": [
+                {
+                  "include": "#factor"
+                }
+              ]
+            },
+            "8": {
+              "name": "variable.other.qs400-rpgle"
+            },
+            "9": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "10": {
+              "name": "constant.language.indicator.qs400-rpgle"
+            },
+            "12": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "^((?>.{0,5}))([Oo])(?!\\*)((?>.{0,10}))((?>.{0,4}))((?>.{0,9}))((?>.{0,14}))((?>.{0,2}))((?>.{0,6}))((?>.{0,1}))((?>.{0,28}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "entity.name.type.file.qs400-rpgle"
+            },
+            "4": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "5": {
+              "name": "constant.language.indicator.qs400-rpgle"
+            },
+            "6": {
+              "patterns": [
+                {
+                  "include": "#ofield"
+                }
+              ]
+            },
+            "7": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "8": {
+              "name": "constant.numeric.qs400-rpgle"
+            },
+            "9": {
+              "name": "storage.modifier.qs400-rpgle"
+            },
+            "10": {
+              "patterns": [
+                {
+                  "include": "#factor"
+                }
+              ]
+            },
+            "11": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "^((?>.{0,5}))([Pp])(?!\\*)((?>.{0,15}))((?>.{0,2}))((?>.{0,1}))((?>.{0,19}))((?>.{0,37}))(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "entity.name.function.qs400-rpgle"
+            },
+            "5": {
+              "name": "keyword.control.qs400-rpgle"
+            },
+            "7": {
+              "patterns": [
+                {
+                  "include": "#keywords"
+                }
+              ]
+            },
+            "8": {
+              "name": "comment.line.columns-81-100.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "include": "#fixed-free-line"
+        }
+      ]
+    },
+    "fixed-comment": {
+      "match": "^((?>.{0,5}))(.)(\\*.*)$",
+      "captures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-rpgle"
+        },
+        "2": {
+          "name": "comment.line.asterisk.qs400-rpgle"
+        },
+        "3": {
+          "name": "comment.line.asterisk.qs400-rpgle"
+        }
+      }
+    },
+    "fixed-directive": {
+      "match": "^((?>.{0,5}))(.)(?=\\s*/)(.*)$",
+      "captures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-rpgle"
+        },
+        "3": {
+          "patterns": [
+            {
+              "include": "#directive"
+            }
+          ]
+        }
+      }
+    },
+    "fixed-free-block": {
+      "begin": "^((?>.{0,5})).\\s*(/(?i:free))\\b.*$",
+      "beginCaptures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-rpgle"
+        },
+        "2": {
+          "name": "keyword.control.directive.qs400-rpgle"
+        }
+      },
+      "end": "^((?>.{0,5})).\\s*(/(?i:end-free))\\b.*$",
+      "endCaptures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-rpgle"
+        },
+        "2": {
+          "name": "keyword.control.directive.qs400-rpgle"
+        }
+      },
+      "patterns": [
+        {
+          "match": "^((?>.{0,5}))(.)",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "include": "#free-statements"
+        }
+      ]
+    },
+    "fixed-sql": {
+      "begin": "^((?>.{0,5}))([Cc])(/)((?i:exec)\\s+(?i:sql))\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-rpgle"
+        },
+        "2": {
+          "name": "keyword.other.specification.qs400-rpgle"
+        },
+        "3": {
+          "name": "keyword.control.directive.qs400-rpgle"
+        },
+        "4": {
+          "name": "keyword.control.directive.exec-sql.qs400-rpgle"
+        }
+      },
+      "end": "^((?>.{0,5}))([Cc])(/)((?i:end-exec))\\b.*$",
+      "endCaptures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-rpgle"
+        },
+        "2": {
+          "name": "keyword.other.specification.qs400-rpgle"
+        },
+        "3": {
+          "name": "keyword.control.directive.qs400-rpgle"
+        },
+        "4": {
+          "name": "keyword.control.directive.exec-sql.qs400-rpgle"
+        }
+      },
+      "contentName": "meta.embedded.block.sql",
+      "patterns": [
+        {
+          "match": "^((?>.{0,5}))([Cc])(\\+)(.*)$",
+          "captures": {
+            "1": {
+              "name": "comment.block.sequence.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.other.specification.qs400-rpgle"
+            },
+            "3": {
+              "name": "punctuation.separator.continuation.qs400-rpgle"
+            },
+            "4": {
+              "patterns": [
+                {
+                  "include": "source.qs400-sql"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "include": "#fixed-comment"
+        },
+        {
+          "include": "source.qs400-sql"
+        }
+      ]
+    },
+    "fixed-free-line": {
+      "match": "^((?>.{0,5}))(\\s\\s)(.*)$",
+      "captures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-rpgle"
+        },
+        "3": {
+          "patterns": [
+            {
+              "include": "#free-statements"
+            }
+          ]
+        }
+      }
+    },
+    "directive": {
+      "patterns": [
+        {
+          "match": "(?i)(/(?:copy|include))\\s+([^\\s]+)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.include.qs400-rpgle"
+            },
+            "2": {
+              "name": "string.unquoted.include.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "(?i)(/(?:if|elseif))\\s+(not\\s+)?(defined)(\\s*\\()([^)]*)(\\))",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.conditional.qs400-rpgle"
+            },
+            "2": {
+              "name": "keyword.operator.logical.qs400-rpgle"
+            },
+            "3": {
+              "name": "support.function.directive.qs400-rpgle"
+            },
+            "5": {
+              "name": "entity.name.constant.condition.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "(?i)(/(?:define|undefine))\\s+(\\S+)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.define.qs400-rpgle"
+            },
+            "2": {
+              "name": "entity.name.constant.condition.qs400-rpgle"
+            }
+          }
+        },
+        {
+          "match": "(?i)/(?:if|elseif|else|endif|eof|title|eject|space|set|restore|free|end-free|charcount)\\b",
+          "name": "keyword.control.directive.qs400-rpgle"
+        }
+      ]
+    },
+    "free-statements": {
+      "patterns": [
+        {
+          "match": "^\\s*(?=/[A-Za-z])(.*)$",
+          "captures": {
+            "1": {
+              "patterns": [
+                {
+                  "include": "#directive"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "include": "#free-tokens"
+        }
+      ]
+    },
+    "free-tokens": {
+      "patterns": [
+        {
+          "include": "#line-comment"
+        },
+        {
+          "include": "#exec-sql"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "match": "(?i)\\b(dcl-(?:s|c|ds|pr|pi|f|proc|subf|parm|enum)|end-(?:ds|pr|pi|proc|enum)|ctl-opt)\\b",
+          "name": "storage.type.declaration.qs400-rpgle"
+        },
+        {
+          "match": "(?i)(?<![\\w#@$-])(?:if|elseif|else|endif|dow|dou|enddo|for|endfor|select|when|when-is|when-in|other|endsl|monitor|on-error|on-exit|endmon|begsr|endsr|leave|leavesr|iter|return|exsr|callp|goto|for-each)(?![\\w#@$-])",
+          "name": "keyword.control.qs400-rpgle"
+        },
+        {
+          "match": "(?i)(?<![\\w#@$-])(?:acq|bitoff|biton|cab|call|callb|cas|cat|chain|check|checkr|clear|close|comp|commit|dealloc|define|delete|div|do|dsply|dump|eval|evalr|eval-corr|except|exfmt|extrct|feod|force|in|kfld|klist|lookup|move|movea|movel|mult|mvr|next|occur|open|out|parm|plist|post|read|readc|reade|readp|readpe|realloc|rel|reset|rolbk|scan|setgt|setll|setoff|seton|shtdn|sorta|sqrt|sub|subdur|subst|tag|test|testb|testn|testz|time|unlock|update|write|xfoot|xlate|xml-into|xml-sax|data-into|data-gen|snd-msg|z-add|z-sub|add|adddur|alloc|end|endcs)(?:\\(\\s*[a-z ]*\\))?(?![\\w#@$-])",
+          "name": "keyword.other.opcode.qs400-rpgle"
+        },
+        {
+          "match": "(?i)(?<![\\w#@$-])(?:char|varchar|ucs2|varucs2|graph|vargraph|int|uns|packed|zoned|bindec|float|ind|date|time|timestamp|pointer|object|like|likeds|likerec|likefile|dim|qualified|template|inz|const|value|options|extpgm|extproc|export|import|static|based|overlay|pos|extname|extfld|usage|keyed|rename|prefix|ccsid|nomain|main|dftactgrp|actgrp|bnddir|option|datfmt|timfmt|decedit|alwnull|text|opdesc|rtnparm|noopt|align|occurs|ascend|descend|ctdata|fromfile|tofile|perrcd|procptr|varying|reqprexp|serialize|pgminfo|thread|psds|sds|infds|infsr|indds|sfile|extdesc|extfile|extmbr|block|devid|handler|maxdev|oflind|pass|pgmname|rafdata|recno|saveds|saveind|sln|workstn|disk|printer|seq|special|charcount|nullind|samepos|dtaara)(?=\\s*\\(|\\s|;|$)",
+          "name": "storage.modifier.qs400-rpgle"
+        },
+        {
+          "match": "(?i)(?<![\\w#@$-])(?:and|or|not)(?![\\w#@$-])",
+          "name": "keyword.operator.logical.qs400-rpgle"
+        },
+        {
+          "include": "#common"
+        },
+        {
+          "match": "\\*\\*|[-+*/=<>]",
+          "name": "keyword.operator.qs400-rpgle"
+        },
+        {
+          "match": ";",
+          "name": "punctuation.terminator.statement.qs400-rpgle"
+        }
+      ]
+    },
+    "line-comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.qs400-rpgle"
+    },
+    "exec-sql": {
+      "begin": "(?i)\\b(exec)\\s+(sql)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.directive.exec-sql.qs400-rpgle"
+        },
+        "2": {
+          "name": "keyword.control.directive.exec-sql.qs400-rpgle"
+        }
+      },
+      "end": ";",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.terminator.statement.qs400-rpgle"
+        }
+      },
+      "contentName": "meta.embedded.block.sql",
+      "patterns": [
+        {
+          "include": "source.qs400-sql"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "(?i)[xgucz]?'",
+          "end": "'(?!')",
+          "name": "string.quoted.single.qs400-rpgle",
+          "patterns": [
+            {
+              "match": "''",
+              "name": "constant.character.escape.qs400-rpgle"
+            }
+          ]
+        }
+      ]
+    },
+    "common": {
+      "patterns": [
+        {
+          "match": "%[A-Za-z][A-Za-z0-9]*",
+          "name": "support.function.builtin.qs400-rpgle"
+        },
+        {
+          "match": "(?i)\\*in(?:\\d\\d|lr|rt|h[1-9]|u[1-8]|k[a-y]|l[1-9]|o[a-gv])\\b",
+          "name": "constant.language.indicator.qs400-rpgle"
+        },
+        {
+          "match": "\\*[A-Za-z][A-Za-z0-9_]*",
+          "name": "constant.language.qs400-rpgle"
+        },
+        {
+          "match": "(?<![\\w#@$])\\d+(?:\\.\\d+)?(?![\\w#@$])",
+          "name": "constant.numeric.qs400-rpgle"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "include": "#strings"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.begin.qs400-rpgle"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.end.qs400-rpgle"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#keyword-args"
+            }
+          ]
+        },
+        {
+          "match": "[A-Za-z][A-Za-z0-9-]*",
+          "name": "keyword.other.keyword.qs400-rpgle"
+        },
+        {
+          "include": "#common"
+        }
+      ]
+    },
+    "keyword-args": {
+      "patterns": [
+        {
+          "include": "#strings"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "patterns": [
+            {
+              "include": "#keyword-args"
+            }
+          ]
+        },
+        {
+          "include": "#common"
+        },
+        {
+          "match": ":",
+          "name": "punctuation.separator.qs400-rpgle"
+        }
+      ]
+    },
+    "factor": {
+      "patterns": [
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#common"
+        }
+      ]
+    },
+    "ofield": {
+      "patterns": [
+        {
+          "include": "#common"
+        },
+        {
+          "match": "\\S+",
+          "name": "variable.other.qs400-rpgle"
+        }
+      ]
+    },
+    "opcode": {
+      "patterns": [
+        {
+          "match": "(?i)[a-z][a-z0-9-]*(?:\\([a-z ]*\\))?",
+          "name": "keyword.other.opcode.qs400-rpgle"
+        }
+      ]
+    }
+  }
+}

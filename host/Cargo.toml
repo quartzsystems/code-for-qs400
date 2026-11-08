@@ -41,6 +41,8 @@ dds = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2b
 sql = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false, features = ["front"] }
 cmd = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false, features = ["front"] }
 compdiag = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false }
+# rpgfront's own table of the fixed-form columns, for the editor's guides.
+rpgspecs = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c" }
 # The language servers: synchronous, as rust-analyzer's.
 lsp-server = "0.10"
 lsp-types = "0.97"

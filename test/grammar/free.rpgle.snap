@@ -1,0 +1,133 @@
+>**FREE
+#^^^^^^ source.qs400-rpgle keyword.control.directive.free.qs400-rpgle
+>ctl-opt dftactgrp(*no) actgrp(*caller);
+#^^^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#       ^ source.qs400-rpgle
+#        ^^^^^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                 ^ source.qs400-rpgle
+#                  ^^^ source.qs400-rpgle constant.language.qs400-rpgle
+#                     ^^ source.qs400-rpgle
+#                       ^^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                             ^ source.qs400-rpgle
+#                              ^^^^^^^ source.qs400-rpgle constant.language.qs400-rpgle
+#                                     ^ source.qs400-rpgle
+#                                      ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>dcl-f itemmst keyed usage(*input);
+#^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#     ^^^^^^^^^ source.qs400-rpgle
+#              ^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                   ^ source.qs400-rpgle
+#                    ^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                         ^ source.qs400-rpgle
+#                          ^^^^^^ source.qs400-rpgle constant.language.qs400-rpgle
+#                                ^ source.qs400-rpgle
+#                                 ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>dcl-s assetQty packed(7:0) inz(0);
+#^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#     ^^^^^^^^^^ source.qs400-rpgle
+#               ^^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                     ^ source.qs400-rpgle
+#                      ^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                       ^ source.qs400-rpgle
+#                        ^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                         ^^ source.qs400-rpgle
+#                           ^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                              ^ source.qs400-rpgle
+#                               ^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                ^ source.qs400-rpgle
+#                                 ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>dcl-ds cust qualified;
+#^^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#      ^^^^^^ source.qs400-rpgle
+#            ^^^^^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                     ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>  name char(30);
+#^^^^^^^ source.qs400-rpgle
+#       ^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#           ^ source.qs400-rpgle
+#            ^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#              ^ source.qs400-rpgle
+#               ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>end-ds;
+#^^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#      ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>/copy qrpglesrc,assetscp
+#^^^^^ source.qs400-rpgle keyword.control.directive.include.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^^^^^^^^^^^^^^^^^^ source.qs400-rpgle string.unquoted.include.qs400-rpgle
+>dcl-proc getQty export;
+#^^^^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#        ^^^^^^^^ source.qs400-rpgle
+#                ^^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                      ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>  dcl-pi *n int(10);
+#^^ source.qs400-rpgle
+#  ^^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#        ^ source.qs400-rpgle
+#         ^^ source.qs400-rpgle constant.language.qs400-rpgle
+#           ^ source.qs400-rpgle
+#            ^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#               ^ source.qs400-rpgle
+#                ^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                  ^ source.qs400-rpgle
+#                   ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>    item char(15) const;
+#^^^^^^^^^ source.qs400-rpgle
+#         ^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#             ^ source.qs400-rpgle
+#              ^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                ^^ source.qs400-rpgle
+#                  ^^^^^ source.qs400-rpgle storage.modifier.qs400-rpgle
+#                       ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>  end-pi;
+#^^ source.qs400-rpgle
+#  ^^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#        ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>  chain item itemmst;
+#^^ source.qs400-rpgle
+#  ^^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+#       ^^^^^^^^^^^^^ source.qs400-rpgle
+#                    ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>  if %found(itemmst) and assetQty >= 10;
+#^^ source.qs400-rpgle
+#  ^^ source.qs400-rpgle keyword.control.qs400-rpgle
+#    ^ source.qs400-rpgle
+#     ^^^^^^ source.qs400-rpgle support.function.builtin.qs400-rpgle
+#           ^^^^^^^^^^ source.qs400-rpgle
+#                     ^^^ source.qs400-rpgle keyword.operator.logical.qs400-rpgle
+#                        ^^^^^^^^^^ source.qs400-rpgle
+#                                  ^ source.qs400-rpgle keyword.operator.qs400-rpgle
+#                                   ^ source.qs400-rpgle keyword.operator.qs400-rpgle
+#                                    ^ source.qs400-rpgle
+#                                     ^^ source.qs400-rpgle constant.numeric.qs400-rpgle
+#                                       ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>    dsply 'It''s here';
+#^^^^ source.qs400-rpgle
+#    ^^^^^ source.qs400-rpgle keyword.other.opcode.qs400-rpgle
+#         ^ source.qs400-rpgle
+#          ^ source.qs400-rpgle string.quoted.single.qs400-rpgle
+#           ^^ source.qs400-rpgle string.quoted.single.qs400-rpgle
+#             ^^ source.qs400-rpgle string.quoted.single.qs400-rpgle constant.character.escape.qs400-rpgle
+#               ^^^^^^ source.qs400-rpgle string.quoted.single.qs400-rpgle
+#                     ^ source.qs400-rpgle string.quoted.single.qs400-rpgle
+#                      ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>  endif;
+#^^ source.qs400-rpgle
+#  ^^^^^ source.qs400-rpgle keyword.control.qs400-rpgle
+#       ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>  return assetQty;
+#^^ source.qs400-rpgle
+#  ^^^^^^ source.qs400-rpgle keyword.control.qs400-rpgle
+#        ^^^^^^^^^ source.qs400-rpgle
+#                 ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>end-proc;
+#^^^^^^^^ source.qs400-rpgle storage.type.declaration.qs400-rpgle
+#        ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>*inlr = *on;
+#^^^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle
+#     ^ source.qs400-rpgle
+#      ^ source.qs400-rpgle keyword.operator.qs400-rpgle
+#       ^ source.qs400-rpgle
+#        ^^^ source.qs400-rpgle constant.language.qs400-rpgle
+#           ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
+>

@@ -322,6 +322,8 @@ dependencies = [
  "lsp-common",
  "lsp-types",
  "rpgfront",
+ "rpgspecs",
+ "serde",
  "serde_json",
 ]
 

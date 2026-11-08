@@ -27,6 +27,8 @@ import { IfsNode, IfsProvider } from './views/ifs';
 import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
 import { LanguageServers } from './languages/client';
+import { FixedFormRpg } from './languages/fixedForm';
+import type { SpecForm } from './languages/rpgColumns';
 
 /** What `activate` returns; used by the integration tests. */
 export interface ExtensionApi {
@@ -47,6 +49,7 @@ export interface ExtensionApi {
   readonly diagnostics: CompileDiagnostics;
   readonly jobLog: JobLogProvider;
   readonly languages: LanguageServers;
+  readonly rpg: FixedFormRpg;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -94,6 +97,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     languagesOutput,
   );
   languages.start();
+  const rpg = new FixedFormRpg(() => languages.request<SpecForm[]>('qs400-rpgle', 'qs400/specForms'));
+  rpg.start();
 
   context.subscriptions.push(
     output,
@@ -129,6 +134,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     runner.onDidRun((r) => diagnostics.apply(r)),
     languagesOutput,
     languages,
+    rpg,
     // A session signed on again: includes it could not read may be there now.
     sessions.onDidChange((st) => {
       if (st?.state === 'connected') {
@@ -147,7 +153,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg };
 }
 
 export function deactivate(): void {

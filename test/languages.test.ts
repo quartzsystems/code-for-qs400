@@ -167,7 +167,11 @@ suite('Languages: the RPG server', () => {
   });
   suiteTeardown(async () => {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-    fs.rmSync(dir, { recursive: true, force: true });
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch {
+      // Windows may still hold a handle on the folder; it is a temporary one.
+    }
   });
 
   async function openRpg(name: string, text: string): Promise<vscode.TextDocument> {

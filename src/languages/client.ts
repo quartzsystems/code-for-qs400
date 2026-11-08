@@ -83,6 +83,12 @@ export class LanguageServers implements vscode.Disposable {
     return c.sendRequest<AnalyzedDiagnostic[] | null>(DIAGNOSTICS, { uri: doc.uri.toString() });
   }
 
+  /** A request of a language's own to its server; undefined when it has none. */
+  async request<R>(language: string, method: string, params?: unknown): Promise<R | undefined> {
+    const c = await this.client(language);
+    return c ? c.sendRequest<R>(method, params ?? null) : undefined;
+  }
+
   /** Tell every running server that `params` changed. */
   async includesChanged(params: IncludesChangedParams): Promise<void> {
     for (const c of this.clients.values()) {

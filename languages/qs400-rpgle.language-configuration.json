@@ -1,0 +1,31 @@
+{
+  "comments": {
+    "lineComment": "//"
+  },
+  "brackets": [["(", ")"]],
+  "autoClosingPairs": [
+    { "open": "(", "close": ")" },
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] }
+  ],
+  "surroundingPairs": [
+    ["(", ")"],
+    ["'", "'"]
+  ],
+  "wordPattern": "(%|\\*)?[A-Za-z_#@$][A-Za-z0-9_#@$]*",
+  "folding": {
+    "markers": {
+      "start": { "pattern": "^(?:.{5}P.{17}B|.{5}C.{19}BEGSR\\b|\\s*(?:DCL-PROC|BEGSR)\\b)", "flags": "i" },
+      "end": { "pattern": "^(?:.{5}P.{17}E|.{5}C.{19}ENDSR\\b|\\s*(?:END-PROC|ENDSR)\\b)", "flags": "i" }
+    }
+  },
+  "indentationRules": {
+    "increaseIndentPattern": {
+      "pattern": "^\\s*(?:IF|ELSEIF|ELSE|DOW|DOU|FOR|FOR-EACH|SELECT|WHEN|WHEN-IS|WHEN-IN|OTHER|MONITOR|ON-ERROR|ON-EXIT|BEGSR|DCL-PROC|DCL-PI|DCL-PR|DCL-DS)\\b(?!.*\\b(?:END-DS|END-PR|END-PI|LIKEDS|LIKEREC)\\b)",
+      "flags": "i"
+    },
+    "decreaseIndentPattern": {
+      "pattern": "^\\s*(?:ENDIF|ENDDO|ENDFOR|ENDSL|ENDMON|ENDSR|END-PROC|END-PI|END-PR|END-DS|ELSE|ELSEIF|WHEN|WHEN-IS|WHEN-IN|OTHER|ON-ERROR|ON-EXIT)\\b",
+      "flags": "i"
+    }
+  }
+}

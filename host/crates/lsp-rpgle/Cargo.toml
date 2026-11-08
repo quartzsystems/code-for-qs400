@@ -16,10 +16,12 @@ publish = false
 lsp-common.workspace = true
 rpgfront.workspace = true
 compdiag.workspace = true
+rpgspecs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 lsp-types.workspace = true
