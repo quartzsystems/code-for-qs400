@@ -19,6 +19,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
+    "onView:code-for-qs400.project",
     "onView:code-for-qs400.connections",
     "onCommand:code-for-qs400.about",
     "onCommand:code-for-qs400.host.restart",
@@ -50,6 +51,10 @@
     },
     "views": {
       "qs400": [
+        {
+          "id": "code-for-qs400.project",
+          "name": "Project"
+        },
         {
           "id": "code-for-qs400.connections",
           "name": "Connections"
@@ -712,6 +717,36 @@
         "title": "Deploy File",
         "category": "Code for QS/400",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "code-for-qs400.project.refresh",
+        "title": "Refresh Project",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.project.pull",
+        "title": "Pull into Project",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.project.pullFile",
+        "title": "Pull from System",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.project.diff",
+        "title": "Diff with System",
+        "category": "Code for QS/400",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "code-for-qs400.project.openRemote",
+        "title": "Open on System",
+        "category": "Code for QS/400",
+        "icon": "$(go-to-file)"
       }
     ],
     "configuration": {
@@ -960,6 +995,10 @@
       {
         "view": "code-for-qs400.connections",
         "contents": "No QS/400 connections yet.\n[Add Connection](command:code-for-qs400.connection.add)"
+      },
+      {
+        "view": "code-for-qs400.project",
+        "contents": "No workspace folder has a qs400project.json.\n[Pull Library…](command:code-for-qs400.pull.library)\nA pull writes the library's source files into the folder and makes its project file."
       }
     ],
     "menus": {
@@ -1058,6 +1097,26 @@
           "command": "code-for-qs400.messages.refresh",
           "when": "view == code-for-qs400.messages",
           "group": "navigation@3"
+        },
+        {
+          "command": "code-for-qs400.deploy.changed",
+          "when": "view == code-for-qs400.project",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.deploy.all",
+          "when": "view == code-for-qs400.project",
+          "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.project.pull",
+          "when": "view == code-for-qs400.project",
+          "group": "navigation@3"
+        },
+        {
+          "command": "code-for-qs400.project.refresh",
+          "when": "view == code-for-qs400.project",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -1525,6 +1584,56 @@
           "command": "code-for-qs400.pull.path",
           "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(file|directory|root)/",
           "group": "5_project@1"
+        },
+        {
+          "command": "code-for-qs400.deploy.changed",
+          "when": "view == code-for-qs400.project && viewItem == project.project",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.deploy.changed",
+          "when": "view == code-for-qs400.project && viewItem == project.project",
+          "group": "1_deploy@1"
+        },
+        {
+          "command": "code-for-qs400.deploy.all",
+          "when": "view == code-for-qs400.project && viewItem == project.project",
+          "group": "1_deploy@2"
+        },
+        {
+          "command": "code-for-qs400.deploy.git",
+          "when": "view == code-for-qs400.project && viewItem == project.project",
+          "group": "1_deploy@3"
+        },
+        {
+          "command": "code-for-qs400.project.pull",
+          "when": "view == code-for-qs400.project && viewItem == project.project",
+          "group": "2_pull@1"
+        },
+        {
+          "command": "code-for-qs400.deploy.file",
+          "when": "view == code-for-qs400.project && viewItem =~ /^project\\.file\\.remote$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.deploy.file",
+          "when": "view == code-for-qs400.project && viewItem =~ /^project\\.file\\.remote$/",
+          "group": "1_deploy@1"
+        },
+        {
+          "command": "code-for-qs400.project.pullFile",
+          "when": "view == code-for-qs400.project && viewItem =~ /^project\\.file\\.remote$/",
+          "group": "2_pull@1"
+        },
+        {
+          "command": "code-for-qs400.project.diff",
+          "when": "view == code-for-qs400.project && viewItem =~ /^project\\.file\\.remote$/",
+          "group": "3_system@1"
+        },
+        {
+          "command": "code-for-qs400.project.openRemote",
+          "when": "view == code-for-qs400.project && viewItem =~ /^project\\.file\\.remote$/",
+          "group": "3_system@2"
         }
       ],
       "commandPalette": [
@@ -1795,6 +1904,18 @@
         {
           "command": "code-for-qs400.deploy.file",
           "when": "code-for-qs400.hasProject && resourceScheme == file"
+        },
+        {
+          "command": "code-for-qs400.project.pullFile",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.project.diff",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.project.openRemote",
+          "when": "false"
         }
       ],
       "editor/context": [

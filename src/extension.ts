@@ -40,6 +40,7 @@ import { Deployer } from './projects/deploy';
 import { GitApiChanges } from './projects/git';
 import { LocalActions } from './projects/local';
 import { WorkspaceIncludes } from './projects/includes';
+import { ProjectView, registerProjectViewCommands } from './views/project';
 import { sameName } from './connections/config';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -87,6 +88,7 @@ export interface ExtensionApi {
   readonly projects: ProjectStore;
   readonly puller: Puller;
   readonly deployer: Deployer;
+  readonly projectView: ProjectView;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -146,6 +148,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }
   });
   const localActions = new LocalActions(projectDeps, deployer);
+  const projectView = new ProjectView(projectDeps, deployer);
+  const projectTree = vscode.window.createTreeView('code-for-qs400.project', { treeDataProvider: projectView, showCollapseAll: true });
   const hasProject = () => void vscode.commands.executeCommand('setContext', 'code-for-qs400.hasProject', projects.usable().length > 0);
   const diagnostics = new CompileDiagnostics((connection, at) => deployer.localFor(connection, at));
   const jobLog = new JobLogProvider(store, sessions, vscode.Uri.joinPath(context.extensionUri, 'media'));
@@ -206,6 +210,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerPullCommands(projectDeps, puller),
     ...registerDeployCommands(projectDeps, deployer),
     deployer,
+    projectView,
+    projectTree,
+    ...registerProjectViewCommands(projectView, projectDeps, puller),
     projects.onDidChange(hasProject),
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
@@ -268,7 +275,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer, projectView };
 }
 
 export function deactivate(): void {
