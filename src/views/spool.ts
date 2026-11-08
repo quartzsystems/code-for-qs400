@@ -51,6 +51,12 @@ export interface FileRef {
   id: SpooledFileId;
 }
 
+/** What a command did to a file. */
+export interface FileAction {
+  ref: FileRef;
+  what: 'held' | 'released' | 'deleted' | 'moved';
+}
+
 export function spoolTreeItem(n: SpoolNode): vscode.TreeItem {
   const C = vscode.TreeItemCollapsibleState.Collapsed;
   switch (n.kind) {
@@ -112,6 +118,7 @@ export function spoolTreeItem(n: SpoolNode): vscode.TreeItem {
         .join('\n');
       i.iconPath = new vscode.ThemeIcon(f.status === 'held' ? 'debug-pause' : 'file-text');
       i.contextValue = `spool.file.${f.status}`;
+      i.command = { command: 'code-for-qs400.spool.open', title: 'Open', arguments: [n] };
       return i;
     }
   }
@@ -122,7 +129,7 @@ export type SpoolEvents = Pick<HostClient, 'onDidChangeSpool' | 'onDidSpoolProgr
 
 export class SpoolProvider implements vscode.TreeDataProvider<SpoolNode>, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<SpoolNode | undefined>();
-  private readonly acted = new vscode.EventEmitter<FileRef>();
+  private readonly acted = new vscode.EventEmitter<FileAction>();
   private readonly subscriptions: vscode.Disposable[];
   readonly onDidChangeTreeData = this.changed.event;
   /** Fires after a command changed or deleted a file, for the viewer. */
@@ -263,10 +270,10 @@ export class SpoolProvider implements vscode.TreeDataProvider<SpoolNode>, vscode
     this.refresh();
   }
 
-  /** A command or the viewer changed `ref`: lists read again, the viewer told. */
-  didAct(ref: FileRef): void {
+  /** A command changed `ref`: lists read again, the viewer told. */
+  didAct(ref: FileRef, what: FileAction['what']): void {
     this.refresh();
-    this.acted.fire(ref);
+    this.acted.fire({ ref, what });
   }
 
   getTreeItem(n: SpoolNode): vscode.TreeItem {
@@ -432,9 +439,9 @@ export function registerSpoolViewCommands(
         return undefined;
       }
     };
-  const done = (ref: FileRef, what: string) => {
-    vscode.window.setStatusBarMessage(`$(check) ${fileTitle(ref.id)} ${what}`, 5000);
-    provider.didAct(ref);
+  const done = (ref: FileRef, what: FileAction['what'], text: string = what) => {
+    vscode.window.setStatusBarMessage(`$(check) ${fileTitle(ref.id)} ${text}`, 5000);
+    provider.didAct(ref, what);
   };
   return [
     vscode.commands.registerCommand('code-for-qs400.spool.refresh', () => provider.refresh(true)),
@@ -528,7 +535,7 @@ export function registerSpoolViewCommands(
           return undefined;
         }
         await sessions.call(name, 'spool.move', { name, id: r.id, outq, first: where.first });
-        done(r, `moved to ${outq.library}/${outq.name}`);
+        done(r, 'moved', `moved to ${outq.library}/${outq.name}`);
         return outq;
       }),
     ),
