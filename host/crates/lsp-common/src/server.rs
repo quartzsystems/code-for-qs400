@@ -311,6 +311,15 @@ impl<'c, L: Language> Server<'c, L> {
         }
     }
 
+    /// Bring `uri`'s analysis up to its text before a request answers
+    /// from it: a change still waiting out the debounce is analyzed now.
+    pub(crate) fn current(&mut self, uri: &str) {
+        if self.debounce.waiting(uri) {
+            self.debounce.cancel(uri);
+            self.analyze(uri);
+        }
+    }
+
     /// Analyze `uri` now: keep and publish the result, or ask for the
     /// includes it lacks and wait.
     pub(crate) fn analyze(&mut self, uri: &str) {

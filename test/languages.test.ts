@@ -209,7 +209,10 @@ suite('Languages: the RPG server', () => {
     );
     const own = new LanguageServers(() => host.resolveBinary(), deps, vscode.window.createOutputChannel('qs4 test', { log: true }));
     try {
-      const doc = await openRpg('t2.rpgle', '     D LOCAL           S             10A\n      /COPY HLINV/QRPGLESRC,CP\n     C                   SETON                                        LR\n');
+      const doc = await openRpg(
+        't2.rpgle',
+        '     D LOCAL           S             10A\n      /COPY HLINV/QRPGLESRC,CP\n     C                   EVAL      LOCAL = CPFLD\n     C                   SETON                                        LR\n',
+      );
       await own.client('qs400-rpgle');
       const d = await diagnosticsOf(doc.uri, (ds) => ds.some((x) => x.message === '1 message in HLINV/QRPGLESRC(CP)'));
       assert.equal(d.find((x) => x.message.startsWith('1 message'))!.range.start.line, 1);
@@ -220,6 +223,17 @@ suite('Languages: the RPG server', () => {
         items?.map((i) => [i.at.kind === 'member' ? i.at.member : i.at.kind, i.line, i.id]),
         [['CP', 2, 'RNF3304']],
       );
+      // Go to definition into the copy member: its read-only URI, at the declaration.
+      const defs = await vscode.commands.executeCommand<vscode.Location[]>('vscode.executeDefinitionProvider', doc.uri, new vscode.Position(2, 46));
+      const into = defs.find((l) => l.uri.scheme === 'qs400mbr');
+      assert.ok(into, JSON.stringify(defs));
+      assert.equal(into.uri.path, '/HLINV/QRPGLESRC/CP.rpgle');
+      assert.equal(into.uri.query, 'readonly');
+      assert.equal(into.range.start.line, 0);
+      // The outline: the member's own declaration only.
+      const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', doc.uri);
+      assert.ok(symbols.some((x) => x.name === 'LOCAL' && x.kind === vscode.SymbolKind.Variable));
+      assert.ok(!symbols.some((x) => x.name === 'CPFLD'));
     } finally {
       own.dispose();
     }

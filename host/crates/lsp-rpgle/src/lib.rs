@@ -6,9 +6,13 @@
 //! free form and `**FREE`, `/COPY` and `/INCLUDE` members fetched from
 //! the client, and the `EXEC SQL` of `SQLRPGLE`, which `rpgfront` owns.
 
+pub mod blocks;
+pub mod words;
+
 use compdiag::front::{Analysis, Fetch, Source};
-use lsp_common::Language;
 use lsp_common::uri::DocSource;
+use lsp_common::{Analyzed, Language, MemberContext, Word};
+use lsp_types::{FoldingRange, FoldingRangeKind};
 use rpgfront::analysis::{Options, analyze};
 use rpgfront::ast::Module;
 use serde::Serialize;
@@ -92,10 +96,90 @@ impl Language for Rpgle {
         )
     }
 
+    fn folding(&self, a: &Analyzed<Module>) -> Vec<FoldingRange> {
+        blocks::blocks(&a.analysis)
+            .into_iter()
+            .map(|b| FoldingRange {
+                start_line: b.first - 1,
+                end_line: b.last - 1,
+                kind: Some(FoldingRangeKind::Region),
+                ..FoldingRange::default()
+            })
+            .collect()
+    }
+
+    /// The procedure whose lines hold `line` (from 0).
+    fn scope_at(&self, a: &Analyzed<Module>, line: u32) -> Option<String> {
+        let l = line + 1;
+        blocks::blocks(&a.analysis)
+            .into_iter()
+            .filter(|b| b.first <= l && l <= b.last)
+            .find_map(|b| b.procedure)
+    }
+
+    fn words(&self) -> &'static [Word] {
+        words::all()
+    }
+
+    fn member_context(&self, before: &str) -> Option<MemberContext> {
+        member_context(before)
+    }
+
+    fn trigger_characters(&self) -> Vec<String> {
+        vec!["%".into(), ",".into()]
+    }
+
     fn request(&self, method: &str, _params: &Value) -> Option<Result<Value, String>> {
         (method == SPEC_FORMS)
             .then(|| serde_json::to_value(spec_forms()).map_err(|e| e.to_string()))
     }
+}
+
+/// After `/COPY` or `/INCLUDE`, the source file whose members complete:
+/// `/COPY FILE,MBR`, `/COPY LIB/FILE,MBR`, or just a member, of
+/// `QRPGLESRC`, as the compiler defaults it. A stream file (a path or a
+/// quoted name) is not completed.
+#[must_use]
+pub fn member_context(before: &str) -> Option<MemberContext> {
+    let upper = before.to_ascii_uppercase();
+    let at = ["/COPY", "/INCLUDE"]
+        .iter()
+        .filter_map(|d| upper.rfind(d).map(|i| i + d.len()))
+        .max()?;
+    let rest = &upper[at..];
+    if !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let word = rest.trim_start();
+    if word.contains(char::is_whitespace) || word.contains(['\'', '"', '.']) {
+        return None;
+    }
+    let name_ok = |s: &str| {
+        s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_#@$*".contains(c))
+    };
+    let (lib_file, prefix) = word.rsplit_once(',').map_or(("", word), |(a, b)| (a, b));
+    let (library, file) = match lib_file.split_once('/') {
+        Some((l, f)) => (l, f),
+        None if lib_file.is_empty() && word.contains('/') => return None,
+        None => ("", lib_file),
+    };
+    if !name_ok(library) || !name_ok(file) || !name_ok(prefix) {
+        return None;
+    }
+    Some(MemberContext {
+        library: if library.is_empty() {
+            "*LIBL".into()
+        } else {
+            library.into()
+        },
+        file: if file.is_empty() {
+            "QRPGLESRC".into()
+        } else {
+            file.into()
+        },
+        prefix: prefix.into(),
+    })
 }
 
 /// Serve RPG on stdio.
@@ -110,6 +194,23 @@ pub fn serve() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn members_complete_after_copy() {
+        let c = |s: &str| member_context(s).map(|m| (m.library, m.file, m.prefix));
+        let t = |l: &str, f: &str, p: &str| Some((l.to_string(), f.to_string(), p.to_string()));
+        assert_eq!(
+            c("      /COPY QRPGLESRC,ASS"),
+            t("*LIBL", "QRPGLESRC", "ASS")
+        );
+        assert_eq!(c("      /copy hlinv/qcpysrc,"), t("HLINV", "QCPYSRC", ""));
+        assert_eq!(c("/include CP"), t("*LIBL", "QRPGLESRC", "CP"));
+        assert_eq!(c("      /COPY "), t("*LIBL", "QRPGLESRC", ""));
+        assert_eq!(c("/include 'inc/cp.rpgleinc"), None);
+        assert_eq!(c("/include /home/x/cp"), None);
+        assert_eq!(c("      /COPYX"), None);
+        assert_eq!(c("     C                   EVAL      X = 1"), None);
+    }
 
     #[test]
     fn the_spec_table_is_rpgspecs() {

@@ -19,9 +19,7 @@ compdiag.workspace = true
 rpgspecs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+lsp-types.workspace = true
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-lsp-types.workspace = true
