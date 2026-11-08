@@ -5,12 +5,15 @@ remote operation goes through `qs400-code-host`, a Rust sidecar bundled
 with the extension that speaks QAP, the Quartz Access Protocol shared with
 QS/400 Access.
 
-**Status: 1.0.0 pre-release, Phase 2.** Saved connections, sign-on over
+**Status: 1.0.0 pre-release, Phase 3.** Saved connections, sign-on over
 QAP, a session per connection with its status, session job and library
 list; the Objects view with filters; source members opened, locked and
-saved with their sequence numbers and dates. See
-[docs/connections.md](docs/connections.md) and
-[docs/objects-and-members.md](docs/objects-and-members.md).
+saved with their sequence numbers and dates; the IFS view, with stream
+files opened and saved in their own CCSID, uploads and downloads with
+resume, and the file commands. See
+[docs/connections.md](docs/connections.md),
+[docs/objects-and-members.md](docs/objects-and-members.md) and
+[docs/ifs.md](docs/ifs.md).
 
 ## Requirements
 
@@ -44,6 +47,10 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | Add, Edit, Remove Filter | `code-for-qs400.filter.add`, `.edit`, `.remove` |
 | Member: Open, Open Read-Only, New, Copy, Rename, Delete, Change Text, Compare with… | `code-for-qs400.member.open`, `.openReadOnly`, `.create`, `.copy`, `.rename`, `.delete`, `.changeText`, `.compare` |
 | Renumber Member | `code-for-qs400.member.renumber` |
+| IFS: Refresh, Go to IFS Path…, Show and Hide Hidden Entries | `code-for-qs400.ifs.refresh`, `.goTo`, `.showHidden`, `.hideHidden` |
+| IFS: Add, Remove IFS Root, Set as IFS Home | `code-for-qs400.ifs.addRoot`, `.removeRoot`, `.setHome` |
+| IFS: Open, New File…, New Folder…, Rename…, Copy to…, Delete, Properties, Change CCSID… | `code-for-qs400.ifs.open`, `.newFile`, `.newFolder`, `.rename`, `.copy`, `.delete`, `.properties`, `.changeCcsid` |
+| IFS: Upload Files…, Upload Folder…, Download…, Download Folder… | `code-for-qs400.ifs.upload`, `.uploadFolder`, `.download`, `.downloadFolder` |
 
 **About** asks the host for its version and shows, for example,
 `Code for QS/400 V1R0M0 · host 1.0.0 · QAP v9`.
@@ -53,7 +60,7 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `code-for-qs400.host.path` | empty | Path to a `qs400-code-host` binary. Empty uses the bundled one. Machine scope only. |
-| `code-for-qs400.connections` | `[]` | Saved connections: `name`, `host`, `port`, `user`, `tls`, `libraryList`, `filters`. User settings only. |
+| `code-for-qs400.connections` | `[]` | Saved connections: `name`, `host`, `port`, `user`, `tls`, `libraryList`, `filters`, `ifsRoots`. User settings only. |
 | `code-for-qs400.defaultConnection` | empty | The connection offered first. User settings only. |
 
 Passwords are never in settings: they go to VS Code secret storage.
@@ -81,18 +88,21 @@ package.json, src/      the extension (TypeScript, bundled by esbuild to dist/)
   src/connections/        settings, secret storage, sessions, library list
   src/objects/filters.ts  object filters and generic names
   src/members/            the qs400mbr file system provider, the type table, the save diff
+  src/ifs/                the qs400ifs file system provider, paths, tree walks, transfers
   src/views/connections.ts  the Connections tree
   src/views/objects.ts    the Objects tree
+  src/views/ifs.ts        the IFS tree
   src/views/sessionStatusBar.ts  the active connection in the status bar
-  src/commands/           About, connection, object and member commands
+  src/commands/           About, connection, object, member and IFS commands
 syntaxes/, languages/   grammars and language configuration (Phase 5)
 schemas/actions.json    schema for .vscode/actions.json (Phase 4)
 media/                  activity bar icon (placeholder)
 bin/                    host binary, copied in at package time (gitignored)
 host/                   Cargo workspace for the sidecar
-  crates/host-rpc         JSON-RPC 2.0 framing and method registry (no QS/400 knowledge)
+  crates/host-rpc         JSON-RPC 2.0 framing, method registry and deferred replies (no QS/400 knowledge)
   crates/code-host        the qs400-code-host binary; src/session.rs holds the sessions,
-                          src/objects.rs and src/members.rs the object and member methods
+                          src/objects.rs and src/members.rs the object and member methods,
+                          src/ifs.rs the IFS methods and transfers
 test/                   extension integration tests (@vscode/test-electron)
 scripts/                check-naming.sh, package.sh, package.ps1
 docs/                   user documentation

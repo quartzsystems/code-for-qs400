@@ -14,7 +14,8 @@ decided along the way.
 | `src/connections/` | The connections setting (`config.ts`, no `vscode` import), store and secrets, prompts, the session manager, the library list |
 | `src/objects/filters.ts` | Object filters, generic names and object types (no `vscode` import) |
 | `src/members/` | `types.ts` (the one source type → extension and language table), `uri.ts` (`qs400mbr` URIs), `provider.ts` (the file system provider, locks, the cache), `diff.ts` (the save diff; no `vscode` import) |
-| `src/views/`, `src/commands/` | The Connections and Objects trees, the status bar item and commands |
+| `src/ifs/` | `paths.ts` (paths, sorting, roots), `types.ts` (the binary table and languages), `tree.ts` (the delete and copy walks; none of the three imports `vscode`), `uri.ts` (`qs400ifs` URIs), `provider.ts` (the file system provider), `transfers.ts` (uploads and downloads) |
+| `src/views/`, `src/commands/` | The Connections, Objects and IFS trees, the status bar item and commands |
 | `syntaxes/`, `languages/` | Grammars and language configuration (Phase 5) |
 | `schemas/actions.json` | Schema for `.vscode/actions.json` (Phase 4) |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
@@ -22,6 +23,7 @@ decided along the way.
 | `host/` | Cargo workspace: `crates/host-rpc` (framing, registry, error codes; no QS/400 knowledge) and `crates/code-host` (the `qs400-code-host` binary) |
 | `host/crates/code-host/src/session.rs` | Sessions: one per connection name, the state machine, `session.*` and `libl.*`, and `DevelopBackend` |
 | `host/crates/code-host/src/objects.rs`, `members.rs` | `object.*` and `member.*`, thin over `qap-client`'s `Develop`; `members::codec` is the one place `seq` and `date` convert |
+| `host/crates/code-host/src/ifs.rs` | `ifs.*`, thin over `qap-client`'s `Files`, `read` and `write`; the transfers and their threads |
 | `test/` | Extension tests, run inside VS Code; `live.test.ts` against a real system |
 | `scripts/` | `check-naming.sh`, `package.sh`, `package.ps1` |
 | `.github/workflows/ci.yml` | CI for Windows and Linux |
@@ -75,10 +77,17 @@ calls.
 refusals (`CPF1002`, `TCP1A5A`, `TCP1A61`, `CPF9801`, `CPF7306`,
 `TCP1A62`), which must come back unchanged with their second-level text.
 
+`host/crates/code-host/tests/ifs.rs` does it for `ifs.*` one level lower:
+the fake implements `qap-client`'s `Files` itself, and `ifs_request` goes
+over a real `qap_client::Connection` on an in-memory transport, so
+`qap-client`'s paging, stamps, chunked reads and writes run unchanged
+against a canned server (Phase 3 decision 19).
+
 ### Live tests
 
-`test/live.test.ts` runs the automatic steps of the Phase 1 and Phase 2
-exit tests against a real system. It is skipped unless these are set:
+`test/live.test.ts` runs the automatic steps of the Phase 1, 2 and 3
+exit tests against a real system. Phase 3 makes and removes
+`/home/<QS400_TEST_USER>/code-test`. It is skipped unless these are set:
 
 | Variable | Meaning |
 | --- | --- |
@@ -446,6 +455,121 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     `CPYSRCF` of one member.
 23. **Deferred:** "Open in 5250" on objects and members, as the prompt
     says.
+
+## Decisions made in Phase 3
+
+1. **No new pins.** `qap-client` stays at `quartz-systems-access`
+   `90d9bba`; every IFS operation is its `Files` trait, `Listing`,
+   `stamp`, `checked`, `resolve`, `resume_offset`, `read` and `write`, with
+   no protocol code or chunking here. The prompt calls the spec section
+   "Service 7 `Ifs`"; `docs/QAP.md` at `7f82a43f` numbers it **Service 6
+   `Ifs`** (version 5, `Stat` version 6), and Service 7 is `Messages`.
+2. **Error codes.** The prompt asks for `-32002 "changed on the system"`
+   and `-32003` for a file over the limit, but those are already
+   `NotConnected` and `NeedsPassword` (Phase 1 decision 4), and
+   `SessionManager.call` answers `-32003` with a password prompt. So
+   `ifs.*` uses `-32020` changed (`data: { change }`, null when the file is
+   gone), `-32021` too large (`data: { size, limit }`), `-32022` cancelled
+   (`data: { transfer, offset }`) and `-32023` too many links in a row
+   (more than 16). `-32012` is a local file a transfer could not read or
+   write (`qap-client`'s `Error::Read` and `Error::Write`).
+3. **`change` is a string.** `Stat`'s counter is a u64, which a JSON number
+   cannot always hold. Before QAP version 6 `Files::stamp` falls back to
+   `GetInfo`'s `modified`, sent as `m<ms>`. The extension only compares it.
+4. **The stamp is taken before the data.** `ifs.readText` calls
+   `Files::checked` (a link is stamped by its target) and then reads, so a
+   change in between shows as a conflict at the next save, never as a
+   lost edit. After a write the host stamps again: a change someone else
+   makes between the write and that `Stat` would be taken as ours, since
+   `WriteFile`'s reply has no counter.
+5. **Transfers are deferred methods.** The serve loop answers one request
+   at a time (Phase 0 decision 6), so a transfer answered in line would
+   hold `ifs.cancel` until it ended. `host-rpc` gained
+   `Registry::register_deferred` and `Responder`: `ifs.download` and
+   `ifs.upload` start a thread and return, and the thread answers when the
+   transfer ends, after `ifs.transferEnded`. The session is held only to
+   send each request (`Sessions::ifs` per chunk), so the connection's other
+   requests go on. The extension does not apply its 30 s timeout to these
+   two (`UNTIMED_METHODS`).
+6. **Transfer IDs.** `ifs.download` and `ifs.upload` take an optional
+   `transfer`, which the extension always sends so it can cancel before the
+   first `ifs.progress`; without one the host makes `t<n>`. An ID already
+   running is `-32602`. `ifs.cancel` of an unknown ID answers null. IDs are
+   the host's, not per connection; `name` is taken and not checked.
+7. **A cancelled transfer** is answered `-32022` with the offset
+   confirmed, and `ifs.transferEnded` says `cancelled` with that offset
+   for an upload. A request in flight when the cancel came may still land,
+   so the system can have more than the offset; `mode: "resume"` asks the
+   system (`resume_offset`), never the offset. Resume with nothing on the
+   system sends the whole file with `Replace`; resume of a file the system
+   has whole sends nothing and answers its size.
+8. **A cancelled upload stays at its own name**, not a temporary one, so
+   resuming and replacing keep the file's owner, authorities and CCSID. The
+   tree marks it `partial upload: <done> of <size>` until it is resumed,
+   replaced or deleted, and the notification offers **Resume** and **Delete
+   Partial File**. A cancelled or failed download deletes its local file.
+9. **`ifs.resolve`.** `Files::resolve` takes a directory and an entry, not a
+   path, and follows one link. The host does `GetInfo` of the path, then
+   one `Files::resolve` per link, up to 16, a relative target joined to the
+   link's directory. A path that is not a link comes back as typed; a
+   broken link is the server's `NotFound`.
+10. **Text in more than one request.** `write` converts per request and
+    sends about 1 MiB a request; `TCP1A5A` in a later request leaves the
+    earlier ones written (`Replace` emptied the file first). "Nothing
+    written" holds for text that fits one request, as every exit-test file
+    does. A temporary file and a rename would avoid it but lose the file's
+    owner and authorities, so it is not done.
+11. **The 10 MiB cap** counts the file's bytes (`size`), not the converted
+    text, for text and binary alike. Text the server sends that is not
+    valid UTF-8 is shown with replacement characters, not refused.
+12. **The editor's times.** `stat` of a text file the provider holds
+    answers the time it was read or saved here, not the system's
+    `modified`, so VS Code's own "the file is newer" check never decides a
+    save before `expect` does. **Reload** lets the save go without writing,
+    then 100 ms later reads the file again with a newer time and fires
+    `Changed`, so the saved editor reloads the system's text; dismissing
+    the question fails the save and keeps the document dirty.
+13. **Bytes go through a temporary local file.** No host method returns
+    bytes, so binary `readFile` is `ifs.download` into `os.tmpdir()` and
+    binary `writeFile` is `ifs.upload` from there; the file is removed
+    either way. The binary list is the prompt's plus `.jpeg`, `.bmp`, `.ico`
+    and `.webp`, which VS Code also previews.
+14. **The CCSID of an upload** is 1208, or 65535 for the binary list; the
+    bytes are sent as they are either way. **Change CCSID** has no QAP
+    operation behind it, so an empty file is deleted and created again
+    with the new CCSID (its owner and authorities become a new file's, and
+    the confirmation says so); a file with data gets the explanation only.
+15. **Languages.** A document on `qs400ifs` gets a language only when its
+    extension is in the member type table and maps to a `qs400-*` id; any
+    other extension is left to VS Code. The provider is registered
+    case-sensitive, since some file systems under `/` are. The activation
+    event `onFileSystem:qs400ifs` is added so restored editors open.
+16. **The tree.** Node IDs include the root, so a path shown under two
+    roots is two nodes. A link sorts with the files (what it points to is
+    not known until it is expanded); expanding it resolves it, a link to a
+    folder lists under the link's own path, and a link to a file loses its
+    twistie and opens. Go to Path roots last for the window only.
+17. **Recursive delete and folder copy** walk with `ifs.list`: links are
+    entries, deleted and never followed; a delete goes deepest first, root
+    last; a copy makes each directory, copies its files on the system, then
+    goes into its directories. Entries of kind `other` are skipped and
+    logged. A folder copied into itself is refused before anything is sent.
+18. **Drag and drop** in the IFS view copies entries onto a folder (through
+    the provider's `copy`), and local files or folders dropped on a folder
+    upload.
+19. **Host tests** use a fake that implements `qap-client`'s own `Files`
+    (`ifs_call`, `ifs_request`, `ifs_supports`), with `ifs_request` going
+    over a real `qap_client::Connection` on an in-memory `Transport`
+    (`Connection::over`). So `Listing`'s paging, `stamp`'s fallback,
+    `read`'s whole-character chunks and `write`'s `Create`/`Update` run as
+    shipped, against a canned server.
+20. **Test isolation.** A test run from a terminal inside a portable VS
+    Code inherited `VSCODE_PORTABLE`, and the test instance then used that
+    installation's own settings.json in place of `.vscode-test/user-data`,
+    so the suites' `code-for-qs400.connections` writes reached the
+    developer's real settings. `.vscode-test.mjs` now deletes the variable.
+    One leftover test connection (`LIBL`, `h.example`) was removed from that
+    settings file by hand.
 
 ## Phase 0 exit test
 

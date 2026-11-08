@@ -2,7 +2,7 @@
 // licensed under the terms of the MIT license which can be found in the
 // root directory of this project.
 
-// The Phase 1 and Phase 2 exit tests' automatic steps against a real
+// The Phase 1, 2 and 3 exit tests' automatic steps against a real
 // QS/400 system. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
 // QS400_TEST_PASSWORD are set. Optional: QS400_TEST_PORT, QS400_TEST_CA_FILE,
 // QS400_TEST_LIBRARY (added to the list, default QGPL),
@@ -15,12 +15,18 @@
 // (CONTRIBUTING.md, "Phase 1 exit test").
 
 import * as assert from 'node:assert/strict';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { ConnectionConfig, connectParams } from '../src/connections/config';
 import { moved, withAdded } from '../src/connections/libraryList';
 import type { ExtensionApi } from '../src/extension';
 import { HostRpcError } from '../src/host/client';
-import { LibraryList, SessionErrorCodes } from '../src/host/protocol';
+import { IfsErrorCodes, LibraryList, SessionErrorCodes } from '../src/host/protocol';
+import { localTree } from '../src/ifs/transfers';
+import { ifsUri } from '../src/ifs/uri';
 import { seqValue } from '../src/members/diff';
 import { memberUri } from '../src/members/uri';
 
@@ -337,5 +343,199 @@ suite('Live: Phase 2 exit test', function () {
   test('a member held by STRSEU opens read-only with CPF1002 (manual)', function () {
     console.log('live: the lock scenario is manual: hold the member with STRSEU at a 5250 session (CONTRIBUTING.md)');
     this.skip();
+  });
+});
+
+// Phase 3: the IFS, under /home/<QS400_TEST_USER>/code-test, which the suite
+// makes and removes. The EDTF and WRKLNK checks are by hand (CONTRIBUTING.md,
+// "Phase 3 exit test").
+suite('Live: Phase 3 exit test', function () {
+  let api: ExtensionApi;
+  const ROOT = `/home/${USER}/code-test`;
+  const at = (name: string) => `${ROOT}/${name}`;
+  const uri = (name: string) => ifsUri(NAME, at(name));
+  const enc = (s: string) => new TextEncoder().encode(s);
+  const dec = (b: Uint8Array) => new TextDecoder().decode(b);
+  const info = (path: string) => api.host.request('ifs.info', { name: NAME, path });
+  const readText = (path: string) => api.host.request('ifs.readText', { name: NAME, path });
+  const sha256 = (file: string) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  let local = '';
+
+  const removeRoot = async () => {
+    await api.ifsFs.delete(ifsUri(NAME, ROOT), { recursive: true }).catch(() => undefined);
+  };
+
+  suiteSetup(async function () {
+    if (!HOST || !USER || !PASSWORD) {
+      this.skip();
+    }
+    const ext = vscode.extensions.getExtension<ExtensionApi>('quartzsystems.code-for-qs400');
+    assert.ok(ext);
+    api = await ext.activate();
+    await config().update('connections', [connection()], true);
+    await api.sessions.signOn(connection(), { password: PASSWORD, save: false }, false);
+    try {
+      await api.host.request('ifs.list', { name: NAME, path: `/home/${USER}` });
+    } catch (err) {
+      if (err instanceof HostRpcError && err.code === SessionErrorCodes.QapUnavailable) {
+        console.log(`live: Phase 3 skipped: ${err.message}`);
+        this.skip();
+      }
+      throw err;
+    }
+    await removeRoot();
+    await api.host.request('ifs.mkdir', { name: NAME, path: ROOT, parents: true });
+    local = fs.mkdtempSync(path.join(os.tmpdir(), 'qs400-live-ifs-'));
+  });
+
+  suiteTeardown(async function () {
+    if (!api) {
+      return;
+    }
+    await removeRoot();
+    if (local) {
+      fs.rmSync(local, { recursive: true, force: true });
+    }
+    await api.host.request('session.disconnect', { name: NAME }).catch(() => undefined);
+    await config().update('connections', undefined, true);
+  });
+
+  test('utf8.txt: made from VS Code as 1208, é and — round-trip', async () => {
+    const text = 'Grüße: é and — in UTF-8\n';
+    await api.ifsFs.writeFile(uri('utf8.txt'), enc(text), { create: true, overwrite: false });
+    const i = await info(at('utf8.txt'));
+    assert.equal(i.ccsid, 1208);
+    assert.equal((await readText(at('utf8.txt'))).text, text);
+    api.ifsFs.forget(uri('utf8.txt'));
+    assert.equal(dec(await api.ifsFs.readFile(uri('utf8.txt'))), text);
+    console.log(`live: utf8.txt ${i.size} bytes, CCSID ${i.ccsid}, change ${i.change}`);
+  });
+
+  test('ebcdic.txt: New File with CCSID 37, typed, saved, read back; a character 37 lacks is refused and nothing is written', async () => {
+    await api.host.request('ifs.writeText', { name: NAME, path: at('ebcdic.txt'), text: '', ccsid: 37, mode: 'create' });
+    const typed = 'Typed in VS Code: café, naïve, 100%\n';
+    await api.ifsFs.readFile(uri('ebcdic.txt'));
+    await api.ifsFs.writeFile(uri('ebcdic.txt'), enc(typed), { create: true, overwrite: true });
+    const i = await info(at('ebcdic.txt'));
+    assert.equal(i.ccsid, 37);
+    assert.equal(i.size, [...typed].length, 'one byte a character in CCSID 37');
+    api.ifsFs.forget(uri('ebcdic.txt'));
+    assert.equal(dec(await api.ifsFs.readFile(uri('ebcdic.txt'))), typed);
+    await assert.rejects(api.ifsFs.writeFile(uri('ebcdic.txt'), enc(`${typed}Not in 37: 😀\n`), { create: true, overwrite: true }), (e: Error) => {
+      console.log(`live: a character CCSID 37 lacks: ${e.message}`);
+      return /TCP1A5A/.test(e.message);
+    });
+    const after = await readText(at('ebcdic.txt'));
+    assert.equal(after.text, typed, 'unchanged');
+    assert.equal(after.change, (await info(at('ebcdic.txt'))).change);
+  });
+
+  test('a save over a change made elsewhere is refused with the change', async () => {
+    const first = await readText(at('utf8.txt'));
+    await api.host.request('ifs.writeText', { name: NAME, path: at('utf8.txt'), text: 'elsewhere\n', mode: 'replace' });
+    await assert.rejects(
+      api.host.request('ifs.writeText', { name: NAME, path: at('utf8.txt'), text: 'mine\n', mode: 'replace', expect: first.change }),
+      (e: HostRpcError) => e.code === IfsErrorCodes.Changed,
+    );
+    assert.equal((await readText(at('utf8.txt'))).text, 'elsewhere\n');
+  });
+
+  test('20 MB: cancelled half way, resumed, downloaded; the checksum matches', async function () {
+    this.timeout(15 * 60_000);
+    const size = 20 * 1024 * 1024;
+    const from = path.join(local, 'twenty.dat');
+    fs.writeFileSync(from, crypto.randomBytes(size));
+    const transfer = `live-${Date.now()}`;
+    let cancelled = false;
+    let progressSeen = 0;
+    const sub = api.host.onDidProgress((p) => {
+      if (p.transfer !== transfer) {
+        return;
+      }
+      progressSeen++;
+      if (!cancelled && p.done >= size / 2) {
+        cancelled = true;
+        void api.host.request('ifs.cancel', { name: NAME, transfer });
+      }
+    });
+    try {
+      await assert.rejects(
+        api.host.request('ifs.upload', { name: NAME, from, path: at('twenty.dat'), ccsid: 65535, mode: 'create', transfer }),
+        (e: HostRpcError) => e.code === IfsErrorCodes.Cancelled,
+      );
+    } finally {
+      sub.dispose();
+    }
+    const partial = await info(at('twenty.dat'));
+    console.log(`live: 20 MB upload cancelled after ${progressSeen} progress notifications; the system has ${partial.size} of ${size} bytes`);
+    assert.ok(partial.size < size, 'not complete');
+    const r = await api.host.request('ifs.upload', { name: NAME, from, path: at('twenty.dat'), mode: 'resume' });
+    assert.equal(r.size, size);
+    assert.equal((await info(at('twenty.dat'))).size, size);
+    const back = path.join(local, 'twenty.back');
+    await api.host.request('ifs.download', { name: NAME, path: at('twenty.dat'), to: back });
+    const a = sha256(from);
+    const b = sha256(back);
+    console.log(`live: sha256 uploaded ${a}, downloaded ${b}: ${a === b ? 'match' : 'DIFFER'}`);
+    assert.equal(b, a);
+  });
+
+  test('the 20 MB file does not open as a document: the refusal names the size and the limit', async () => {
+    await assert.rejects(api.ifsFs.readFile(uri('twenty.dat')), (e: Error) => {
+      console.log(`live: opening 20 MB: ${e.message}`);
+      return /20\.0 MB/.test(e.message) && /10\.0 MB/.test(e.message);
+    });
+  });
+
+  test('a folder of three files up, and down into a new local folder: the trees match', async function () {
+    this.timeout(5 * 60_000);
+    const src = path.join(local, 'three');
+    fs.mkdirSync(path.join(src, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'one.txt'), 'one\n');
+    fs.writeFileSync(path.join(src, 'two.rpgle'), '**free\ndsply \'two\';\n');
+    fs.writeFileSync(path.join(src, 'sub', 'three.bin'), crypto.randomBytes(3000));
+    const tree = await localTree(src, at('three'));
+    const total = tree.files.reduce((n, f) => n + f.size, 0);
+    assert.equal(await api.transfers.upload(NAME, tree.files, 'create', tree.dirs), total);
+    const listed = await api.host.request('ifs.list', { name: NAME, path: at('three') });
+    assert.deepEqual(listed.map((e) => e.name).sort(), ['one.txt', 'sub', 'two.rpgle']);
+    const dst = path.join(local, 'three-back');
+    const files = tree.files.map((f) => ({ path: f.path, to: path.join(dst, path.relative(src, f.from)), size: f.size }));
+    await api.transfers.download(NAME, files, [dst, path.join(dst, 'sub')]);
+    for (const rel of ['one.txt', 'two.rpgle', path.join('sub', 'three.bin')]) {
+      assert.deepEqual(fs.readFileSync(path.join(dst, rel)), fs.readFileSync(path.join(src, rel)), rel);
+    }
+  });
+
+  test('rename, copy and delete; a directory not empty is deleted children first', async () => {
+    await api.host.request('ifs.rename', { name: NAME, from: at('utf8.txt'), to: at('renamed.txt'), replace: false });
+    await api.host.request('ifs.copy', { name: NAME, from: at('renamed.txt'), to: at('copied.txt'), replace: false });
+    await assert.rejects(api.host.request('ifs.copy', { name: NAME, from: at('renamed.txt'), to: at('copied.txt'), replace: false }), (e: HostRpcError) => {
+      console.log(`live: copy onto an existing file: ${e.message}`);
+      return (e.data as { status?: string }).status === 'Exists';
+    });
+    await assert.rejects(api.host.request('ifs.delete', { name: NAME, path: at('three') }), (e: HostRpcError) => {
+      console.log(`live: delete of a directory not empty: ${e.message}`);
+      return true;
+    });
+    await api.ifsFs.delete(ifsUri(NAME, at('three')), { recursive: true });
+    await api.host.request('ifs.delete', { name: NAME, path: at('copied.txt') });
+    const names = (await api.host.request('ifs.list', { name: NAME, path: ROOT })).map((e) => e.name).sort();
+    assert.deepEqual(names, ['ebcdic.txt', 'renamed.txt', 'twenty.dat']);
+    await assert.rejects(info(at('gone.txt')), (e: HostRpcError) => {
+      console.log(`live: not found: ${e.message}`);
+      return (e.data as { status?: string }).status === 'NotFound';
+    });
+  });
+
+  test('a .png opens as bytes for the image preview', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const from = path.join(local, 'dot.png');
+    fs.writeFileSync(from, png);
+    await api.host.request('ifs.upload', { name: NAME, from, path: at('dot.png'), ccsid: 65535, mode: 'create' });
+    assert.deepEqual(Buffer.from(await api.ifsFs.readFile(uri('dot.png'))), png);
   });
 });

@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.0-pre · Phase 3 · IFS browser
+
+- **IFS** view under Objects: the active connection's roots (by default
+  `/home/<user>` and `/`, saved per connection as `ifsRoots`), with **Add
+  IFS Root**, **Remove IFS Root**, **Set as IFS Home** and **Go to IFS
+  Path…**. Folders list as they open, folders first; files show size and
+  CCSID; symbolic links show and follow their target; hidden entries
+  toggle from the title bar.
+- Stream files open as editor tabs on `qs400ifs://`. Text is converted by
+  the system to UTF-8 and back to the file's CCSID on save; a character
+  the CCSID lacks is refused with the system's `TCP1A5A` and nothing is
+  written. Images and known binary types open as bytes in VS Code's own
+  viewers. Documents are capped at 10 MiB, and the refusal names the size
+  and the limit and offers Download.
+- A save over a change made on the system gets caught (QAP version 6's
+  change counter) and asks **Overwrite** or **Reload**. An unchanged
+  document is not written.
+- **Upload Files…**, **Upload Folder…**, **Download…** and **Download
+  Folder…** in a progress notification with Cancel; bytes go exactly as
+  stored. A cancelled upload keeps the part sent, is marked partial in the
+  tree, and offers **Resume**. Local files dropped on a folder upload;
+  entries dragged onto a folder copy.
+- File commands: **New File…** with a CCSID (1208, 37, 500, 819 or any),
+  **New Folder…**, **Rename…**, **Copy to…** (folders file by file),
+  **Delete** (a folder that is not empty lists its count first and is
+  deleted deepest first), **Properties** and **Change CCSID…** (empty
+  files only).
+- Host: `ifs.list`, `ifs.info`, `ifs.readText`, `ifs.writeText`,
+  `ifs.download`, `ifs.upload`, `ifs.mkdir`, `ifs.delete`, `ifs.rename`,
+  `ifs.copy`, `ifs.resolve` and `ifs.cancel` over `qap-client`'s `Files`,
+  with `ifs.progress` and `ifs.transferEnded`. Transfers run on threads of
+  their own, so the host keeps answering while one runs.
+
 ## 1.0.0-pre · Phase 2 · object browser and members
 
 - **Objects** view: the active connection's library list libraries (the

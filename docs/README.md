@@ -19,6 +19,8 @@ This guide grows with each phase and ships with the marketplace listing.
 - [Objects and source members](objects-and-members.md): the Objects view,
   filters, opening and saving members, sequence numbers and dates, and the
   member commands.
+- [The IFS](ifs.md): the IFS view and its roots, opening stream files and
+  their CCSIDs, uploads and downloads with resume, and the file commands.
 
 ## Troubleshooting
 
