@@ -1,0 +1,7 @@
+# HLINV's source is not ours to ship (QS/400 keeps it out of its own
+# tree): only the recorded compiles and this folder's notes are kept.
+*
+!*/
+!*.json
+!README.md
+!.gitignore

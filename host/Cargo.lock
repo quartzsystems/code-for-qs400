@@ -167,9 +167,11 @@ name = "code-host"
 version = "1.0.0"
 dependencies = [
  "clap",
+ "compdiag 0.1.0 (git+https://github.com/quartzsystems/quartz-systems-400?rev=5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c)",
  "host-rpc",
  "lsp-cl",
  "lsp-cmd",
+ "lsp-common",
  "lsp-dds",
  "lsp-rpgle",
  "lsp-sql",

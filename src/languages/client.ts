@@ -23,6 +23,7 @@ import {
   LIST_MEMBERS,
   type AnalyzedDiagnostic,
   type FetchIncludeParams,
+  type FetchedInclude,
   type IncludesChangedParams,
   type ListMembersParams,
 } from './protocol';
@@ -42,6 +43,9 @@ export const SCHEMES = [MEMBER_SCHEME, IFS_SCHEME, 'file'] as const;
 export class LanguageServers implements vscode.Disposable {
   private readonly clients = new Map<string, Promise<LanguageClient>>();
   private readonly subscriptions: vscode.Disposable[] = [];
+  private readonly fetched = new vscode.EventEmitter<{ params: FetchIncludeParams; result: FetchedInclude | null }>();
+  /** Each include a server asked for, and the answer it got. */
+  readonly onDidFetch = this.fetched.event;
 
   constructor(
     private readonly binary: () => string,
@@ -133,7 +137,11 @@ export class LanguageServers implements vscode.Disposable {
       outputChannel: this.output,
     };
     const client = new LanguageClient(`code-for-qs400.${lang}`, `QS/400 ${lang.toUpperCase()}`, server, options);
-    client.onRequest(FETCH_INCLUDE, (p: FetchIncludeParams) => fetchInclude(this.deps, p));
+    client.onRequest(FETCH_INCLUDE, async (p: FetchIncludeParams) => {
+      const result = await fetchInclude(this.deps, p);
+      this.fetched.fire({ params: p, result });
+      return result;
+    });
     client.onRequest(LIST_MEMBERS, (p: ListMembersParams) => listMembers(this.deps, p));
     this.output.info(`starting ${command} lsp ${lang}`);
     await client.start();
@@ -141,6 +149,7 @@ export class LanguageServers implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.fetched.dispose();
     for (const s of this.subscriptions) {
       s.dispose();
     }

@@ -29,5 +29,9 @@ lsp-dds.workspace = true
 lsp-sql.workspace = true
 lsp-cmd.workspace = true
 
+[dev-dependencies]
+lsp-common.workspace = true
+compdiag.workspace = true
+
 [lints]
 workspace = true
