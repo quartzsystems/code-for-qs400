@@ -368,6 +368,48 @@
         "title": "Refresh Job Log",
         "category": "Code for QS/400",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.sql.run",
+        "title": "Run Statement",
+        "category": "Code for QS/400",
+        "icon": "$(play)"
+      },
+      {
+        "command": "code-for-qs400.sql.cancel",
+        "title": "Cancel Running SQL",
+        "category": "Code for QS/400",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "code-for-qs400.sql.newEditor",
+        "title": "New SQL Editor",
+        "category": "Code for QS/400",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "code-for-qs400.sql.options",
+        "title": "SQL Options…",
+        "category": "Code for QS/400",
+        "icon": "$(database)"
+      },
+      {
+        "command": "code-for-qs400.sql.commit",
+        "title": "Commit",
+        "category": "Code for QS/400",
+        "icon": "$(check)"
+      },
+      {
+        "command": "code-for-qs400.sql.rollback",
+        "title": "Rollback",
+        "category": "Code for QS/400",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "code-for-qs400.sql.changeConnection",
+        "title": "Change SQL Connection…",
+        "category": "Code for QS/400",
+        "icon": "$(plug)"
       }
     ],
     "configuration": {
@@ -1034,6 +1076,14 @@
         {
           "command": "code-for-qs400.job.logRefresh",
           "when": "resourceScheme == qs400joblog"
+        },
+        {
+          "command": "code-for-qs400.sql.run",
+          "when": "editorLangId =~ /^(qs400-)?sql$/"
+        },
+        {
+          "command": "code-for-qs400.sql.changeConnection",
+          "when": "editorLangId =~ /^(qs400-)?sql$/"
         }
       ],
       "editor/context": [
@@ -1057,6 +1107,11 @@
         {
           "command": "code-for-qs400.job.logRefresh",
           "when": "resourceScheme == qs400joblog",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.sql.run",
+          "when": "editorLangId =~ /^(qs400-)?sql$/",
           "group": "navigation@1"
         }
       ]
@@ -1187,6 +1242,14 @@
         "language": "qs400-cmd",
         "scopeName": "source.qs400-cmd",
         "path": "./syntaxes/qs400-cmd.tmLanguage.json"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "code-for-qs400.sql.run",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == qs400-sql"
       }
     ]
   },

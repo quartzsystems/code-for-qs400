@@ -25,6 +25,8 @@ export class SessionManager implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[];
   /** A sign-on prompt in progress, by connection: one prompt however many calls wait on it. */
   private readonly prompting = new Map<string, Promise<boolean>>();
+  /** Asked before a disconnect the user starts; any false keeps the session. */
+  private readonly guards = new Set<(name: string) => Promise<boolean>>();
 
   /** Fires with a session's new status, or undefined when several changed. */
   readonly onDidChange = this.changed.event;
@@ -219,6 +221,22 @@ export class SessionManager implements vscode.Disposable {
       return false;
     }
     return (await this.signOn(c, answer, false)) !== undefined;
+  }
+
+  /** Adds a question asked before a disconnect the user starts (uncommitted SQL work). */
+  addDisconnectGuard(guard: (name: string) => Promise<boolean>): vscode.Disposable {
+    this.guards.add(guard);
+    return new vscode.Disposable(() => this.guards.delete(guard));
+  }
+
+  /** Whether every guard lets `name` disconnect. */
+  async confirmDisconnect(name: string): Promise<boolean> {
+    for (const g of this.guards) {
+      if (!(await g(name))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   async disconnect(name: string): Promise<void> {

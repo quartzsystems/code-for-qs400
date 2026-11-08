@@ -18,6 +18,13 @@ export const LIST_MEMBERS = 'qs400/listMembers';
 export const INCLUDES_CHANGED = 'qs400/includesChanged';
 /** Client to server: a document's diagnostics as `analyze` returned them. */
 export const DIAGNOSTICS = 'qs400/diagnostics';
+/** Client to the SQL server: each statement's range, as its parser splits the script. */
+export const SQL_STATEMENTS = 'qs400/sqlStatements';
+
+/** One statement of `qs400/sqlStatements`: its first character to its last, the `;` left out. */
+export interface SqlStatementRange {
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+}
 
 /** What a directive asks for. */
 export interface IncludeRequest {

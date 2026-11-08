@@ -195,6 +195,17 @@ impl<'c, L: Language> Server<'c, L> {
             parse::<DiagnosticsParams>(r.params).map(|p| self.diagnostics_of(&p.uri))
         } else if let Some(res) = crate::features::request(self, &r.method, &r.params) {
             res
+        } else if self.lang.document_methods().contains(&r.method.as_str()) {
+            match r.params["textDocument"]["uri"].as_str().map(str::to_string) {
+                None => Err("bad params: textDocument.uri missing".to_string()),
+                Some(uri) => {
+                    self.current(&uri);
+                    match self.results.get(&uri) {
+                        Some(an) => self.lang.document_request(&r.method, an, &r.params),
+                        None => Ok(Value::Null),
+                    }
+                }
+            }
         } else if let Some(res) = self.lang.request(&r.method, &r.params) {
             res
         } else {

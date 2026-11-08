@@ -91,6 +91,8 @@ export class FakeHost {
   readonly progress = new vscode.EventEmitter<IfsProgress>();
   readonly onDidProgress = this.progress.event;
   readonly onDidChangeState = this.state.event;
+  readonly sqlLost = new vscode.EventEmitter<{ name: string; message: string }>();
+  readonly onDidLoseSql = this.sqlLost.event;
   constructor(public answer: (method: string, params: Record<string, unknown>) => unknown) {}
   async request(method: string, params: Record<string, unknown>): Promise<unknown> {
     this.sent.push({ method, params });
@@ -103,6 +105,7 @@ export class FakeHost {
     this.session.dispose();
     this.state.dispose();
     this.progress.dispose();
+    this.sqlLost.dispose();
   }
 }
 

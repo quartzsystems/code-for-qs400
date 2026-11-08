@@ -37,8 +37,8 @@ export const SERVERS: Readonly<Record<string, string>> = {
   'qs400-cmd': 'cmd',
 };
 
-/** The schemes a server's documents may be on. */
-export const SCHEMES = [MEMBER_SCHEME, IFS_SCHEME, 'file'] as const;
+/** The schemes a server's documents may be on; `untitled` for New SQL Editor. */
+export const SCHEMES = [MEMBER_SCHEME, IFS_SCHEME, 'file', 'untitled'] as const;
 
 export class LanguageServers implements vscode.Disposable {
   private readonly clients = new Map<string, Promise<LanguageClient>>();

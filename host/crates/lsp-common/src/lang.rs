@@ -117,4 +117,22 @@ pub trait Language {
     fn request(&self, _method: &str, _params: &Value) -> Option<Result<Value, String>> {
         None
     }
+
+    /// This language's own requests on one document, whose params carry
+    /// `textDocument.uri`: answered by [`Language::document_request`] on
+    /// the document's analysis, made current first.
+    fn document_methods(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// A request of [`Language::document_methods`] on `a`, the document's
+    /// analysis.
+    fn document_request(
+        &self,
+        _method: &str,
+        _a: &Analyzed<Self::Ast>,
+        _params: &Value,
+    ) -> Result<Value, String> {
+        Ok(Value::Null)
+    }
 }

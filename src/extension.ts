@@ -29,6 +29,9 @@ import { SessionStatusBar } from './views/sessionStatusBar';
 import { LanguageServers } from './languages/client';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
+import { SQL_STATEMENTS, type SqlStatementRange } from './languages/protocol';
+import { SqlRunner } from './sql/run';
+import { SqlSessions } from './sql/session';
 
 /** What `activate` returns; used by the integration tests. */
 export interface ExtensionApi {
@@ -50,6 +53,8 @@ export interface ExtensionApi {
   readonly jobLog: JobLogProvider;
   readonly languages: LanguageServers;
   readonly rpg: FixedFormRpg;
+  readonly sql: SqlSessions;
+  readonly sqlRunner: SqlRunner;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -99,6 +104,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   languages.start();
   const rpg = new FixedFormRpg(() => languages.request<SpecForm[]>('qs400-rpgle', 'qs400/specForms'));
   rpg.start();
+  const sql = new SqlSessions(host, store, sessions);
+  const sqlRunner = new SqlRunner(host, store, sessions, sql, (doc) =>
+    languages.request<SqlStatementRange[] | null>('qs400-sql', SQL_STATEMENTS, { textDocument: { uri: doc.uri.toString() } }),
+  );
 
   context.subscriptions.push(
     output,
@@ -135,6 +144,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     languagesOutput,
     languages,
     rpg,
+    sql,
+    sqlRunner,
+    ...sql.register(),
+    ...sqlRunner.register(),
     // A session signed on again: includes it could not read may be there now.
     sessions.onDidChange((st) => {
       if (st?.state === 'connected') {
@@ -153,7 +166,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner };
 }
 
 export function deactivate(): void {

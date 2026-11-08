@@ -114,6 +114,9 @@ export function registerConnectionCommands(store: ConnectionStore, sessions: Ses
         return false;
       }
       if (sessions.status(c.name).state !== 'disconnected') {
+        if (!(await sessions.confirmDisconnect(c.name))) {
+          return false;
+        }
         await sessions.disconnect(c.name);
       }
       await store.remove(c.name);
@@ -131,6 +134,9 @@ export function registerConnectionCommands(store: ConnectionStore, sessions: Ses
     reg('disconnect', async (arg) => {
       const c = await pickConnection(store, sessions, arg, 'Connection to disconnect', signedOn(sessions));
       if (c) {
+        if (!(await sessions.confirmDisconnect(c.name))) {
+          return undefined;
+        }
         await sessions.disconnect(c.name);
       }
       return c?.name;

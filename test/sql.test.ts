@@ -1,0 +1,192 @@
+// Copyright (C), 2026 Quartz Systems. Some rights reserved. This work is
+// licensed under the terms of the MIT license which can be found in the
+// root directory of this project.
+
+import * as assert from 'node:assert/strict';
+import * as vscode from 'vscode';
+import { SessionManager } from '../src/connections/sessions';
+import { ConnectionStore } from '../src/connections/store';
+import type { ExtensionApi } from '../src/extension';
+import { HostClient, HostRpcError } from '../src/host/client';
+import { SessionErrorCodes, SqlRunResult } from '../src/host/protocol';
+import { SQL_STATEMENTS, SqlStatementRange } from '../src/languages/protocol';
+import { commitLabel, outcomeText, rowCount, statusText, typeLabel } from '../src/sql/format';
+import { SqlRunner } from '../src/sql/run';
+import { SqlSessions } from '../src/sql/session';
+import { Span, splitStatements, statementAt } from '../src/sql/statements';
+import { FakeHost, Memento } from './members.test';
+
+/** Scripts whose strings and comments hold `;`. */
+export const FIXTURES: Record<string, string> = {
+  strings: "SELECT 'a;b' AS \"x;y\" FROM T;\nUPDATE T SET A = 'it''s; ok' WHERE B = 1;\nVALUES 1",
+  comments: '-- one; two\nSELECT 1 FROM T; /* three; four */ SELECT 2 FROM T;\n/* a\n;\nb */\nVALUES 3;\n-- trailing;',
+  blank: '\n\n  SELECT *\n    FROM HLINV.ASSETS\n   WHERE COST > 0  ;  \n\n',
+  error: 'SELECT * FORM T;\nSELECT 1 FROM T;',
+};
+
+function texts(text: string, spans: Span[]): string[] {
+  return spans.map((s) => text.slice(s.start, s.end));
+}
+
+suite('SQL: statements', () => {
+  test('split on ; outside strings and comments, trimmed of blanks and comments', () => {
+    assert.deepEqual(texts(FIXTURES.strings, splitStatements(FIXTURES.strings)), [
+      "SELECT 'a;b' AS \"x;y\" FROM T",
+      "UPDATE T SET A = 'it''s; ok' WHERE B = 1",
+      'VALUES 1',
+    ]);
+    assert.deepEqual(texts(FIXTURES.comments, splitStatements(FIXTURES.comments)), ['SELECT 1 FROM T', 'SELECT 2 FROM T', 'VALUES 3']);
+    assert.deepEqual(texts(FIXTURES.blank, splitStatements(FIXTURES.blank)), ['SELECT *\n    FROM HLINV.ASSETS\n   WHERE COST > 0']);
+    assert.deepEqual(splitStatements(''), []);
+    assert.deepEqual(splitStatements(' ; ;\n-- x'), []);
+  });
+
+  test('the statement under the cursor: inside it, or after it on its last line', () => {
+    const t = 'SELECT 1 FROM T;   -- note\n\nSELECT 2 FROM T;\n';
+    const s = splitStatements(t);
+    assert.equal(statementAt(t, s, 0), s[0]);
+    assert.equal(statementAt(t, s, 8), s[0]);
+    assert.equal(statementAt(t, s, t.indexOf('-- note') + 3), s[0], 'after its ; on the same line');
+    assert.equal(statementAt(t, s, t.indexOf('\n\n') + 1), undefined, 'on the blank line between');
+    assert.equal(statementAt(t, s, t.indexOf('SELECT 2') + 3), s[1]);
+    assert.equal(statementAt(t, s, t.length), undefined);
+  });
+
+  test('the SQL server splits every fixture as the editor does', async () => {
+    const ext = vscode.extensions.getExtension<ExtensionApi>('quartzsystems.code-for-qs400');
+    assert.ok(ext);
+    const api = await ext.activate();
+    for (const [name, text] of Object.entries(FIXTURES)) {
+      const doc = await vscode.workspace.openTextDocument({ language: 'qs400-sql', content: text });
+      await vscode.window.showTextDocument(doc);
+      let ranges: SqlStatementRange[] | null | undefined = null;
+      for (let i = 0; i < 100 && !ranges; i++) {
+        ranges = await api.languages.request<SqlStatementRange[] | null>('qs400-sql', SQL_STATEMENTS, { textDocument: { uri: doc.uri.toString() } });
+        if (!ranges) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+      assert.ok(ranges, `${name}: the server answered`);
+      const server = ranges.map((r) => ({
+        start: doc.offsetAt(new vscode.Position(r.range.start.line, r.range.start.character)),
+        end: doc.offsetAt(new vscode.Position(r.range.end.line, r.range.end.character)),
+      }));
+      assert.deepEqual(texts(text, server), texts(text, splitStatements(text)), name);
+      // And the runner takes the server's.
+      assert.deepEqual(await api.sqlRunner.spans(doc), server, name);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+  });
+});
+
+suite('SQL: labels', () => {
+  test('types with length and scale, commit levels, the status text, outcomes', () => {
+    assert.equal(typeLabel({ type: 'DECIMAL', length: 11, scale: 2 }), 'DECIMAL(11,2)');
+    assert.equal(typeLabel({ type: 'VARCHAR', length: 50, scale: 0 }), 'VARCHAR(50)');
+    assert.equal(typeLabel({ type: 'TIMESTAMP', length: 26, scale: 6 }), 'TIMESTAMP(6)');
+    assert.equal(typeLabel({ type: 'INTEGER', length: 4, scale: 0 }), 'INTEGER');
+    assert.equal(commitLabel('readUncommitted'), '*CHG');
+    assert.equal(commitLabel('serializable'), '*RR');
+    assert.equal(statusText('QSHQ400', { commit: 'none', naming: 'sql', uncommitted: false }), '$(database) QSHQ400 · *SQL · *NONE');
+    assert.equal(statusText('QSHQ400', { commit: 'readUncommitted', naming: 'system', uncommitted: true }), '$(database) QSHQ400 · *SYS · *CHG ●');
+    assert.equal(rowCount(500, false), '500 of more');
+    assert.equal(rowCount(1, true), '1 row');
+    const upd: SqlRunResult = { kind: 'update', updated: 0, messages: [], uncommitted: false };
+    assert.equal(outcomeText(upd), '0 rows updated');
+    assert.equal(outcomeText({ kind: 'ddl', messages: [], uncommitted: false }), 'Statement ran');
+  });
+});
+
+const SQL0104 = new HostRpcError(SessionErrorCodes.Server, 'SQL0104: Token FORM was not valid. Valid tokens: FROM INTO.', {
+  status: 'SqlError',
+  messageId: 'SQL0104',
+  text: 'Token FORM was not valid. Valid tokens: FROM INTO.',
+  secondLevel: 'Cause . . . . . :   A syntax error was detected at token FORM.',
+  sqlstate: '42601',
+  sqlcode: -104,
+});
+
+suite('SQL: Run Statement', () => {
+  let parts: vscode.Disposable[] = [];
+  let host: FakeHost;
+  let runner: SqlRunner;
+
+  setup(async () => {
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', [{ name: 'QSHQ400', host: 'qshq400.example', user: 'CWELLMAN' }], true);
+    const output = vscode.window.createOutputChannel('sql test', { log: true });
+    host = new FakeHost((method, params) => {
+      if (method === 'sql.options.get') {
+        return { commit: 'none', naming: 'sql', uncommitted: false };
+      }
+      if (method === 'sql.run') {
+        const sql = String(params.sql);
+        if (sql.includes('FORM')) {
+          throw SQL0104;
+        }
+        return sql.startsWith('UPDATE')
+          ? { kind: 'update', updated: 0, messages: [], uncommitted: false }
+          : { kind: 'query', columns: [], rows: [[1]], end: true, cursor: 1, messages: [], uncommitted: false };
+      }
+      return null;
+    });
+    const secrets = { get: async () => undefined, store: async () => {}, delete: async () => {} };
+    const store = new ConnectionStore(secrets as unknown as vscode.SecretStorage, output);
+    const sessions = new SessionManager(host as unknown as HostClient, store, new Memento(), output);
+    sessions.update({ name: 'QSHQ400', state: 'connected', user: 'CWELLMAN' });
+    await sessions.setActive('QSHQ400');
+    const sql = new SqlSessions(host as unknown as HostClient, store, sessions);
+    runner = new SqlRunner(host as unknown as HostClient, store, sessions, sql, async () => null);
+    parts = [runner, sql, sessions, store, output, host];
+  });
+
+  teardown(async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    parts.forEach((p) => p.dispose());
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', undefined, true);
+  });
+
+  async function editor(text: string, at: number): Promise<vscode.TextEditor> {
+    const doc = await vscode.workspace.openTextDocument({ language: 'qs400-sql', content: text });
+    const e = await vscode.window.showTextDocument(doc);
+    e.selection = new vscode.Selection(doc.positionAt(at), doc.positionAt(at));
+    return e;
+  }
+
+  const sent = () => host.sent.filter((s) => s.method === 'sql.run').map((s) => s.params.sql);
+
+  test('the statement under the cursor, on the active connection', async () => {
+    const t = 'SELECT 1 FROM T;\nUPDATE HLINV.ASSETS SET NOTES = NOTES WHERE 1 = 0;\n';
+    const e = await editor(t, t.indexOf('UPDATE') + 4);
+    const runs = await runner.runEditor(e);
+    assert.deepEqual(sent(), ['UPDATE HLINV.ASSETS SET NOTES = NOTES WHERE 1 = 0']);
+    assert.equal(runs[0].connection, 'QSHQ400');
+    assert.equal(runs[0].line, 1);
+    assert.equal(outcomeText(runs[0].result!), '0 rows updated');
+    assert.equal(host.sent.find((s) => s.method === 'sql.run')?.params.maxRows, 500);
+  });
+
+  test('the selection, split into its statements', async () => {
+    const t = 'SELECT 1 FROM T; SELECT 2 FROM T; SELECT 3 FROM T;';
+    const e = await editor(t, 0);
+    e.selection = new vscode.Selection(e.document.positionAt(t.indexOf('SELECT 2')), e.document.positionAt(t.length));
+    await runner.runEditor(e);
+    assert.deepEqual(sent(), ['SELECT 2 FROM T', 'SELECT 3 FROM T']);
+  });
+
+  test('the whole document from a blank line, stopping at the first error, with a Problems entry on its first line; cleared at the next run', async () => {
+    const t = 'SELECT 1 FROM T;\n\nSELECT *\n  FORM T;\n\nSELECT 3 FROM T;';
+    const e = await editor(t, t.indexOf('\n\n') + 1);
+    const runs = await runner.runEditor(e);
+    assert.deepEqual(sent(), ['SELECT 1 FROM T', 'SELECT *\n  FORM T']);
+    assert.equal(runs[1].error?.data?.messageId, 'SQL0104');
+    const d = runner.diagnostics.get(e.document.uri) ?? [];
+    assert.equal(d.length, 1);
+    assert.equal(d[0].range.start.line, 2);
+    assert.equal(d[0].code, 'SQL0104');
+    assert.equal(d[0].message, 'Token FORM was not valid. Valid tokens: FROM INTO.');
+    assert.match(d[0].relatedInformation?.[0]?.message ?? '', /syntax error was detected/);
+    e.selection = new vscode.Selection(0, 3, 0, 3);
+    await runner.runEditor(e);
+    assert.equal((runner.diagnostics.get(e.document.uri) ?? []).length, 0);
+  });
+});
