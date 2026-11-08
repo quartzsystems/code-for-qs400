@@ -157,10 +157,18 @@ export const ErrorCodes = {
   InternalError: -32603,
 } as const;
 
-/** Error codes of `session.*` and `libl.*` (host/crates/code-host/src/session.rs). */
+/** `data` of `SessionErrorCodes.QapUnavailable`: the version the connection agreed. */
+export interface QapUnavailableData {
+  version: number;
+}
+
+/** Error codes of the host's session methods (host/crates/code-host/src/session.rs). */
 export const SessionErrorCodes = {
-  /** `libl.*`: the server has no `library_list` service. */
-  LibraryListUnavailable: -32001,
+  /**
+   * `libl.*`, `object.*`, `member.*`: the connection agreed a QAP version
+   * below 8, which has no `Develop` service. `data` is a `QapUnavailableData`.
+   */
+  QapUnavailable: -32001,
   NotConnected: -32002,
   /** Sign on again: the kept password was refused, or none is kept. */
   NeedsPassword: -32003,

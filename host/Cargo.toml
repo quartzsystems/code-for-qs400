@@ -23,8 +23,8 @@ host-rpc = { path = "crates/host-rpc" }
 # QAP client from QS/400 Access, pinned by commit. qsa-net comes from the
 # same commit: its `Trust` is what a `qap_client::Target` takes, and its log
 # sink carries qap-client's log lines.
-qap-client = { git = "https://github.com/quartzsystems/quartz-systems-access", rev = "1afe1b41bd1a02af1276d81e64885054e8c54d6e" }
-qsa-net = { git = "https://github.com/quartzsystems/quartz-systems-access", rev = "1afe1b41bd1a02af1276d81e64885054e8c54d6e" }
+qap-client = { git = "https://github.com/quartzsystems/quartz-systems-access", rev = "90d9bba2a0f84d88e749e15cf8ed974540c905eb" }
+qsa-net = { git = "https://github.com/quartzsystems/quartz-systems-access", rev = "90d9bba2a0f84d88e749e15cf8ed974540c905eb" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

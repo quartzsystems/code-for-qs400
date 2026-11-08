@@ -309,6 +309,38 @@ file is built on that platform (CI runs both).
 18. **`host_rpc::Context::new` is public**, so tests can call
     `Registry::dispatch` and act between calls.
 
+Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
+
+## Decisions made in Phase 2
+
+1. **`qap-client` is pinned to `quartz-systems-access` `90d9bba`**
+   (`90d9bba2a0f84d88e749e15cf8ed974540c905eb`, main on 2026-11-07), with
+   `qsa-net` at the same commit. It pins `qap-proto` at `quartz-systems-400`
+   `7f82a43f`, the commit whose `docs/QAP.md` is this phase's spec. Every
+   connection asks for QAP version 9 (`Target::with_max_version`), the
+   newest `qap-proto` defines, so `host.version`, `--version` and About now
+   say `QAP v9`; each session's `system.qap` is still the version its
+   server agreed.
+2. **`libl.*` call `get_library_list` and `set_library_list`.** The
+   Phase 1 stubs are gone. The shape is the one Phase 1 proposed, which
+   matches the spec's `LibraryList` and `SetLibraryList`; `current` null
+   is `CURLIB(*CRTDFT)` and an empty `user` is `LIBL(*NONE)`.
+3. **`-32001` now means "QAP version 8 not available on this server"**,
+   for `libl.*`, `object.*` and `member.*` alike, with
+   `data: { version }`, the version agreed. The host checks the agreed
+   version before sending anything, and `qap-client`'s own `Unsupported`
+   refusal maps to the same error. In the extension the code is
+   `SessionErrorCodes.QapUnavailable`.
+4. **`Develop` behind a trait object.** `qap_client::Develop`'s methods are
+   generic over `Requests`, so they cannot be called through
+   `Box<dyn Backend>`. `session::DevelopBackend` is the same operations as
+   an object-safe trait, implemented for every `Requests` type by calling
+   `qap_client::Develop`, and reached with `Backend::develop`. Tests
+   implement it with canned replies. `Sessions::develop` brings a stale
+   session back, checks the version, makes the call and reports a drop
+   the call met; it adds no ordering (the host already answers one request
+   at a time, Phase 0 decision 6).
+
 ## Phase 0 exit test
 
 > VSIX installs on Windows and Linux; About shows `V1R0M0` from the host.
@@ -344,11 +376,16 @@ QS/400 Access configuration there (`QS400`, 10.42.70.150) does not answer
 on QAP port 2320. No message IDs from a real system have been seen, so none
 are recorded here.
 
-**Library list: blocked on QAP.** The pinned `qap-client` has no
-`library_list` service (Phase 1 decision 1), so the library list step
-cannot pass on any server until QAP adds it. `libl.get` and `libl.set`
-answer `-32001 library_list not available on this server`, and the node
-says so.
+**Library list: unblocked in Phase 2, not run yet.** Until Phase 2 the
+pinned `qap-client` had no library list service (Phase 1 decision 1).
+Phase 2 pins `qap-client` at `quartz-systems-access` `90d9bba`, whose
+`Develop` service (QAP version 8) has `GetLibraryList` and
+`SetLibraryList`, and `libl.get` and `libl.set` now call them (Phase 2
+decision 2). On 2026-11-07 `QSHQ400` still did not resolve and
+10.42.70.150 still did not answer on port 2320, so step 4 below has not
+been run against a real system. The host's `libl.*` are tested against
+canned `qap-client` replies, including `CPF2110` from `CHGLIBL` and a
+server below version 8.
 
 What was checked instead, on Windows x64 with VS Code 1.143.0:
 
@@ -377,9 +414,9 @@ To run it, on a machine that reaches `QSHQ400`:
    before step 3.
 3. With an expired password: note the message. **Change password** appears
    (Phase 1 decision 2), changes the password and signs on.
-4. Library list: blocked, as above. Once QAP has `library_list`, add a
-   library, move it to the top, set a current library, disconnect and
-   connect: the list comes back as saved. `test/live.test.ts` runs steps 1
-   and 4 when `QS400_TEST_HOST`, `QS400_TEST_USER` and
-   `QS400_TEST_PASSWORD` are set.
+4. Library list (needs a server at QAP version 8): add a library, move it
+   to the top, set a current library, disconnect and connect: the list
+   comes back as saved. `test/live.test.ts` runs steps 1 and 4 when
+   `QS400_TEST_HOST`, `QS400_TEST_USER` and `QS400_TEST_PASSWORD` are
+   set.
 5. Record the result and every message ID seen here.

@@ -40,7 +40,7 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | Library list: Add, Remove, Move Up, Move Down, Set as Current | `code-for-qs400.libl.*` |
 
 **About** asks the host for its version and shows, for example,
-`Code for QS/400 V1R0M0 · host 1.0.0 · QAP v6`.
+`Code for QS/400 V1R0M0 · host 1.0.0 · QAP v9`.
 
 ## Settings
 
@@ -62,7 +62,7 @@ command starts it again, or click the item to restart it now.
 
 ```sh
 qs400-code-host --version
-# qs400-code-host 1.0.0 (QS/400 V1R0M0, QAP v6)
+# qs400-code-host 1.0.0 (QS/400 V1R0M0, QAP v9)
 ```
 
 ## Repository layout

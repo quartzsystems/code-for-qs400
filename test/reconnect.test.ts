@@ -131,7 +131,7 @@ suite('Reconnect and needs_password', () => {
 
   test('other errors pass straight through, with no sign-on', async () => {
     const host = new FakeHost(() => {
-      throw new HostRpcError(SessionErrorCodes.LibraryListUnavailable, 'library_list not available on this server');
+      throw new HostRpcError(SessionErrorCodes.QapUnavailable, 'QAP version 8 not available on this server', { version: 6 });
     });
     const store = new ConnectionStore(new Secrets(), output);
     const sessions = new SessionManager(host as unknown as HostClient, store, new Memento(), output);

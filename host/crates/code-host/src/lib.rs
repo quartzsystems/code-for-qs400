@@ -15,12 +15,12 @@ use serde::{Deserialize, Serialize};
 pub const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// QS/400 release this host is built for.
 pub const PRODUCT_VERSION: &str = "V1R0M0";
-/// The newest QAP version this host speaks: what `qap-client` offers in
-/// `Hello`. Each session reports the version its server agreed.
-pub const QAP_VERSION: u32 = qap_client::proto::VERSION as u32;
+/// The newest QAP version this host speaks: what every connection asks
+/// for in `Hello`. Each session reports the version its server agreed.
+pub const QAP_VERSION: u32 = session::QAP_ASKED as u32;
 
 /// The `--version` line, after the program name.
-pub const VERSION_LINE: &str = concat!(env!("CARGO_PKG_VERSION"), " (QS/400 V1R0M0, QAP v6)");
+pub const VERSION_LINE: &str = concat!(env!("CARGO_PKG_VERSION"), " (QS/400 V1R0M0, QAP v9)");
 
 /// Result of `host.version`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(
             out,
             vec![
-                json!({"jsonrpc":"2.0","id":1,"result":{"host":"1.0.0","product":"V1R0M0","qap":6}})
+                json!({"jsonrpc":"2.0","id":1,"result":{"host":"1.0.0","product":"V1R0M0","qap":9}})
             ]
         );
     }
@@ -199,8 +199,9 @@ mod tests {
     }
 
     #[test]
-    fn qap_version_is_the_clients() {
-        assert_eq!(QAP_VERSION, 6);
-        assert_eq!(qap_client::proto::VERSION, 6);
+    fn qap_version_is_the_one_asked_for() {
+        assert_eq!(QAP_VERSION, 9);
+        // What qap-proto defines, so asking for it is asking for all of it.
+        assert_eq!(qap_client::proto::VERSION, 9);
     }
 }

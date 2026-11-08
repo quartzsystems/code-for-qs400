@@ -15,11 +15,17 @@ use std::time::{Duration, Instant};
 
 use code_host::registry_with;
 use code_host::session::{
-    Backend, Endpoint, Factory, JobDto, Sessions, SystemDto, codes, qap_factory,
+    Backend, DevelopBackend, Endpoint, Factory, JobDto, Sessions, SystemDto, codes, qap_factory,
 };
 use host_rpc::framing::read_frame;
 use host_rpc::{Context, Outbound, Registry, RpcError};
+use qap_client::develop::WriteOptions;
 use qap_client::proto::Status;
+use qap_client::proto::ops::develop::{
+    Attribute, Libraries, LibraryList, ListLibraries, ListMembers, ListObjects, MemberData,
+    Members, Objects, SetLibraryList,
+};
+use qap_client::proto::types::{MemberName, ObjectName, SourceRecord};
 use qap_client::{Error, Secret, ServerMessage, Wake};
 use serde_json::{Value, json};
 
@@ -47,6 +53,14 @@ struct Script {
     calls: Vec<String>,
     endpoints: Vec<Endpoint>,
     wake: Option<Wake>,
+    /// The version the connection agrees; `None` is 9.
+    qap: Option<u16>,
+    /// The session job's library list, as `GetLibraryList` answers it.
+    libl: LibraryList,
+    /// Each `SetLibraryList` asked, in order.
+    libl_sets: Vec<SetLibraryList>,
+    /// What `SetLibraryList` answers instead of taking the list.
+    libl_refusal: Option<Error>,
 }
 
 type Shared = Arc<Mutex<Script>>;
@@ -96,7 +110,7 @@ impl Backend for Fake {
             version: "V1R0M0".into(),
             serial: Some("1234567".into()),
             model: None,
-            qap: 6,
+            qap: self.0.lock().unwrap().qap.unwrap_or(9),
         })
     }
 
@@ -124,6 +138,74 @@ impl Backend for Fake {
 
     fn live(&self) -> bool {
         self.0.lock().unwrap().live
+    }
+
+    fn develop(&mut self) -> &mut dyn DevelopBackend {
+        self
+    }
+}
+
+/// The library list operations; objects and members are tested in
+/// `tests/develop.rs`.
+impl DevelopBackend for Fake {
+    fn get_library_list(&mut self) -> Result<LibraryList, Error> {
+        Ok(self.0.lock().unwrap().libl.clone())
+    }
+    fn set_library_list(&mut self, req: &SetLibraryList) -> Result<LibraryList, Error> {
+        let mut s = self.0.lock().unwrap();
+        s.libl_sets.push(req.clone());
+        if let Some(e) = s.libl_refusal.take() {
+            return Err(e);
+        }
+        s.libl.current = req.current.clone();
+        s.libl.user = req.user.clone();
+        Ok(s.libl.clone())
+    }
+    fn list_libraries(&mut self, _: &ListLibraries) -> Result<Libraries, Error> {
+        unimplemented!()
+    }
+    fn list_objects(&mut self, _: &ListObjects) -> Result<Objects, Error> {
+        unimplemented!()
+    }
+    fn describe_object(&mut self, _: &ObjectName, _: &str) -> Result<Vec<Attribute>, Error> {
+        unimplemented!()
+    }
+    fn list_members(&mut self, _: &ListMembers) -> Result<Members, Error> {
+        unimplemented!()
+    }
+    fn read_member(&mut self, _: &MemberName, _: bool) -> Result<MemberData, Error> {
+        unimplemented!()
+    }
+    fn write_member(
+        &mut self,
+        _: &MemberName,
+        _: &[SourceRecord],
+        _: &WriteOptions,
+    ) -> Result<u32, Error> {
+        unimplemented!()
+    }
+    fn unlock_member(&mut self, _: &MemberName) -> Result<(), Error> {
+        unimplemented!()
+    }
+    fn create_member(&mut self, _: &MemberName, _: &str, _: &str) -> Result<(), Error> {
+        unimplemented!()
+    }
+    fn copy_member(&mut self, _: &MemberName, _: &MemberName, _: bool) -> Result<(), Error> {
+        unimplemented!()
+    }
+    fn rename_member(&mut self, _: &MemberName, _: &str) -> Result<(), Error> {
+        unimplemented!()
+    }
+    fn delete_member(&mut self, _: &MemberName) -> Result<(), Error> {
+        unimplemented!()
+    }
+    fn change_member(
+        &mut self,
+        _: &MemberName,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 }
 
@@ -225,7 +307,7 @@ fn connect_signs_on_and_reports_the_system_and_job() {
             "name": "QSHQ400",
             "state": "connected",
             "user": "CWELLMAN",
-            "system": {"name":"QSHQ400","product":"QS00SS1","version":"V1R0M0","serial":"1234567","qap":6},
+            "system": {"name":"QSHQ400","product":"QS00SS1","version":"V1R0M0","serial":"1234567","qap":9},
             "job": {"number":"100001","user":"CWELLMAN","name":"QAPSRV"}
         })
     );
@@ -373,11 +455,10 @@ fn a_server_idle_close_is_stale_and_the_next_call_resumes() {
     assert_eq!(s["job"]["number"], "100001");
     assert!(h.changes().is_empty(), "nothing new to send");
 
-    let e = h.call("libl.get", json!({"name":"QSHQ400"})).unwrap_err();
+    let l = h.call("libl.get", json!({"name":"QSHQ400"})).unwrap();
     assert_eq!(h.calls(), ["reconnect"]);
     assert_eq!(h.changes(), ["connecting", "connected"]);
-    assert_eq!(e.code, codes::LIBL_UNAVAILABLE);
-    assert_eq!(e.message, "library_list not available on this server");
+    assert_eq!(l, json!({"current":null,"system":[],"user":[]}));
     assert_eq!(status(&h)["job"]["number"], "100001", "same job resumed");
 }
 
@@ -495,13 +576,83 @@ fn libl_validates_names_before_anything() {
             .unwrap_err();
         assert_eq!(e.code, host_rpc::codes::INVALID_PARAMS, "{user}");
     }
-    let e = h
+    assert!(h.script().libl_sets.is_empty(), "nothing sent");
+    let l = h
         .call(
             "libl.set",
             json!({"name":"QSHQ400","current":"cwellman","user":["QGPL","$TOOLS","#X_1.A"]}),
         )
+        .unwrap();
+    assert_eq!(
+        h.script().libl_sets,
+        [SetLibraryList {
+            current: Some("CWELLMAN".into()),
+            user: vec!["QGPL".into(), "$TOOLS".into(), "#X_1.A".into()],
+        }]
+    );
+    assert_eq!(l["current"], "CWELLMAN");
+}
+
+#[test]
+fn libl_reads_and_sets_the_session_jobs_list() {
+    let h = Host::new();
+    h.script().libl = LibraryList {
+        current: Some("CWELLMAN".into()),
+        system: vec!["QSYS".into(), "QSYS2".into(), "QHLPSYS".into()],
+        user: vec!["QGPL".into(), "QTEMP".into()],
+    };
+    h.connect("secret").unwrap();
+    assert_eq!(
+        h.call("libl.get", json!({"name":"QSHQ400"})).unwrap(),
+        json!({"current":"CWELLMAN","system":["QSYS","QSYS2","QHLPSYS"],"user":["QGPL","QTEMP"]})
+    );
+    // No current library and an empty user part: CURLIB(*CRTDFT) LIBL(*NONE).
+    assert_eq!(
+        h.call(
+            "libl.set",
+            json!({"name":"QSHQ400","current":null,"user":[]})
+        )
+        .unwrap(),
+        json!({"current":null,"system":["QSYS","QSYS2","QHLPSYS"],"user":[]})
+    );
+    assert_eq!(h.script().libl_sets, [SetLibraryList::default()]);
+
+    // CHGLIBL's refusal comes back as it was sent.
+    h.script().libl_refusal = Some(refusal(
+        Status::NotFound,
+        "CPF2110",
+        "Library NOSUCH not found.",
+        "Cause . . . . . :   The library was not found.",
+    ));
+    let e = h
+        .call("libl.set", json!({"name":"QSHQ400","user":["NOSUCH"]}))
         .unwrap_err();
-    assert_eq!(e.code, codes::LIBL_UNAVAILABLE);
+    assert_eq!(e.code, codes::SERVER);
+    assert_eq!(e.message, "CPF2110: Library NOSUCH not found.");
+    assert_eq!(
+        e.data.unwrap(),
+        json!({
+            "status":"NotFound","messageId":"CPF2110","text":"Library NOSUCH not found.",
+            "secondLevel":"Cause . . . . . :   The library was not found."
+        })
+    );
+}
+
+#[test]
+fn below_version_8_libl_is_refused_with_the_version_agreed() {
+    let h = Host::new();
+    h.script().qap = Some(6);
+    h.connect("secret").unwrap();
+    for (method, params) in [
+        ("libl.get", json!({"name":"QSHQ400"})),
+        ("libl.set", json!({"name":"QSHQ400","user":["QGPL"]})),
+    ] {
+        let e = h.call(method, params).unwrap_err();
+        assert_eq!(e.code, codes::QAP_UNAVAILABLE, "{method}");
+        assert_eq!(e.message, "QAP version 8 not available on this server");
+        assert_eq!(e.data, Some(json!({"version":6})));
+    }
+    assert!(h.script().libl_sets.is_empty(), "nothing sent");
 }
 
 #[test]

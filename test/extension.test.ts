@@ -8,7 +8,7 @@ import type { ExtensionApi } from '../src/extension';
 import { FrameReader, HostState, encodeFrame } from '../src/host/client';
 
 const EXTENSION_ID = 'quartzsystems.code-for-qs400';
-const ABOUT = 'Code for QS/400 V1R0M0 · host 1.0.0 · QAP v6';
+const ABOUT = 'Code for QS/400 V1R0M0 · host 1.0.0 · QAP v9';
 
 async function api(): Promise<ExtensionApi> {
   const ext = vscode.extensions.getExtension<ExtensionApi>(EXTENSION_ID);
@@ -48,7 +48,7 @@ suite('Code for QS/400', () => {
     const line = await vscode.commands.executeCommand<string>('code-for-qs400.about');
     assert.equal(line, ABOUT);
     const { host } = await api();
-    assert.deepEqual(await host.request('host.version'), { host: '1.0.0', product: 'V1R0M0', qap: 6 });
+    assert.deepEqual(await host.request('host.version'), { host: '1.0.0', product: 'V1R0M0', qap: 9 });
   });
 
   test('host.ping echoes the nonce', async () => {

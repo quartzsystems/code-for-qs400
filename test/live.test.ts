@@ -96,8 +96,8 @@ suite('Live: Phase 1 exit test', function () {
     try {
       await api.host.request('libl.get', { name: NAME });
     } catch (err) {
-      if (err instanceof HostRpcError && err.code === SessionErrorCodes.LibraryListUnavailable) {
-        console.log(`live: library list skipped: ${err.message} (blocked on QAP library_list)`);
+      if (err instanceof HostRpcError && err.code === SessionErrorCodes.QapUnavailable) {
+        console.log(`live: library list skipped: ${err.message} (the server is below QAP version 8)`);
         this.skip();
       }
       throw err;

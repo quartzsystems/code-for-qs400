@@ -142,6 +142,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
+name = "compdiag"
+version = "0.1.0"
+source = "git+https://github.com/quartzsystems/quartz-systems-400?rev=7f82a43fc5edfb8bfd7a84753d6e77e23704fffb#7f82a43fc5edfb8bfd7a84753d6e77e23704fffb"
+
+[[package]]
 name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -231,7 +236,7 @@ dependencies = [
 [[package]]
 name = "ipc"
 version = "0.1.0"
-source = "git+https://github.com/quartzsystems/quartz-systems-400?rev=93c6350f69e4327163bc1357284785e5490388c0#93c6350f69e4327163bc1357284785e5490388c0"
+source = "git+https://github.com/quartzsystems/quartz-systems-400?rev=7f82a43fc5edfb8bfd7a84753d6e77e23704fffb#7f82a43fc5edfb8bfd7a84753d6e77e23704fffb"
 dependencies = [
  "thiserror",
 ]
@@ -290,7 +295,7 @@ dependencies = [
 [[package]]
 name = "qap-client"
 version = "1.1.0"
-source = "git+https://github.com/quartzsystems/quartz-systems-access?rev=1afe1b41bd1a02af1276d81e64885054e8c54d6e#1afe1b41bd1a02af1276d81e64885054e8c54d6e"
+source = "git+https://github.com/quartzsystems/quartz-systems-access?rev=90d9bba2a0f84d88e749e15cf8ed974540c905eb#90d9bba2a0f84d88e749e15cf8ed974540c905eb"
 dependencies = [
  "ipc",
  "qap-proto",
@@ -301,8 +306,9 @@ dependencies = [
 [[package]]
 name = "qap-proto"
 version = "0.1.0"
-source = "git+https://github.com/quartzsystems/quartz-systems-400?rev=93c6350f69e4327163bc1357284785e5490388c0#93c6350f69e4327163bc1357284785e5490388c0"
+source = "git+https://github.com/quartzsystems/quartz-systems-400?rev=7f82a43fc5edfb8bfd7a84753d6e77e23704fffb#7f82a43fc5edfb8bfd7a84753d6e77e23704fffb"
 dependencies = [
+ "compdiag",
  "ipc",
  "thiserror",
 ]
@@ -310,7 +316,7 @@ dependencies = [
 [[package]]
 name = "qsa-net"
 version = "1.1.0"
-source = "git+https://github.com/quartzsystems/quartz-systems-access?rev=1afe1b41bd1a02af1276d81e64885054e8c54d6e#1afe1b41bd1a02af1276d81e64885054e8c54d6e"
+source = "git+https://github.com/quartzsystems/quartz-systems-access?rev=90d9bba2a0f84d88e749e15cf8ed974540c905eb#90d9bba2a0f84d88e749e15cf8ed974540c905eb"
 dependencies = [
  "rustls",
  "rustls-native-certs",

@@ -17,7 +17,7 @@ fn version_flag() {
     assert!(out.status.success());
     assert_eq!(
         String::from_utf8(out.stdout).unwrap().trim_end(),
-        "qs400-code-host 1.0.0 (QS/400 V1R0M0, QAP v6)"
+        "qs400-code-host 1.0.0 (QS/400 V1R0M0, QAP v9)"
     );
 }
 
@@ -63,7 +63,7 @@ fn serve_session(args: &[&str]) {
     send(json!({"jsonrpc":"2.0","id":1,"method":"host.version"}));
     assert_eq!(
         response(&mut stdout, 1)["result"],
-        json!({"host":"1.0.0","product":"V1R0M0","qap":6})
+        json!({"host":"1.0.0","product":"V1R0M0","qap":9})
     );
     send(json!({"jsonrpc":"2.0","id":2,"method":"host.ping","params":{"nonce":"n-42"}}));
     assert_eq!(response(&mut stdout, 2)["result"], json!({"nonce":"n-42"}));

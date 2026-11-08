@@ -23,6 +23,12 @@
 //! by the client's [`Wake`] and every few seconds, notices a connection the
 //! server closed while nothing was being asked. It only looks; it never
 //! reconnects.
+//!
+//! Every connection asks for QAP version 9 ([`QAP_ASKED`]). The `Develop`
+//! service (version 8) is reached through [`Backend::develop`]: the
+//! library list here, objects and members in `objects` and `members`,
+//! each one `qap-client` call through
+//! [`Sessions::develop`].
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -30,8 +36,14 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError, Weak};
 use std::time::Duration;
 
 use host_rpc::{Context, NoParams, Outbound, Registry, RpcError};
+use qap_client::develop::WriteOptions;
 use qap_client::proto::Status;
-use qap_client::{Client, Error, Secret, Target, Wake};
+use qap_client::proto::ops::develop::{
+    Attribute, Libraries, LibraryList, ListLibraries, ListMembers, ListObjects, MemberData,
+    Members, Objects, SetLibraryList,
+};
+use qap_client::proto::types::{MemberName, ObjectName, SourceRecord};
+use qap_client::{Client, Error, Requests, Secret, Target, Wake};
 use qsa_net::Trust;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -40,8 +52,10 @@ use crate::{LogLevel, log};
 
 /// JSON-RPC error codes of the session methods.
 pub mod codes {
-    /// `libl.*`: the server has no `library_list` service.
-    pub const LIBL_UNAVAILABLE: i64 = -32001;
+    /// `libl.*`, `object.*`, `member.*`: the connection agreed a QAP
+    /// version below 8, which has no `Develop` service. `data` is
+    /// `{ version }`, the version agreed.
+    pub const QAP_UNAVAILABLE: i64 = -32001;
     /// No signed-on session by that name.
     pub const NOT_CONNECTED: i64 = -32002;
     /// The session must sign on again and the password kept in memory was
@@ -54,6 +68,14 @@ pub mod codes {
     /// TLS, a closed connection, no reply in time.
     pub const TRANSPORT: i64 = -32011;
 }
+
+/// The QAP version every connection asks for: 9, so that `Develop` (8)
+/// is there when the server has it. The server picks the highest both
+/// speak.
+pub const QAP_ASKED: u16 = 9;
+
+/// The version `Develop` needs.
+pub const QAP_DEVELOP: u16 = 8;
 
 /// How often the watcher looks at the sessions without being woken.
 const WATCH_EVERY: Duration = Duration::from_secs(5);
@@ -199,6 +221,113 @@ pub trait Backend: Send {
     /// Signed on, with the connection open, by what is known now. Sends
     /// nothing.
     fn live(&self) -> bool;
+    /// The `Develop` operations on this connection.
+    fn develop(&mut self) -> &mut dyn DevelopBackend;
+}
+
+/// `qap-client`'s [`qap_client::Develop`] as an object: one method per
+/// operation, each the `qap-client` call of the same name. Every
+/// `qap-client` connection has it; tests implement it with canned replies.
+pub trait DevelopBackend {
+    fn get_library_list(&mut self) -> Result<LibraryList, Error>;
+    fn set_library_list(&mut self, req: &SetLibraryList) -> Result<LibraryList, Error>;
+    fn list_libraries(&mut self, req: &ListLibraries) -> Result<Libraries, Error>;
+    fn list_objects(&mut self, req: &ListObjects) -> Result<Objects, Error>;
+    fn describe_object(&mut self, object: &ObjectName, ty: &str) -> Result<Vec<Attribute>, Error>;
+    fn list_members(&mut self, req: &ListMembers) -> Result<Members, Error>;
+    fn read_member(&mut self, member: &MemberName, lock: bool) -> Result<MemberData, Error>;
+    fn write_member(
+        &mut self,
+        member: &MemberName,
+        records: &[SourceRecord],
+        options: &WriteOptions,
+    ) -> Result<u32, Error>;
+    fn unlock_member(&mut self, member: &MemberName) -> Result<(), Error>;
+    fn create_member(
+        &mut self,
+        member: &MemberName,
+        srctype: &str,
+        text: &str,
+    ) -> Result<(), Error>;
+    fn copy_member(
+        &mut self,
+        from: &MemberName,
+        to: &MemberName,
+        replace: bool,
+    ) -> Result<(), Error>;
+    fn rename_member(&mut self, member: &MemberName, new_name: &str) -> Result<(), Error>;
+    fn delete_member(&mut self, member: &MemberName) -> Result<(), Error>;
+    fn change_member(
+        &mut self,
+        member: &MemberName,
+        srctype: Option<&str>,
+        text: Option<&str>,
+    ) -> Result<(), Error>;
+}
+
+impl<T: Requests> DevelopBackend for T {
+    fn get_library_list(&mut self) -> Result<LibraryList, Error> {
+        qap_client::Develop::get_library_list(self)
+    }
+    fn set_library_list(&mut self, req: &SetLibraryList) -> Result<LibraryList, Error> {
+        qap_client::Develop::set_library_list(self, req)
+    }
+    fn list_libraries(&mut self, req: &ListLibraries) -> Result<Libraries, Error> {
+        qap_client::Develop::list_libraries(self, req)
+    }
+    fn list_objects(&mut self, req: &ListObjects) -> Result<Objects, Error> {
+        qap_client::Develop::list_objects(self, req)
+    }
+    fn describe_object(&mut self, object: &ObjectName, ty: &str) -> Result<Vec<Attribute>, Error> {
+        qap_client::Develop::describe_object(self, object, ty)
+    }
+    fn list_members(&mut self, req: &ListMembers) -> Result<Members, Error> {
+        qap_client::Develop::list_members(self, req)
+    }
+    fn read_member(&mut self, member: &MemberName, lock: bool) -> Result<MemberData, Error> {
+        qap_client::Develop::read_member(self, member, lock)
+    }
+    fn write_member(
+        &mut self,
+        member: &MemberName,
+        records: &[SourceRecord],
+        options: &WriteOptions,
+    ) -> Result<u32, Error> {
+        qap_client::Develop::write_member(self, member, records, options)
+    }
+    fn unlock_member(&mut self, member: &MemberName) -> Result<(), Error> {
+        qap_client::Develop::unlock_member(self, member)
+    }
+    fn create_member(
+        &mut self,
+        member: &MemberName,
+        srctype: &str,
+        text: &str,
+    ) -> Result<(), Error> {
+        qap_client::Develop::create_member(self, member, srctype, text)
+    }
+    fn copy_member(
+        &mut self,
+        from: &MemberName,
+        to: &MemberName,
+        replace: bool,
+    ) -> Result<(), Error> {
+        qap_client::Develop::copy_member(self, from, to, replace)
+    }
+    fn rename_member(&mut self, member: &MemberName, new_name: &str) -> Result<(), Error> {
+        qap_client::Develop::rename_member(self, member, new_name)
+    }
+    fn delete_member(&mut self, member: &MemberName) -> Result<(), Error> {
+        qap_client::Develop::delete_member(self, member)
+    }
+    fn change_member(
+        &mut self,
+        member: &MemberName,
+        srctype: Option<&str>,
+        text: Option<&str>,
+    ) -> Result<(), Error> {
+        qap_client::Develop::change_member(self, member, srctype, text)
+    }
 }
 
 /// Makes a backend for an endpoint; the [`Wake`] is called from the
@@ -275,6 +404,10 @@ impl Backend for QapBackend {
                 .connection()
                 .is_some_and(|c| c.closed().is_none())
     }
+
+    fn develop(&mut self) -> &mut dyn DevelopBackend {
+        &mut self.client
+    }
 }
 
 /// Trust for `tls`: the platform's store, plus `caFile` when given. The
@@ -305,7 +438,7 @@ pub fn qap_factory() -> Factory {
     Arc::new(|ep: &Endpoint, wake: Wake| {
         let trust = trust_for(&ep.tls)?;
         let port = ep.port.unwrap_or(qap_client::proto::DEFAULT_PORT);
-        let mut target = Target::new(ep.host.clone(), port, trust);
+        let mut target = Target::new(ep.host.clone(), port, trust).with_max_version(QAP_ASKED);
         target.wake = Some(wake);
         Ok(Box::new(QapBackend {
             client: Client::new(target),
@@ -357,12 +490,14 @@ fn not_connected(name: &str) -> RpcError {
     RpcError::new(codes::NOT_CONNECTED, format!("{name} is not connected"))
 }
 
-// QAP v2: library_list
-fn libl_unavailable() -> RpcError {
-    RpcError::new(
-        codes::LIBL_UNAVAILABLE,
-        "library_list not available on this server",
-    )
+/// The connection agreed `version`, below [`QAP_DEVELOP`].
+pub fn qap_unavailable(version: u16) -> RpcError {
+    let mut e = RpcError::new(
+        codes::QAP_UNAVAILABLE,
+        "QAP version 8 not available on this server",
+    );
+    e.data = Some(json!({ "version": version }));
+    e
 }
 
 /// Whether the server refused the profile or its password.
@@ -759,17 +894,42 @@ impl Sessions {
         outcome
     }
 
-    /// `libl.get`.
-    // QAP v2: library_list
-    pub fn libl_get(&self, name: &str) -> Result<LiblDto, RpcError> {
+    /// Runs `f` on the session's `Develop` operations: the session brought
+    /// back first if it went stale, and refused with [`qap_unavailable`]
+    /// when the connection agreed a version below 8. A drop `f` met is
+    /// sent as `session.changed`.
+    pub fn develop<T>(
+        &self,
+        name: &str,
+        f: impl FnOnce(&mut dyn DevelopBackend) -> Result<T, Error>,
+    ) -> Result<T, RpcError> {
         let sess = self.get(name).ok_or_else(|| not_connected(name))?;
         let mut s = lock(&sess);
         self.ensure(&mut s)?;
-        Err(libl_unavailable())
+        let version = s.system.as_ref().map_or(0, |sys| sys.qap);
+        if version < QAP_DEVELOP {
+            return Err(qap_unavailable(version));
+        }
+        let b = s
+            .backend
+            .as_mut()
+            .expect("a connected session has a backend");
+        let out = f(b.develop()).map_err(|e| match e {
+            Error::Unsupported { has, .. } => qap_unavailable(has),
+            e => rpc_error(&e),
+        });
+        s.observe();
+        self.publish(&mut s);
+        out
     }
 
-    /// `libl.set`.
-    // QAP v2: library_list
+    /// `libl.get`: `GetLibraryList`, in the connection job's lane.
+    pub fn libl_get(&self, name: &str) -> Result<LiblDto, RpcError> {
+        self.develop(name, |d| d.get_library_list())
+            .map(LiblDto::from)
+    }
+
+    /// `libl.set`: `SetLibraryList`, in the lane; the list as it now is.
     pub fn libl_set(&self, p: LiblSetParams) -> Result<LiblDto, RpcError> {
         let current = p.current.as_deref().map(library_name).transpose()?;
         let mut user = Vec::with_capacity(p.user.len());
@@ -783,30 +943,19 @@ impl Sessions {
             user.push(l);
         }
         let request = SetLibraryList { current, user };
-        let sess = self.get(&p.name).ok_or_else(|| not_connected(&p.name))?;
-        let mut s = lock(&sess);
-        self.ensure(&mut s)?;
-        set_library_list(&mut s, &request)
+        self.develop(&p.name, |d| d.set_library_list(&request))
+            .map(LiblDto::from)
     }
 }
 
-/// The plan's proposed `library_list.set` (QAP additions): the user part
-/// and the current library, applied to the session job. The system part is
-/// the server's.
-// QAP v2: library_list
-struct SetLibraryList {
-    #[allow(dead_code)]
-    current: Option<String>,
-    #[allow(dead_code)]
-    user: Vec<String>,
-}
-
-/// Sends [`SetLibraryList`] once QAP has the service. The pinned
-/// `qap-client` has none, so nothing is sent; it is never emulated with
-/// remote commands.
-// QAP v2: library_list
-fn set_library_list(_s: &mut Session, _request: &SetLibraryList) -> Result<LiblDto, RpcError> {
-    Err(libl_unavailable())
+impl From<LibraryList> for LiblDto {
+    fn from(l: LibraryList) -> LiblDto {
+        LiblDto {
+            current: l.current,
+            system: l.system,
+            user: l.user,
+        }
+    }
 }
 
 /// Registers `session.*` and `libl.*`.

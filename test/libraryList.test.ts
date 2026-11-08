@@ -125,15 +125,15 @@ suite('Library list: the node and saving', () => {
 
   suiteTeardown(() => output.dispose());
 
-  test('a server without library_list: the node says so and nothing is saved', async () => {
+  test('a server below QAP version 8: the node says so and nothing is saved', async () => {
     const host = new FakeHost(() => {
-      throw new HostRpcError(SessionErrorCodes.LibraryListUnavailable, 'library_list not available on this server');
+      throw new HostRpcError(SessionErrorCodes.QapUnavailable, 'QAP version 8 not available on this server', { version: 6 });
     });
     const { store, sessions, libl } = controller(host);
     sessions.update(job('100001'));
     await settle();
     const node = libl.node('LIBL');
-    assert.equal(node.description, 'library_list not available on this server');
+    assert.equal(node.description, 'QAP version 8 not available on this server');
     assert.equal(node.contextValue, 'libraryList.unavailable');
     assert.equal(node.collapsibleState, vscode.TreeItemCollapsibleState.None);
     assert.deepEqual(await libl.children('LIBL'), []);

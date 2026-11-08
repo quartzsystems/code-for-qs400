@@ -162,9 +162,10 @@ reports it. Right-click it, or a library in it, to:
 Each change is applied to the session job at once, then saved in the
 connection's `libraryList`, so the next session starts with the same list.
 
-The library list uses QAP's `library_list` service. A system whose QAP
-server does not have it yet shows **library_list not available on this
-server** on the node, and nothing can be changed there until it does.
+The library list uses QAP version 8's `Develop` service (`GetLibraryList`
+and `SetLibraryList`, which stand for `DSPLIBL` and `CHGLIBL`). A system
+whose QAP server is older shows **QAP version 8 not available on this
+server** on the node, and nothing can be changed there.
 
 ## Commands
 
