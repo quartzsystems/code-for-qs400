@@ -25,6 +25,7 @@
     "onView:code-for-qs400.objects",
     "onView:code-for-qs400.ifs",
     "onView:code-for-qs400.sql",
+    "onView:code-for-qs400.jobs",
     "onFileSystem:qs400ifs",
     "workspaceContains:.vscode/actions.json",
     "onLanguage:qs400-rpgle",
@@ -60,6 +61,10 @@
         {
           "id": "code-for-qs400.sql",
           "name": "SQL"
+        },
+        {
+          "id": "code-for-qs400.jobs",
+          "name": "Jobs"
         }
       ]
     },
@@ -463,6 +468,53 @@
         "title": "SQL History",
         "category": "Code for QS/400",
         "icon": "$(history)"
+      },
+      {
+        "command": "code-for-qs400.jobs.refresh",
+        "title": "Refresh Jobs",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.jobs.filter",
+        "title": "Change Jobs Filter…",
+        "category": "Code for QS/400",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "code-for-qs400.jobs.log",
+        "title": "Job Log",
+        "category": "Code for QS/400",
+        "icon": "$(output)"
+      },
+      {
+        "command": "code-for-qs400.jobs.hold",
+        "title": "Hold Job",
+        "category": "Code for QS/400",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "code-for-qs400.jobs.release",
+        "title": "Release Job",
+        "category": "Code for QS/400",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "code-for-qs400.jobs.end",
+        "title": "End Job…",
+        "category": "Code for QS/400",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "code-for-qs400.jobs.copyName",
+        "title": "Copy Qualified Name",
+        "category": "Code for QS/400",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "code-for-qs400.jobs.reveal",
+        "title": "Show Job in Jobs View",
+        "category": "Code for QS/400"
       }
     ],
     "configuration": {
@@ -684,6 +736,11 @@
           "default": "",
           "scope": "application",
           "markdownDescription": "Name of the default connection: offered first when a command asks for a connection, and marked in the Connections view."
+        },
+        "code-for-qs400.jobs.autoRefresh": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Refresh the **Jobs** view every 30 seconds while it is shown."
         }
       }
     },
@@ -754,6 +811,16 @@
           "command": "code-for-qs400.sql.history",
           "when": "view == code-for-qs400.sql",
           "group": "navigation@4"
+        },
+        {
+          "command": "code-for-qs400.jobs.filter",
+          "when": "view == code-for-qs400.jobs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.jobs.refresh",
+          "when": "view == code-for-qs400.jobs",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -1066,6 +1133,46 @@
           "command": "code-for-qs400.sql.copyName",
           "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.(column|schema)$/",
           "group": "3_copy@1"
+        },
+        {
+          "command": "code-for-qs400.jobs.log",
+          "when": "view == code-for-qs400.jobs && viewItem =~ /^jobs\\.job/",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.jobs.log",
+          "when": "view == code-for-qs400.jobs && viewItem =~ /^jobs\\.job/",
+          "group": "1_log@1"
+        },
+        {
+          "command": "code-for-qs400.jobs.hold",
+          "when": "view == code-for-qs400.jobs && viewItem =~ /^jobs\\.job/",
+          "group": "2_control@1"
+        },
+        {
+          "command": "code-for-qs400.jobs.release",
+          "when": "view == code-for-qs400.jobs && viewItem =~ /^jobs\\.job/",
+          "group": "2_control@2"
+        },
+        {
+          "command": "code-for-qs400.jobs.end",
+          "when": "view == code-for-qs400.jobs && viewItem == jobs.job",
+          "group": "2_control@3"
+        },
+        {
+          "command": "code-for-qs400.jobs.copyName",
+          "when": "view == code-for-qs400.jobs && viewItem =~ /^jobs\\.job/",
+          "group": "4_copy@1"
+        },
+        {
+          "command": "code-for-qs400.jobs.filter",
+          "when": "view == code-for-qs400.jobs && viewItem == jobs.filter",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.jobs.refresh",
+          "when": "view == code-for-qs400.jobs && viewItem == jobs.filter",
+          "group": "9_refresh@1"
         }
       ],
       "commandPalette": [
@@ -1211,6 +1318,30 @@
         },
         {
           "command": "code-for-qs400.sql.copyCall",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.jobs.log",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.jobs.hold",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.jobs.release",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.jobs.end",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.jobs.copyName",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.jobs.reveal",
           "when": "false"
         }
       ],

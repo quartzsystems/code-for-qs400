@@ -455,6 +455,9 @@ export interface JobLogParams {
   job?: SessionJob;
 }
 
+/** A message's type: the spec's `MessageType` (service 7), in lower camel case. */
+export type MessageType = 'informational' | 'inquiry' | 'reply' | 'completion' | 'diagnostic' | 'escape' | 'notify' | 'senderCopy';
+
 /** One message of a job log. */
 export interface JobLogEntry {
   /** When it was sent, milliseconds since 1970-01-01 UTC. */
@@ -462,8 +465,7 @@ export interface JobLogEntry {
   /** Empty for an impromptu message. */
   id: string;
   severity: number;
-  /** `informational`, `completion`, `diagnostic`, `escape` … */
-  kind: string;
+  kind: MessageType;
   text: string;
   secondLevel?: string;
   fromProgram: string;
@@ -474,6 +476,44 @@ export interface JobLogEntry {
 export interface JobLogResult {
   job: SessionJob;
   entries: JobLogEntry[];
+}
+
+/** Where a job is: the spec's `JobState`. */
+export type JobState = 'active' | 'onJobQueue' | 'onOutputQueue';
+
+/** A job, as `WRKUSRJOB` lists it (`jobs.list`). */
+export interface JobEntry {
+  job: SessionJob;
+  state: JobState;
+  /** As `WRKUSRJOB` shows it: `*ACTIVE`, `*JOBQ`, `*OUTQ`. */
+  status: string;
+  /** `BATCH`, `INTER`, `AUTO` … */
+  type: string;
+  /** Empty when not active. */
+  subsystem: string;
+  /** As `WRKACTJOB` shows it (`PGM-QCMD`); empty when none. */
+  function: string;
+  /** When it entered the system, milliseconds since 1970-01-01 UTC. */
+  entered: number;
+}
+
+export interface JobsListParams {
+  name: string;
+  /** `*CURRENT`, `*ALL` or a profile. */
+  user: string;
+  state?: JobState;
+}
+
+export interface JobParams {
+  name: string;
+  job: SessionJob;
+}
+
+export interface JobsEndParams extends JobParams {
+  /** `*CNTRLD` or `*IMMED`. */
+  how: 'controlled' | 'immediate';
+  /** Seconds, for `controlled`; absent for the job's default. */
+  delay?: number;
 }
 
 /** Requests the extension sends, by method name. */
@@ -679,6 +719,11 @@ export interface HostMethods {
   'action.run': { params: ActionRunParams; result: ActionOutcome };
   'action.cancel': { params: ActionCancelParams; result: null };
   'job.log': { params: JobLogParams; result: JobLogResult };
+  'jobs.list': { params: JobsListParams; result: JobEntry[] };
+  'jobs.log': { params: JobParams; result: JobLogEntry[] };
+  'jobs.hold': { params: JobParams; result: null };
+  'jobs.release': { params: JobParams; result: null };
+  'jobs.end': { params: JobsEndParams; result: null };
   'sql.options.get': { params: NameParams; result: SqlOptions };
   'sql.options.set': { params: SqlOptionsSetParams; result: SqlOptions };
   /** Waits in the connection job's lane until the statement ends: no request timeout. */

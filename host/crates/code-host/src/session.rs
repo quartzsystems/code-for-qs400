@@ -35,6 +35,11 @@
 //! and `crate::jobs`. `Sql` (version 4, the catalog's routines and
 //! indexes 8) is reached through [`Backend::sql`] and [`Sessions::sql`],
 //! for `crate::sql`, which keeps each session's own attached connection.
+//! `Jobs` (version 8), `Spool` (3, its watches 6) and `Messages` (6) are
+//! reached through [`Backend::work`] and [`Sessions::work`], for
+//! `crate::jobs`, `crate::spool` and `crate::messages`. What the client's
+//! watches report is taken after every call and whenever the watcher
+//! looks, and handed to the hooks of [`Sessions::on_events`].
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -50,10 +55,15 @@ use qap_client::proto::ops::develop::{
     Members, Objects, SetLibraryList,
 };
 use qap_client::proto::ops::ifs::{Entry, ReadFile, WriteFile};
-use qap_client::proto::ops::jobs::{JobLog, JobLogEntries};
-use qap_client::proto::types::{MemberName, ObjectName, SourceRecord};
+use qap_client::proto::ops::jobs::{JobEntry, JobLog, JobLogEntries, JobState};
+use qap_client::proto::ops::messages::{Key, Messages, Queue, Recipient};
+use qap_client::proto::ops::spool::{ListSpooledFiles, OutputQueue, ReadSpooledFile, SpooledFile};
+use qap_client::proto::types::{EndHow, JobId, MemberName, ObjectName, SourceRecord};
 use qap_client::proto::{Op, Status};
-use qap_client::{Client, Error, Files, Jobs, Pending, Requests, Secret, Target, Wake};
+use qap_client::spool::Action;
+use qap_client::{
+    Client, Error, Files, Jobs, Pending, Requests, Secret, Target, Wake, Watch, WatchEvent,
+};
 use qsa_net::Trust;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -100,6 +110,17 @@ pub const QAP_COMMAND: u16 = 2;
 /// The version `Sql` needs: statements, cursors and `ListSchemas` to
 /// `ListColumns`. `ListRoutines` and `ListIndexes` need [`QAP_DEVELOP`].
 pub const QAP_SQL: u16 = 4;
+
+/// The version `Spool` needs: lists, reads and actions. Its watches need
+/// [`QAP_WATCH`].
+pub const QAP_SPOOL: u16 = 3;
+
+/// The version `Messages` and the watches (`WatchQueue`, `WatchSpool`)
+/// need.
+pub const QAP_WATCH: u16 = 6;
+
+/// The version `Jobs` needs.
+pub const QAP_JOBS: u16 = 8;
 
 /// How often the watcher looks at the sessions without being woken.
 const WATCH_EVERY: Duration = Duration::from_secs(5);
@@ -257,6 +278,126 @@ pub trait Backend: Send {
     /// tests of the other services).
     fn sql(&mut self) -> Option<&mut dyn crate::sql::SqlBackend> {
         None
+    }
+    /// `Jobs`, `Spool`, `Messages` and the watches on this connection.
+    /// `None` for a backend without them (the tests of the other
+    /// services).
+    fn work(&mut self) -> Option<&mut dyn WorkBackend> {
+        None
+    }
+}
+
+/// `qap-client`'s `Jobs`, `Spool` and `Messages`, and the watches its
+/// [`Client`] keeps, as an object: one method per `qap-client` call of the
+/// same name. `read_spooled_file` and `spool_action` only send, so the
+/// caller waits for the reply with the session let go. Tests implement it
+/// with canned replies.
+pub trait WorkBackend {
+    /// [`Jobs::all_jobs`]: every job, a page of 500 at a time.
+    fn all_jobs(&mut self, user: &str, status: Option<JobState>) -> Result<Vec<JobEntry>, Error>;
+    fn hold_job(&mut self, job: &JobId) -> Result<(), Error>;
+    fn release_job(&mut self, job: &JobId) -> Result<(), Error>;
+    fn end_job(&mut self, job: &JobId, how: EndHow, delay: Option<u32>) -> Result<(), Error>;
+    /// [`Client::all_spooled_files`]: every file matching, 500 at a time.
+    fn all_spooled_files(&mut self, req: &ListSpooledFiles) -> Result<Vec<SpooledFile>, Error>;
+    /// [`Client::all_output_queues`].
+    fn all_output_queues(&mut self, library: &str) -> Result<Vec<OutputQueue>, Error>;
+    /// [`Client::read_spooled_file`]: sent, not waited for.
+    fn read_spooled_file(&mut self, req: &ReadSpooledFile) -> Result<Pending, Error>;
+    /// [`Client::spool_action`]: sent, not waited for; read the reply with
+    /// [`Action::outcome`].
+    fn spool_action(&mut self, action: &Action) -> Result<Pending, Error>;
+    /// [`Client::list_messages`]: one page.
+    fn list_messages(
+        &mut self,
+        queue: &Queue,
+        newest_first: bool,
+        start: u32,
+        max: u32,
+    ) -> Result<Messages, Error>;
+    fn reply_message(&mut self, queue: &Queue, key: Key, reply: &str) -> Result<(), Error>;
+    fn remove_messages(&mut self, queue: &Queue, keys: &[Key]) -> Result<(), Error>;
+    fn send_message(
+        &mut self,
+        to: &Recipient,
+        text: &str,
+        inquiry: bool,
+    ) -> Result<Option<Key>, Error>;
+    /// [`Client::may_read_queue`].
+    fn may_read_queue(&mut self, queue: &Queue) -> Result<bool, Error>;
+    /// [`Client::watch`].
+    fn watch(&mut self, w: Watch) -> Result<(), Error>;
+    /// [`Client::unwatch`].
+    fn unwatch(&mut self, w: &Watch) -> Result<(), Error>;
+    /// [`Client::watch_events`]: what the watches reported since the last
+    /// look, oldest first. Sends nothing.
+    fn watch_events(&mut self) -> Vec<WatchEvent>;
+    /// How long a short request (`spool_action`) waits for its reply.
+    fn reply_timeout(&self) -> Duration;
+}
+
+impl WorkBackend for Client {
+    fn all_jobs(&mut self, user: &str, status: Option<JobState>) -> Result<Vec<JobEntry>, Error> {
+        Jobs::all_jobs(self, user, status)
+    }
+    fn hold_job(&mut self, job: &JobId) -> Result<(), Error> {
+        Jobs::hold_job(self, job)
+    }
+    fn release_job(&mut self, job: &JobId) -> Result<(), Error> {
+        Jobs::release_job(self, job)
+    }
+    fn end_job(&mut self, job: &JobId, how: EndHow, delay: Option<u32>) -> Result<(), Error> {
+        Jobs::end_job(self, job, how, delay)
+    }
+    fn all_spooled_files(&mut self, req: &ListSpooledFiles) -> Result<Vec<SpooledFile>, Error> {
+        Client::all_spooled_files(self, req)
+    }
+    fn all_output_queues(&mut self, library: &str) -> Result<Vec<OutputQueue>, Error> {
+        Client::all_output_queues(self, library)
+    }
+    fn read_spooled_file(&mut self, req: &ReadSpooledFile) -> Result<Pending, Error> {
+        Client::read_spooled_file(self, req)
+    }
+    fn spool_action(&mut self, action: &Action) -> Result<Pending, Error> {
+        Client::spool_action(self, action)
+    }
+    fn list_messages(
+        &mut self,
+        queue: &Queue,
+        newest_first: bool,
+        start: u32,
+        max: u32,
+    ) -> Result<Messages, Error> {
+        Client::list_messages(self, queue, newest_first, start, max)
+    }
+    fn reply_message(&mut self, queue: &Queue, key: Key, reply: &str) -> Result<(), Error> {
+        Client::reply_message(self, queue, key, reply)
+    }
+    fn remove_messages(&mut self, queue: &Queue, keys: &[Key]) -> Result<(), Error> {
+        Client::remove_messages(self, queue, keys)
+    }
+    fn send_message(
+        &mut self,
+        to: &Recipient,
+        text: &str,
+        inquiry: bool,
+    ) -> Result<Option<Key>, Error> {
+        Client::send_message(self, to, text, inquiry)
+    }
+    fn may_read_queue(&mut self, queue: &Queue) -> Result<bool, Error> {
+        Client::may_read_queue(self, queue)
+    }
+    fn watch(&mut self, w: Watch) -> Result<(), Error> {
+        Client::watch(self, w)
+    }
+    fn unwatch(&mut self, w: &Watch) -> Result<(), Error> {
+        Client::unwatch(self, w)
+    }
+    fn watch_events(&mut self) -> Vec<WatchEvent> {
+        Client::watch_events(self)
+    }
+    fn reply_timeout(&self) -> Duration {
+        self.target().options.reply_timeout
     }
 }
 
@@ -576,6 +717,10 @@ impl Backend for QapBackend {
     fn sql(&mut self) -> Option<&mut dyn crate::sql::SqlBackend> {
         Some(&mut self.client)
     }
+
+    fn work(&mut self) -> Option<&mut dyn WorkBackend> {
+        Some(&mut self.client)
+    }
 }
 
 /// Trust for `tls`: the platform's store, plus `caFile` when given. The
@@ -808,6 +953,19 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// replaced by a new sign-on.
 pub type CloseHook = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// Called with a session's name and what its watches reported, oldest
+/// first, with the session let go.
+pub type EventHook = Arc<dyn Fn(&str, Vec<WatchEvent>) + Send + Sync>;
+
+/// What the session's watches reported since the last look; nothing for a
+/// backend without watches.
+fn take_events(s: &mut Session) -> Vec<WatchEvent> {
+    match s.backend.as_mut().and_then(|b| b.work()) {
+        Some(w) => w.watch_events(),
+        None => Vec::new(),
+    }
+}
+
 /// Every session of this host.
 pub struct Sessions {
     map: Mutex<BTreeMap<String, Arc<Mutex<Session>>>>,
@@ -816,6 +974,7 @@ pub struct Sessions {
     wake_tx: Mutex<Sender<()>>,
     wake_rx: Mutex<Option<Receiver<()>>>,
     closed: Mutex<Vec<CloseHook>>,
+    events: Mutex<Vec<EventHook>>,
 }
 
 impl Sessions {
@@ -828,7 +987,24 @@ impl Sessions {
             wake_tx: Mutex::new(tx),
             wake_rx: Mutex::new(Some(rx)),
             closed: Mutex::new(Vec::new()),
+            events: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Calls `f` with what each session's watches report, after the session
+    /// is let go.
+    pub fn on_events(&self, f: EventHook) {
+        lock(&self.events).push(f);
+    }
+
+    fn dispatch(&self, name: &str, events: Vec<WatchEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        let hooks: Vec<EventHook> = lock(&self.events).clone();
+        for h in hooks {
+            h(name, events.clone());
+        }
     }
 
     /// Calls `f` with a session's name each time it is closed, after the
@@ -909,18 +1085,24 @@ impl Sessions {
         s.sent = Some(status);
     }
 
-    /// Looks at every session not busy with a request; sends what changed.
+    /// Looks at every session not busy with a request; sends what changed
+    /// and what its watches reported.
     pub fn check_all(&self) {
         let all: Vec<_> = lock(&self.map).values().cloned().collect();
         for s in all {
             let mut s = match s.try_lock() {
                 Ok(g) => g,
                 Err(TryLockError::Poisoned(p)) => p.into_inner(),
-                // A request holds it and publishes when it ends.
+                // A request holds it, publishes and takes the events when
+                // it ends.
                 Err(TryLockError::WouldBlock) => continue,
             };
             s.observe();
             self.publish(&mut s);
+            let events = take_events(&mut s);
+            let name = s.name.clone();
+            drop(s);
+            self.dispatch(&name, events);
         }
     }
 
@@ -1134,7 +1316,31 @@ impl Sessions {
         });
         s.observe();
         self.publish(&mut s);
+        // A call takes in the server's events (and a resume watches again):
+        // what they reported goes on now, not at the watcher's next look.
+        let events = take_events(&mut s);
+        drop(s);
+        self.dispatch(name, events);
         out
+    }
+
+    /// Runs `f` on the session's `Jobs`, `Spool`, `Messages` and watches,
+    /// refused below version `needed` ([`QAP_JOBS`], [`QAP_SPOOL`] or
+    /// [`QAP_WATCH`]), as [`Sessions::with_backend`] does.
+    pub fn work<T>(
+        &self,
+        name: &str,
+        needed: u16,
+        f: impl FnOnce(&mut dyn WorkBackend) -> Result<T, Error>,
+    ) -> Result<T, RpcError> {
+        self.with_backend(name, needed, |b| match b.work() {
+            Some(w) => f(w),
+            None => Err(Error::Unsupported {
+                op: Op::ListJobs,
+                needs: needed,
+                has: 0,
+            }),
+        })
     }
 
     /// Runs `f` on the session's `Develop` operations (version 8), as

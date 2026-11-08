@@ -27,6 +27,7 @@ import { IfsNode, IfsProvider } from './views/ifs';
 import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
 import { SqlNode, SqlProvider, registerSqlViewCommands } from './views/sql';
+import { JobNode, JobsProvider, registerJobsViewCommands } from './views/jobs';
 import { LanguageServers } from './languages/client';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -64,6 +65,8 @@ export interface ExtensionApi {
   readonly sqlTree: SqlProvider;
   readonly sqlView: vscode.TreeView<SqlNode>;
   readonly history: SqlHistory;
+  readonly jobs: JobsProvider;
+  readonly jobsView: vscode.TreeView<JobNode>;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -98,7 +101,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
   const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
   const diagnostics = new CompileDiagnostics();
-  const jobLog = new JobLogProvider(store, sessions);
+  const jobLog = new JobLogProvider(store, sessions, vscode.Uri.joinPath(context.extensionUri, 'media'));
   const languagesOutput = vscode.window.createOutputChannel('Code for QS/400 Languages', { log: true });
   const languages = new LanguageServers(
     () => host.resolveBinary(),
@@ -122,6 +125,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const history = new SqlHistory(context.workspaceState, sqlRunner, sql, sessions);
   const sqlTree = new SqlProvider(store, sessions, context.workspaceState);
   const sqlView = vscode.window.createTreeView('code-for-qs400.sql', { treeDataProvider: sqlTree, showCollapseAll: true });
+  const jobs = new JobsProvider(store, sessions, context.workspaceState);
+  const jobsView = vscode.window.createTreeView('code-for-qs400.jobs', { treeDataProvider: jobs, showCollapseAll: true });
 
   context.subscriptions.push(
     output,
@@ -168,6 +173,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerSqlViewCommands(sqlTree, sql, sqlRunner, sessions),
     ...sql.register(),
     ...sqlRunner.register(),
+    jobs,
+    jobsView,
+    jobs.attach(jobsView),
+    ...registerJobsViewCommands(jobs, sessions, jobLog),
     // A session signed on again: includes it could not read may be there now.
     sessions.onDidChange((st) => {
       if (st?.state === 'connected') {
@@ -186,7 +195,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView };
 }
 
 export function deactivate(): void {

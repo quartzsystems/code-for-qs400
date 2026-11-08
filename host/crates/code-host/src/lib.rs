@@ -5,6 +5,7 @@
 //! The `qs400-code-host` method set.
 
 pub mod actions;
+pub mod codec;
 pub mod ifs;
 pub mod jobs;
 pub mod members;
@@ -79,7 +80,7 @@ pub fn registry(outbound: &Outbound) -> Registry {
 }
 
 /// Every method, with `sessions` behind `session.*`, `libl.*`, `object.*`,
-/// `member.*`, `ifs.*`, `action.*`, `job.*` and `sql.*`.
+/// `member.*`, `ifs.*`, `action.*`, `job.*`, `jobs.*` and `sql.*`.
 pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     let mut r = Registry::new();
     session::register(&mut r, sessions);
@@ -216,6 +217,11 @@ mod tests {
                 "ifs.upload",
                 "ifs.writeText",
                 "job.log",
+                "jobs.end",
+                "jobs.hold",
+                "jobs.list",
+                "jobs.log",
+                "jobs.release",
                 "libl.get",
                 "libl.set",
                 "member.changeText",
