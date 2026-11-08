@@ -5,17 +5,21 @@ remote operation goes through `qs400-code-host`, a Rust sidecar bundled
 with the extension that speaks QAP, the Quartz Access Protocol shared with
 QS/400 Access.
 
-**Status: 1.0.0 pre-release, Phase 4.** Saved connections, sign-on over
+**Status: 1.0.0 pre-release, Phase 5.** Saved connections, sign-on over
 QAP, a session per connection with its status, session job and library
 list; the Objects view with filters; source members opened, locked and
 saved with their sequence numbers and dates; the IFS view, with stream
 files opened and saved in their own CCSID, uploads and downloads with
 resume, and the file commands; actions (compiles, calls, submitted jobs)
 from `.vscode/actions.json`, the defaults and each connection, with the
-compiler's messages in the Problems panel and the connection job's log.
+compiler's messages in the Problems panel and the connection job's log;
+RPG, CL, DDS, SQL and command definition source coloured and checked as
+you type by the QS/400 compiler front-ends, with the outline, Go to
+Definition into `/COPY` members, hover, completion, rename and folding.
 See [docs/connections.md](docs/connections.md),
 [docs/objects-and-members.md](docs/objects-and-members.md),
-[docs/ifs.md](docs/ifs.md) and [docs/actions.md](docs/actions.md).
+[docs/ifs.md](docs/ifs.md), [docs/actions.md](docs/actions.md) and
+[docs/languages.md](docs/languages.md).
 
 ## Requirements
 
@@ -87,6 +91,10 @@ qs400-code-host --version
 # qs400-code-host 1.0.0 (QS/400 V1R0M0, QAP v9)
 ```
 
+The language servers are the same binary, one per language per window:
+`qs400-code-host lsp rpgle|cl|dds|sql|cmd`, LSP over stdio. Their log is
+the **Code for QS/400 Languages** output channel.
+
 ## Repository layout
 
 ```
@@ -100,12 +108,13 @@ package.json, src/      the extension (TypeScript, bundled by esbuild to dist/)
   src/ifs/                the qs400ifs file system provider, paths, tree walks, transfers
   src/actions/            actions: the model and merge, variables, the run and its output, diagnostics
   src/jobs/jobLog.ts      the Job log document and its hover
+  src/languages/          the language clients, includes for the servers, fixed-form RPG guides
   src/views/connections.ts  the Connections tree
   src/views/objects.ts    the Objects tree
   src/views/ifs.ts        the IFS tree
   src/views/sessionStatusBar.ts  the active connection in the status bar
   src/commands/           About, connection, object, member and IFS commands
-syntaxes/, languages/   grammars and language configuration (Phase 5)
+syntaxes/, languages/   grammars and language configuration
 schemas/actions.json    schema for .vscode/actions.json
 defaults/actions.json   the default actions shipped with the extension
 media/                  activity bar icon (placeholder)
@@ -116,7 +125,11 @@ host/                   Cargo workspace for the sidecar
                           src/objects.rs and src/members.rs the object and member methods,
                           src/ifs.rs the IFS methods and transfers, src/actions.rs
                           the commands and compiles, src/jobs.rs the job log
-test/                   extension integration tests (@vscode/test-electron)
+  crates/lsp-common       what the language servers share: the loop, positions, includes, features
+  crates/lsp-<lang>       one language server each (rpgle, cl, dds, sql, cmd) on its front end
+  crates/severity         the one severity table, shared with the extension
+  fixtures/parity         recorded compiles for the offline parity test
+test/                   extension integration tests (@vscode/test-electron), grammar snapshots in test/grammar/
 scripts/                check-naming.sh, package.sh, package.ps1
 docs/                   user documentation
 ```

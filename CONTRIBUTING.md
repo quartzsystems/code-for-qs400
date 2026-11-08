@@ -18,7 +18,8 @@ decided along the way.
 | `src/views/`, `src/commands/` | The Connections, Objects and IFS trees, the status bar item and commands |
 | `src/actions/` | `model.ts` (the action fields, merge order, matching and the compile list), `variables.ts`, `targets.ts` (each variable's value per target), `output.ts` (the output channel's block), `placement.ts` and `severity.ts` (where a diagnostic goes, the one severity table); none of these imports `vscode`. `store.ts` (the three layers, the check on save), `run.ts` (**Run Action…**), `diagnostics.ts` (the Problems panel) |
 | `src/jobs/jobLog.ts` | The Job log document and its hover |
-| `syntaxes/`, `languages/` | Grammars and language configuration (Phase 5) |
+| `src/languages/` | `client.ts` (one language client per language, the include notifications), `includes.ts` (`qs400/fetchInclude` and `qs400/listMembers` through the host), `protocol.ts` (keep in step with `host/crates/lsp-common/src/protocol.rs`), `rpgColumns.ts` (the fixed-form columns; no `vscode` import), `fixedForm.ts` (the guides and the column in the status bar) |
+| `syntaxes/`, `languages/` | The five TextMate grammars and language configurations |
 | `schemas/actions.json`, `defaults/actions.json` | The schema of `.vscode/actions.json`, and the default actions shipped |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
 | `bin/` | Host binary for the current platform, copied in by `scripts/package.sh`; gitignored |
@@ -27,7 +28,11 @@ decided along the way.
 | `host/crates/code-host/src/objects.rs`, `members.rs` | `object.*` and `member.*`, thin over `qap-client`'s `Develop`; `members::codec` is the one place `seq` and `date` convert |
 | `host/crates/code-host/src/ifs.rs` | `ifs.*`, thin over `qap-client`'s `Files`, `read` and `write`; the transfers and their threads |
 | `host/crates/code-host/src/actions.rs`, `jobs.rs` | `action.*` over `Command` and `Develop::compile`, each run on a thread of its own; `job.log` over `Jobs::job_log` |
-| `test/` | Extension tests, run inside VS Code; `live.test.ts` against a real system |
+| `host/crates/lsp-common` | What the language servers share: the loop (`server.rs`), positions (`position.rs`), the URI's source (`uri.rs`), the include cache (`includes.rs`), the features (`features.rs`), the custom messages (`protocol.rs`) and a test client (`testing.rs`) |
+| `host/crates/lsp-rpgle`, `lsp-cl`, `lsp-dds`, `lsp-sql`, `lsp-cmd` | One `Language` each over its front end's `analyze`: options, folding, completion words |
+| `host/crates/severity` | `severity.json`, the one severity table, read by the servers and by `src/actions/severity.ts` |
+| `host/fixtures/parity/` | Recorded compiles for the offline parity test; the members' text is gitignored |
+| `test/` | Extension tests, run inside VS Code; `live.test.ts` and `parity.test.ts` against a real system; `grammar/` the grammar samples and their snapshots |
 | `scripts/` | `check-naming.sh`, `package.sh`, `package.ps1` |
 | `.github/workflows/ci.yml` | CI for Windows and Linux |
 | `docs/` | User documentation |
@@ -60,7 +65,21 @@ npm test                            # on Linux without a display: xvfb-run -a np
 ```
 
 `npm test` downloads VS Code 1.143.0 (the lowest version `engines.vscode`
-allows) into `.vscode-test/` and runs `test/*.test.ts` in it.
+allows) into `.vscode-test/` and runs `test/*.test.ts` in it. Before that,
+`pretest` runs `npm run test:grammar`, the grammar snapshot tests
+(`vscode-tmgrammar-snap` over `test/grammar/`); after changing a grammar,
+run `npx vscode-tmgrammar-snap -u` on the samples it affects and read the
+snapshot's diff before committing it.
+
+### Language server tests
+
+Each `lsp-<lang>` crate's `tests/` drives its server over an in-memory
+connection with `lsp_common::testing::Client`, which answers
+`qs400/fetchInclude` and `qs400/listMembers` from closures. The front ends'
+behaviour is asserted as it is at the pinned commit; when a pin moves,
+those expectations move with it. `cargo test -p code-host --test parity`
+compares the recorded compiles in `host/fixtures/parity/` (see its
+README); with none recorded it passes and says so.
 
 ### Session tests
 
@@ -113,6 +132,21 @@ names. It is skipped unless these are set:
 | `QS400_TEST_SOURCE` | Member Phase 2 copies (and only reads). Default `HLINV/QRPGLESRC(ASSETS)`. |
 
 In CI the last two are repository variables, not secrets.
+
+`test/parity.test.ts` runs the automatic steps of the Phase 5 exit test
+with the same three required variables. It opens every member of the four
+source files read-only, runs each one's default compile (the objects stay
+in `QS400_TEST_CURLIB`), and prints a table of every difference. Two more
+variables apply to it:
+
+| Variable | Meaning |
+| --- | --- |
+| `QS400_PARITY_LIBRARY` | Library whose source files are compared. Default `HLINV`. |
+| `QS400_PARITY_RECORD` | `1` writes each compile, and the members' text, to `host/fixtures/parity/`. |
+
+`QS400_PARITY_SRC`, for the offline Rust test, names a folder of members
+laid out as `<FILE>/<MEMBER>.<ext>` when their text is not beside the
+records.
 
 It never signs on with a wrong password, so it cannot count against
 `QMAXSIGN`. When the server has no `library_list` service, the library list
@@ -726,6 +760,161 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     form (free or fixed). It sets the current library with `libl.set`
     first, so `&LIBRARY` is never asked for, and adds a connection action
     for the wrong `&SRCFILE`. The program it makes stays in that library.
+
+## Decisions made in Phase 5
+
+1. **The front-ends are pinned at `quartz-systems-400` `5e2bbee9`**
+   (`5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c`, `main` and tag `v1.1.0`,
+   V1R1M0), apart from the `7f82a43f` that `qap-client` carries for
+   `qap-proto`. `rpgfront`, `cl`, `dds`, `sql` and `cmd` take
+   `default-features = false, features = ["front"]` and build alone for
+   `x86_64-pc-windows-msvc` and `x86_64-unknown-linux-musl`, as QS/400's
+   `front-ends` CI job builds them. **`compdiag` takes no features**: it
+   has none (its `front` module is always built), and cargo refuses
+   `features = ["front"]` on it ("does not have that feature"). `rpgspecs`
+   is pinned at the same commit for the fixed-form column table
+   (decision 10).
+2. **`lsp-server` 0.10, `lsp-types` 0.97, `crossbeam-channel` 0.5.**
+   `lsp-server` 0.10's `Response` carries `response_result`, and its
+   `ProtocolError` cannot be made outside it, so `serve_stdio` answers
+   its own error text.
+3. **The front-ends' `Options`, none of them guessed:**
+   - RPG: `defines` empty and `copynest` 0 (32), the compile commands'
+     `DEFINE` and `COPYNEST` defaults; `fetch` the include fetch.
+   - CL: `files` `None`. A `DCLF` file's formats are in the file object,
+     and no host method reads a file's record formats (`qap-client`'s
+     `Develop` at `90d9bba` lists, describes and reads members, but has
+     nothing for a file's fields), so every `DCLF` reports `CPD0744 file
+     LIB/FILE was not found`, as the front end documents for a compile
+     without the file.
+   - DDS: `kind` from the URI's extension (`Kind::of_srctype`, `PF` when
+     it is none of `pf`, `lf`, `prtf`); `refs` `None`, for the reason CL's
+     `files` is. DSPF and ICFF are **not analyzed**: `dds::analysis::Kind`
+     has no display or ICF compiler at this commit, and running them as a
+     PF would report another compiler's messages. They get the grammar
+     only.
+   - SQL: `NAMING(*SYS)`, `RUNSQLSTM`'s default.
+   - CMD: `name` `None`, so `analyze` takes the member's or stream file's
+     name, which is what the default `CRTCMD CMD(&LIBRARY/&NAME)` creates.
+4. **What the front-ends report at this commit**, read from their source
+   and seen in the tests:
+   - `rpgfront` reports its reader's, lexer's and parser's messages
+     (`RNF0xxx`, `RNF5xxx`). `RNF7030`, `RNF7031`, `RNF7066`, `RNF5318`
+     and the other checks of the compiler proper are `rpg/compiler`'s
+     (`rpgc`), which the `front` feature does not include. So a name that
+     is not defined gets no diagnostic as you type, and the exit test's
+     `RNF7030` step cannot pass with this front end.
+   - Subfields come with `scope: None` (their data structure is only in
+     `detail`, `subfield CHAR of CUST`), so the outline lists them beside
+     their data structure, not under it.
+   - `rpgfront`'s tree places things by listing line, and its map back to
+     sources (`LineMap`) is crate-private. `lsp-rpgle::blocks::Listing`
+     rebuilds it from `Analysis::sources` and `includes` (each include's
+     lines after its directive). The folding tests check it against the
+     declarations' own spans, through a `/COPY` and a skipped `/IF`
+     block.
+   Each of these is a `quartz-systems-400` matter; nothing here works
+   around them.
+5. **Includes are fetched without blocking `analyze`.** An analysis
+   answers each include from the cache and notes what the cache lacks; the
+   server sends `qs400/fetchInclude` for those, keeps the previous result,
+   and analyzes again when every answer is in, so nothing is published
+   from a half-read member. An answer not in after 10 s counts as not
+   found. A member not found is cached as not found. The cache is per
+   origin (scheme and connection), so two systems' `*LIBL/QRPGLESRC,CP`
+   are apart. `qs400/includesChanged` drops a member whatever library
+   found it, or a path, or everything; the extension sends it on
+   `onDidSaveTextDocument` of a `qs400mbr` or `qs400ifs` document (after
+   the provider's write succeeded, so Phases 2 and 3 are unchanged) and
+   for a connection whenever its session is `connected` again.
+6. **`*LIBL` and `*CURLIB` includes** are looked up with `object.list` of
+   the source file in that library, in order, and the first library whose
+   `member.read` (`lock: false`) succeeds answers, with that library in
+   `at`. `member.read` returns no library, and the compiler's messages
+   name the library it found, so answering `*LIBL` would never match a
+   compile. A path include relative to nothing (`request.file` empty) is
+   taken from `/`. A local file's includes come from the active
+   connection.
+7. **One severity table, in a file.** `host/crates/severity/severity.json`
+   is read by the `severity` crate (`include_str!`) and imported by
+   `src/actions/severity.ts` (`resolveJsonModule`), so the Problems
+   panel's compile diagnostics and the language servers cannot drift.
+8. **Diagnostics as LSP's.** The range follows Phase 4 decision 6 (column
+   0 the whole line, `end_column` the last column, 0 the end of the line,
+   line 0 line 1), converted from characters to UTF-16; the code is the
+   message ID, the source the language id, the second-level text the
+   related information, as the compile diagnostics carry it. An include's
+   diagnostics go to its document when it is open, writable or read-only;
+   otherwise one `<n> messages in LIB/FILE(MBR)` at their highest severity
+   on the directive in the document, through nested includes to the
+   outermost directive.
+9. **`qs400/diagnostics`** answers a document's diagnostics exactly as
+   `analyze` returned them, every source, in the host's compile diagnostic
+   shape, or `null` while a change or a fetch is pending. The parity test
+   compares that, not the Problems panel, whose include summaries are not
+   `analyze`'s.
+10. **Rulers.** VS Code 1.143 has no rulers per document:
+    `TextEditorOptions` has `tabSize`, `indentSize`, `insertSpaces`,
+    `cursorStyle` and `lineNumbers` only, and `editor.rulers` is set per
+    language. A `[qs400-rpgle]` default would put rulers on `**FREE`
+    members, which the exit test excludes, and one set of rulers cannot
+    sit at both a D and a C specification's boundaries. So fixed-form RPG
+    gets **guides**: a decoration bordering the first character of each
+    field of each line's own specification, in `editorRuler.foreground`,
+    on the visible lines, where the line reaches. The table is
+    `rpgspecs::forms()` through the RPG server's `qs400/specForms`. DDS,
+    always fixed, gets the `[qs400-dds]` default of `editor.rulers` at its
+    specification's columns. The column in the status bar uses the same
+    table.
+11. **Comment toggling.** VS Code inserts a line comment at a line's first
+    character that is not blank. DDS therefore has no `lineComment` (an
+    inserted `A*` would land in column 6 and move the line), and
+    fixed-form RPG's `*` in column 7 is the grammar's only; RPG's
+    `lineComment` is `//`.
+12. **Local files** (settling Phase 2 decision 13): `.rpgle`, `.sqlrpgle`,
+    `.rpgleinc`, `.rpg`, `.clle`, `.clp`, `.pf`, `.lf`, `.dspf`, `.prtf` and
+    `.icff` open in the QS/400 languages. `.sql`, `.cmd` and `.cl` stay
+    VS Code's SQL, Windows batch and OpenCL; members of those types still
+    get the language from their source type. The language registrations'
+    `onLanguage` activation events are in (Phase 0 decision 3).
+13. **Completion tables** are each `lsp-<lang>`'s own, marked so in the
+    source: no front end exports its keywords, operation codes or
+    built-ins. SQL's special registers and built-in globals are the front
+    end's (`sql::words::CURRENT`, `GLOBALS`). After `/COPY` or `/INCLUDE`,
+    the RPG server asks the client (`qs400/listMembers`, `member.list`)
+    and waits up to 3 s for the answer, handling what else arrives
+    afterwards.
+14. **Synchronizing.** Full text on each change; analysis on open and
+    300 ms after the last change; a request on a document whose change is
+    still waiting (definition, rename, symbols) analyzes it first.
+15. **The client.** `vscode-languageclient` 10.1.2 (`engines.vscode`
+    `^1.91.0`), one client per language started on the first document of
+    it on `qs400mbr`, `qs400ifs` or `file`, all writing to the **Code for
+    QS/400 Languages** output channel. Version 10 syncs a document that was
+    already open when its client started only if the document is in an
+    editor (the others wait in a list flushed only with
+    `delayOpenNotifications`). In use the document that starts a server is
+    the one being shown, so this does not show; the tests show each
+    document they open.
+16. **Grammars** are plain JSON in `syntaxes/`. Fixed-form fields are
+    atomic groups (`(?>.{0,n})`), so a whole record keeps exact columns: a
+    plain `.{0,n}` let a regex give columns back and pushed the `LR` of
+    columns 71 and 72 into the comment columns. They are generated once
+    from the column tables of `rpgspecs` and `dds::lex::columns` at
+    `5e2bbee9`; the generator is not kept, so edit the JSON.
+17. **Parity fixtures.** `host/fixtures/parity/` keeps the records and its
+    README only: HLINV's source is not ours to ship (QS/400 gitignores it
+    as `tools/conformance/hlinv/src/` for that reason) and this repository
+    is public under MIT, so the members' text the live test writes beside
+    each record is gitignored, and the offline test also reads it from
+    `QS400_PARITY_SRC`. The prompt's `--record` is `QS400_PARITY_RECORD=1`:
+    mocha under `vscode-test` passes no flags of its own to the suites.
+    The live test opens members read-only (no locks) and analyzes them
+    with a `LanguageServers` of its own on the extension's sessions, so it
+    can record what was fetched. No record exists yet (see the exit test).
+18. **The process test** now drives `lsp rpgle` through `initialize`, a
+    published `RNF5014`, `shutdown` and `exit`; `dap` is still not
+    implemented, and an unknown language exits 2.
 
 ## Phase 0 exit test
 

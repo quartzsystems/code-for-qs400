@@ -25,6 +25,10 @@ This guide grows with each phase and ships with the marketplace listing.
   commands on members, stream files and objects, `.vscode/actions.json`
   and its variables, the Problems panel, the output channel and the job
   log.
+- [Language support](languages.md): colouring, the fixed-form guides, the
+  language servers' diagnostics, outline, Go to Definition, hover,
+  completion, rename and folding, how includes are read, and how the
+  editor's diagnostics are held to the compiler's.
 
 ## Troubleshooting
 
@@ -32,6 +36,8 @@ This guide grows with each phase and ships with the marketplace listing.
   The next Code for QS/400 command starts it again; click the item, or run
   **Code for QS/400: Restart Host**, to restart it now.
 - The **Code for QS/400 Host** output channel shows the host's log; the
-  **Code for QS/400** channel shows each action's command and messages.
+  **Code for QS/400** channel shows each action's command and messages;
+  the **Code for QS/400 Languages** channel shows the language servers'
+  log.
 - To try a different host build, set `code-for-qs400.host.path` in your user
   settings to the full path of a `qs400-code-host` binary.

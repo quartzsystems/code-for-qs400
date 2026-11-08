@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.0.0-pre · Phase 5 · language support
+
+- Grammars and language configuration for RPG (`qs400-rpgle`: fixed form
+  by column, free form, `**FREE`, the directives and the SQL of
+  `EXEC SQL`), CL, DDS (PF, LF, DSPF, PRTF, ICFF by column), SQL and
+  command definitions, in members, stream files and local files. Local
+  `.rpgle`, `.sqlrpgle`, `.rpgleinc`, `.rpg`, `.clle`, `.clp`, `.pf`,
+  `.lf`, `.dspf`, `.prtf` and `.icff` files open in them.
+- Fixed-form RPG shows a guide at the start of each field of each
+  specification line, and the field under the cursor in the status bar
+  (`D · Ds 24–25 · col 24`); `**FREE` members show neither. DDS gets
+  rulers at its columns.
+- A language server for each language, run by the host
+  (`qs400-code-host lsp rpgle|cl|dds|sql|cmd`) on the QS/400 compiler
+  front-ends: diagnostics as you type with the message ID and the
+  second-level text, the outline, Go to Definition (into `/COPY` and
+  `/INCLUDE` members, which open read-only), hover, completion (with the
+  members of the source file after `/COPY`), rename within the document,
+  and folding.
+- Includes are read from the system through the extension, `*LIBL`
+  resolved with the library list, kept for the window and read again
+  when a member is saved or a connection signs on again. An include's
+  messages show in it when it is open, else as a count on its directive.
+- The severity table is one file shared by the Problems panel's compile
+  diagnostics and the language servers.
+- Parity: a live test compares the editor's diagnostics with each `HLINV`
+  member's compile, and an offline test compares recorded compiles.
+  See [docs/languages.md](docs/languages.md).
+
 ## 1.0.0-pre · Phase 4 · actions and diagnostics
 
 - **Run Action…** on an open member or stream file (editor title and
