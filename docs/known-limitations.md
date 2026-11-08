@@ -33,13 +33,12 @@ compiler front-ends offer at this release.
   `AUT`) run `CRTLIB` as an action. Source files are made by `CRTSRCPF`
   when a deploy needs them, or as an action.
 
-- **Source files are not recognized by their attribute on QS/400.** The
-  QAP server lists a source physical file with the attribute it keeps,
-  `PF`, not `PF-SRC`, so a list filtered on `PF-SRC` is empty. Deploy and
-  the Project view ask for files by name and are not affected. **Pull
-  Library**, **Pull into Project**, a library's source files in the
-  Objects view, and the source files of a library opened as a folder do
-  filter on it, and show none until the server reports `PF-SRC`.
+- **Source files are found through SQL.** QS/400, like IBM i's `WRKOBJ`,
+  lists a source file with the attribute `PF`; `PF-SRC` is PDM's. The
+  extension asks `QSYS2.SYSTABLES` (`FILE_TYPE = 'S'`) which files are
+  source, and shows them as `PF-SRC` (others `PF-DTA`). On a server without
+  QAP's SQL service (before version 4) it cannot, and **Pull Library** and
+  the Objects view find no source files there.
 
 ## The IFS
 

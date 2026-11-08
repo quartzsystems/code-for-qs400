@@ -9,6 +9,7 @@ import { ConnectionStore } from '../connections/store';
 import { MemberReadResult, SessionState, SourceLine } from '../host/protocol';
 import { documentLines, planWrite } from './diff';
 import { memberType, typeForExtension } from './types';
+import { listSourceFiles } from '../objects/sourceFiles';
 import { MEMBER_SCHEME, MemberPath, isReadonlyUri, parseMemberUri, qualifiedMember } from './uri';
 
 type MemberAt = Extract<MemberPath, { kind: 'member' }>;
@@ -446,13 +447,7 @@ export class MemberFsProvider implements vscode.FileSystemProvider, vscode.Dispo
         return members.map((m) => [`${m.member}.${memberType(m.type).ext}`, vscode.FileType.File]);
       }
       if (p?.kind === 'library') {
-        const files = await this.sessions.call(p.connection, 'object.list', {
-          name: p.connection,
-          library: p.library,
-          pattern: '*ALL',
-          types: ['*FILE'],
-          attribute: 'PF-SRC',
-        });
+        const files = await listSourceFiles(this.sessions, p.connection, p.library);
         return files.map((f) => [f.object, vscode.FileType.Directory]);
       }
       if (p?.kind === 'root') {

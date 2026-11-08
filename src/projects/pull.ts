@@ -13,6 +13,7 @@ import { IfsEntry, IfsProgress, MemberEntry } from '../host/protocol';
 import { joinPath } from '../ifs/paths';
 import { isBinaryPath } from '../ifs/types';
 import { qualifiedMember } from '../members/uri';
+import { listSourceFiles } from '../objects/sourceFiles';
 import { ProjectConfig, ProjectTarget } from './config';
 import {
   LocalMember,
@@ -285,13 +286,7 @@ export class Puller {
     }
     let files;
     try {
-      files = await this.sessions.call(connection, 'object.list', {
-        name: connection,
-        library,
-        pattern: '*ALL',
-        types: ['*FILE'],
-        attribute: 'PF-SRC',
-      });
+      files = await listSourceFiles(this.sessions, connection, library);
     } catch (err) {
       this.deps.ui.error(errorText(err, connection));
       return undefined;

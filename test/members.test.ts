@@ -267,12 +267,12 @@ suite('Members: the qs400mbr provider', () => {
     assert.deepEqual(await t.fs.readDirectory(vscode.Uri.parse('qs400mbr://MBR/HLINV')), [
       ['QRPGLESRC', vscode.FileType.Directory],
     ]);
+    // PF-SRC is PDM's: QS/400's ListObjects lists a source file as PF, so the filter is applied here.
     assert.deepEqual(t.host.sent[1].params, {
       name: 'MBR',
       library: 'HLINV',
       pattern: '*ALL',
       types: ['*FILE'],
-      attribute: 'PF-SRC',
     });
     assert.throws(
       () => t.fs.createDirectory(),

@@ -241,7 +241,8 @@ suite('Objects: the view against a host', () => {
     assert.deepEqual(host.sent, [
       {
         method: 'object.list',
-        params: { name: 'OBJ', library: 'HLINV', pattern: 'Q*', types: ['*FILE'], attribute: 'PF-SRC' },
+        // PF-SRC is applied here, not sent: ListObjects lists a source file as PF.
+        params: { name: 'OBJ', library: 'HLINV', pattern: 'Q*', types: ['*FILE'] },
       },
     ]);
   });

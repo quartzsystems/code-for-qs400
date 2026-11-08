@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { errorText } from '../connections/prompts';
 import { ifsUri } from '../ifs/uri';
 import { memberUri } from '../members/uri';
+import { listSourceFiles } from '../objects/sourceFiles';
 import { Deployer, UsableProject, fileNames } from '../projects/deploy';
 import { contentHash, isMember, memberKey, memberOf, remotePathOf } from '../projects/layout';
 import { FileRow, STATUS_ICON, STATUS_LABEL, fileRows, groupByDir, pendingCount, statusBarText } from '../projects/model';
@@ -342,7 +343,7 @@ export function registerProjectViewCommands(view: ProjectView, deps: ProjectDeps
         return puller.pullPath(connection, t.path, 'directory', p.folder.uri);
       }
       try {
-        const files = await deps.sessions.call(connection, 'object.list', { name: connection, library: t.library, pattern: '*ALL', types: ['*FILE'], attribute: 'PF-SRC' });
+        const files = await listSourceFiles(deps.sessions, connection, t.library);
         return await puller.pullSourceFiles(connection, t.library, files.map((f) => f.object), p.folder.uri);
       } catch (err) {
         deps.ui.error(errorText(err, connection));

@@ -10,6 +10,7 @@ import { ConnectionStore } from '../connections/store';
 import { HostRpcError } from '../host/client';
 import { LibraryList, MemberEntry, ObjectEntry, SessionErrorCodes } from '../host/protocol';
 import { FilterConfig, LIBRARY_TYPES, SOURCE_FILE_ATTRIBUTE, typesFor } from '../objects/filters';
+import { listObjects } from '../objects/sourceFiles';
 import { isSignedOn } from './connections';
 
 /** The QAP version the Objects view needs: `Develop`. */
@@ -270,8 +271,7 @@ export class ObjectsProvider implements vscode.TreeDataProvider<ObjectsNode>, vs
     types: string[],
     attribute?: string,
   ): Promise<ObjectsNode[]> {
-    const params = { name: connection, library, pattern, types, ...(attribute ? { attribute } : {}) };
-    const entries = await this.sessions.call(connection, 'object.list', params);
+    const entries = await listObjects(this.sessions, connection, { library, pattern, types, attribute });
     if (entries.length === 0) {
       return [{ kind: 'message', connection, text: 'No objects' }];
     }
