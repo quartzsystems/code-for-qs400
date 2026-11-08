@@ -7,6 +7,7 @@ import { errorText, serverMessage, showError } from '../connections/prompts';
 import { SessionManager } from '../connections/sessions';
 import { ConnectionStore } from '../connections/store';
 import { MemberReadResult, SessionState, SourceLine } from '../host/protocol';
+import { documentLines, planWrite } from './diff';
 import { memberType, typeForExtension } from './types';
 import { MEMBER_SCHEME, MemberPath, isReadonlyUri, parseMemberUri, qualifiedMember } from './uri';
 
@@ -55,6 +56,7 @@ function fsError(err: unknown): vscode.FileSystemError {
 }
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 /**
  * Members as files on the `qs400mbr` scheme. The first `stat` of a member
@@ -343,8 +345,93 @@ export class MemberFsProvider implements vscode.FileSystemProvider, vscode.Dispo
     return encoder.encode(joinLines(m.lines));
   }
 
-  async writeFile(uri: vscode.Uri): Promise<void> {
-    throw vscode.FileSystemError.NoPermissions(`saving ${uri.path} is not available yet`);
+  async writeFile(uri: vscode.Uri, content: Uint8Array, options: { create: boolean; overwrite: boolean }): Promise<void> {
+    await this.save(uri, decoder.decode(content), options.create, false);
+  }
+
+  /**
+   * Sends `text` with `renumber: true` (the Renumber command). The text is
+   * the document's, which a renumber does not change.
+   */
+  async renumber(uri: vscode.Uri, text: string): Promise<void> {
+    await this.save(uri, text, false, true);
+  }
+
+  /**
+   * The save: the diff against the lines last read assigns the sequence
+   * numbers; an unchanged document is not written. After the write the
+   * member is read again (and locked again), so the next diff sees the
+   * server's numbers and dates.
+   */
+  private async save(uri: vscode.Uri, text: string, create: boolean, renumber: boolean): Promise<void> {
+    const path = this.memberAt(uri);
+    let m = this.loaded.get(uri.toString());
+    if (!m) {
+      try {
+        m = await this.ensure(uri);
+      } catch (err) {
+        if (!(create && err instanceof vscode.FileSystemError && err.code === 'FileNotFound')) {
+          throw err;
+        }
+        m = await this.create(uri, path);
+      }
+    }
+    if (m.readonly) {
+      throw vscode.FileSystemError.NoPermissions(`${qualifiedMember(path)} is open read-only`);
+    }
+    const plan = planWrite(m.lines, documentLines(text), renumber);
+    if (!plan) {
+      return;
+    }
+    try {
+      await this.sessions.call(path.connection, 'member.write', {
+        name: path.connection,
+        library: path.library,
+        file: path.file,
+        member: path.member,
+        lines: plan.lines,
+        renumber: plan.renumber,
+      });
+    } catch (err) {
+      throw fsError(err);
+    }
+    // The write ended the lock (the spec); the refresh takes it again.
+    m.locked = false;
+    if (plan.renumber && !renumber) {
+      void vscode.window.showInformationMessage(
+        `Code for QS/400: ${qualifiedMember(path)} was renumbered from 0001.00 in steps of 0001.00: no sequence number was left for an inserted line.`,
+      );
+    } else if (renumber) {
+      void vscode.window.showInformationMessage(`Code for QS/400: ${qualifiedMember(path)} was renumbered from 0001.00.`);
+    }
+    try {
+      const r = await this.refresh(uri);
+      if (r.lost) {
+        void vscode.window.showWarningMessage(
+          `Code for QS/400: ${qualifiedMember(path)} was saved, but another job took it before it could be locked again; it is read-only now. ${errorText(r.lost)}`,
+        );
+      }
+    } catch (err) {
+      this.output.warn(`${qualifiedMember(path)}: saved; reading it back failed: ${errorText(err)}`);
+    }
+  }
+
+  /** Save As into a member that is not there yet: `member.create` with the type from the extension. */
+  private async create(uri: vscode.Uri, path: MemberAt): Promise<LoadedMember> {
+    try {
+      await this.sessions.call(path.connection, 'member.create', {
+        name: path.connection,
+        library: path.library,
+        file: path.file,
+        member: path.member,
+        type: typeForExtension(path.ext),
+        text: '',
+      });
+    } catch (err) {
+      throw fsError(err);
+    }
+    this.emitter.fire([{ type: vscode.FileChangeType.Created, uri }]);
+    return this.ensure(uri);
   }
 
   async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {

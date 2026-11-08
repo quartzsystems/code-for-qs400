@@ -4,7 +4,8 @@
 
 import * as vscode from 'vscode';
 import { showError } from '../connections/prompts';
-import { memberUri } from '../members/uri';
+import { MemberFsProvider } from '../members/provider';
+import { MEMBER_SCHEME, memberUri } from '../members/uri';
 import { MemberNode, ObjectsNode } from '../views/objects';
 
 /** The URI a member node opens. */
@@ -13,7 +14,7 @@ export function nodeUri(n: MemberNode, readonly = false): vscode.Uri {
 }
 
 /** Registers the member commands; once per window. */
-export function registerMemberCommands(): vscode.Disposable[] {
+export function registerMemberCommands(fs: MemberFsProvider): vscode.Disposable[] {
   const reg = (id: string, fn: (n: ObjectsNode | undefined) => Promise<unknown>) =>
     vscode.commands.registerCommand(id, async (n?: ObjectsNode) => {
       try {
@@ -29,5 +30,16 @@ export function registerMemberCommands(): vscode.Disposable[] {
   return [
     reg('code-for-qs400.member.open', (n) => open(n, false)),
     reg('code-for-qs400.member.openReadOnly', (n) => open(n, true)),
+    reg('code-for-qs400.member.renumber', async () => {
+      const doc = vscode.window.activeTextEditor?.document;
+      if (doc?.uri.scheme !== MEMBER_SCHEME) {
+        void vscode.window.showInformationMessage('Open a member to renumber it.');
+        return undefined;
+      }
+      if (doc.isDirty && !(await doc.save())) {
+        return undefined;
+      }
+      return fs.renumber(doc.uri, doc.getText());
+    }),
   ];
 }

@@ -68,7 +68,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerConnectionCommands(store, sessions),
     ...libraryList.registerCommands(),
     ...registerObjectCommands(objects, store, sessions),
-    ...registerMemberCommands(),
+    ...registerMemberCommands(members),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();

@@ -203,7 +203,7 @@ suite('Members: the qs400mbr provider', () => {
     assert.equal(stat.permissions, vscode.FilePermission.Readonly);
     assert.deepEqual(t.host.methods(), ['member.read lock=true', 'member.read lock=false']);
     assert.equal(t.fs.member(ASSETS)?.locked, false);
-    await assert.rejects(t.fs.writeFile(ASSETS), vscode.FileSystemError);
+    await assert.rejects(t.fs.writeFile(ASSETS, new TextEncoder().encode('x'), { create: false, overwrite: true }), vscode.FileSystemError);
   });
 
   test('opened read-only: lock false, no unlock on release', async () => {

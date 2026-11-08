@@ -176,6 +176,12 @@
         "title": "Open Read-Only",
         "category": "Code for QS/400",
         "icon": "$(lock)"
+      },
+      {
+        "command": "code-for-qs400.member.renumber",
+        "title": "Renumber Member",
+        "category": "Code for QS/400",
+        "icon": "$(list-ordered)"
       }
     ],
     "configuration": {
@@ -504,6 +510,17 @@
         {
           "command": "code-for-qs400.member.openReadOnly",
           "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.renumber",
+          "when": "resourceScheme == qs400mbr"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "code-for-qs400.member.renumber",
+          "when": "resourceScheme == qs400mbr && !activeEditorIsReadonly",
+          "group": "1_modification@9"
         }
       ]
     },
