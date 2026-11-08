@@ -1,0 +1,25 @@
+# Copyright (C), 2026 Quartz Systems. Some rights reserved. This work is
+# licensed under the terms of the MIT license which can be found in the
+# root directory of this project.
+
+[package]
+name = "lsp-common"
+description = "What the QS/400 language servers share: the loop, documents, positions, diagnostics and the include fetch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+compdiag.workspace = true
+severity.workspace = true
+lsp-server.workspace = true
+lsp-types.workspace = true
+crossbeam-channel.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

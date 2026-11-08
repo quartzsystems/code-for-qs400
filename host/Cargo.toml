@@ -4,7 +4,13 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/host-rpc", "crates/code-host"]
+members = [
+    "crates/host-rpc",
+    "crates/code-host",
+    "crates/severity",
+    "crates/lsp-common",
+    "crates/lsp-rpgle",
+]
 
 [workspace.package]
 version = "1.0.0"
@@ -25,6 +31,23 @@ host-rpc = { path = "crates/host-rpc" }
 # sink carries qap-client's log lines.
 qap-client = { git = "https://github.com/quartzsystems/quartz-systems-access", rev = "90d9bba2a0f84d88e749e15cf8ed974540c905eb" }
 qsa-net = { git = "https://github.com/quartzsystems/quartz-systems-access", rev = "90d9bba2a0f84d88e749e15cf8ed974540c905eb" }
+# The QS/400 compiler front-ends, pinned by commit (V1R1M0), apart from the
+# commit qap-client carries for qap-proto. Each builds with `front` only:
+# the reader, the parser and `analysis::analyze`. compdiag has no features
+# (its `front` module is always built), so it takes none.
+rpgfront = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false, features = ["front"] }
+cl = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false, features = ["front"] }
+dds = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false, features = ["front"] }
+sql = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false, features = ["front"] }
+cmd = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false, features = ["front"] }
+compdiag = { git = "https://github.com/quartzsystems/quartz-systems-400", rev = "5e2bbee93f4055680b96c5e0ebbdbb691f4fc10c", default-features = false }
+# The language servers: synchronous, as rust-analyzer's.
+lsp-server = "0.10"
+lsp-types = "0.97"
+crossbeam-channel = "0.5"
+severity = { path = "crates/severity" }
+lsp-common = { path = "crates/lsp-common" }
+lsp-rpgle = { path = "crates/lsp-rpgle" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

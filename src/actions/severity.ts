@@ -7,14 +7,18 @@
  * Problems panel's. No `vscode` import.
  */
 
+import table from '../../host/crates/severity/severity.json';
+
 export type ProblemSeverity = 'information' | 'warning' | 'error';
 
-/** Each row covers severities below `below`, from the previous row's `below`. */
-export const SEVERITY_TABLE: readonly { below: number; severity: ProblemSeverity }[] = [
-  { below: 10, severity: 'information' },
-  { below: 20, severity: 'warning' },
-  { below: Infinity, severity: 'error' },
-];
+/**
+ * Each row covers severities below `below`, from the previous row's
+ * `below`. The rows are `host/crates/severity/severity.json`, which the
+ * language servers read too, so the two cannot disagree.
+ */
+export const SEVERITY_TABLE: readonly { below: number; severity: ProblemSeverity }[] = (
+  table as { below: number | null; severity: ProblemSeverity }[]
+).map((r) => ({ below: r.below ?? Infinity, severity: r.severity }));
 
 /** `< 10` information, `10–19` warning, `≥ 20` error. */
 export function problemSeverity(severity: number): ProblemSeverity {

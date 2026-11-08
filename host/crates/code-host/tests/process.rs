@@ -22,15 +22,70 @@ fn version_flag() {
 }
 
 #[test]
-fn lsp_and_dap_not_implemented() {
-    for args in [&["lsp", "rpgle"][..], &["dap"][..]] {
-        let out = Command::new(BIN).args(args).output().unwrap();
-        assert_eq!(out.status.code(), Some(2), "{args:?}");
-        assert!(
-            String::from_utf8_lossy(&out.stderr).contains("not implemented in this release"),
-            "{args:?}"
-        );
+fn dap_not_implemented() {
+    let out = Command::new(BIN).arg("dap").output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not implemented in this release"));
+}
+
+#[test]
+fn lsp_of_an_unknown_language() {
+    let out = Command::new(BIN).args(["lsp", "cobol"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no language server for \"cobol\""));
+}
+
+/// Reads LSP frames until one `pick` takes.
+fn until(reader: &mut impl std::io::BufRead, pick: impl Fn(&Value) -> bool) -> Value {
+    loop {
+        let body = read_frame(reader).unwrap().expect("server closed stdout");
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        if pick(&v) {
+            return v;
+        }
     }
+}
+
+#[test]
+fn lsp_rpgle_publishes_and_exits() {
+    let mut child = Command::new(BIN)
+        .args(["lsp", "rpgle"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut send = |v: Value| {
+        write_frame(&mut stdin, &serde_json::to_vec(&v).unwrap()).unwrap();
+        stdin.flush().unwrap();
+    };
+    send(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}));
+    let init = until(&mut stdout, |v| v["id"] == json!(1));
+    assert_eq!(init["result"]["capabilities"]["textDocumentSync"], json!(1));
+    send(json!({"jsonrpc":"2.0","method":"initialized","params":{}}));
+    let uri = "qs400mbr://qshq400/QTEMP/QRPGLESRC/T.rpgle";
+    send(
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+        "uri": uri, "languageId": "qs400-rpgle", "version": 1,
+        "text": "     C                   FOOBAR\n"}}}),
+    );
+    let p = until(&mut stdout, |v| {
+        v["method"] == json!("textDocument/publishDiagnostics")
+    });
+    assert_eq!(p["params"]["uri"], json!(uri));
+    let ids: Vec<&str> = p["params"]["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|d| d["code"].as_str())
+        .collect();
+    assert_eq!(ids, ["RNF5014"], "{p}");
+    send(json!({"jsonrpc":"2.0","id":2,"method":"shutdown"}));
+    let _ = until(&mut stdout, |v| v["id"] == json!(2));
+    send(json!({"jsonrpc":"2.0","method":"exit"}));
+    assert_eq!(child.wait().unwrap().code(), Some(0));
 }
 
 /// Reads frames until a response with `id`, skipping notifications.

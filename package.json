@@ -25,7 +25,12 @@
     "onView:code-for-qs400.objects",
     "onView:code-for-qs400.ifs",
     "onFileSystem:qs400ifs",
-    "workspaceContains:.vscode/actions.json"
+    "workspaceContains:.vscode/actions.json",
+    "onLanguage:qs400-rpgle",
+    "onLanguage:qs400-cl",
+    "onLanguage:qs400-dds",
+    "onLanguage:qs400-sql",
+    "onLanguage:qs400-cmd"
   ],
   "contributes": {
     "viewsContainers": {
@@ -1137,6 +1142,7 @@
     "typescript-eslint": "^8.72.1"
   },
   "dependencies": {
-    "jsonc-parser": "3.3.1"
+    "jsonc-parser": "3.3.1",
+    "vscode-languageclient": "10.1.2"
   }
 }

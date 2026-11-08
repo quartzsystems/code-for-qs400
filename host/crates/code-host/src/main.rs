@@ -21,9 +21,9 @@ struct Cli {
 enum Command {
     /// JSON-RPC 2.0 server on stdin/stdout (the default)
     Serve,
-    /// Language server for one language
+    /// Language server for one language, over stdio
     Lsp {
-        /// Language id
+        /// rpgle, cl, dds, sql or cmd
         lang: String,
     },
     /// Debug adapter
@@ -33,9 +33,28 @@ enum Command {
 fn main() -> ExitCode {
     match Cli::parse().command.unwrap_or(Command::Serve) {
         Command::Serve => run_server(),
-        Command::Lsp { .. } | Command::Dap => {
+        Command::Lsp { lang } => run_lsp(&lang),
+        Command::Dap => {
             eprintln!("not implemented in this release");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// One language server, until the client says `exit`.
+fn run_lsp(lang: &str) -> ExitCode {
+    let served = match lang.to_ascii_lowercase().as_str() {
+        "rpgle" => lsp_rpgle::serve(),
+        other => {
+            eprintln!("[error] no language server for {other:?}: rpgle, cl, dds, sql or cmd");
+            return ExitCode::from(2);
+        }
+    };
+    match served {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("[error] language server {lang}: {e}");
+            ExitCode::FAILURE
         }
     }
 }

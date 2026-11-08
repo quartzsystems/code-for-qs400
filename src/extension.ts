@@ -26,6 +26,7 @@ import { ConnectionsProvider } from './views/connections';
 import { IfsNode, IfsProvider } from './views/ifs';
 import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
+import { LanguageServers } from './languages/client';
 
 /** What `activate` returns; used by the integration tests. */
 export interface ExtensionApi {
@@ -45,6 +46,7 @@ export interface ExtensionApi {
   readonly runner: ActionRunner;
   readonly diagnostics: CompileDiagnostics;
   readonly jobLog: JobLogProvider;
+  readonly languages: LanguageServers;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -80,6 +82,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
   const diagnostics = new CompileDiagnostics();
   const jobLog = new JobLogProvider(store, sessions);
+  const languagesOutput = vscode.window.createOutputChannel('Code for QS/400 Languages', { log: true });
+  const languages = new LanguageServers(
+    () => host.resolveBinary(),
+    {
+      call: (name, method, params) => sessions.call(name, method, params),
+      canonical: (name) => store.get(name)?.name ?? name,
+      active: () => sessions.active,
+      log: (line) => languagesOutput.warn(line),
+    },
+    languagesOutput,
+  );
+  languages.start();
 
   context.subscriptions.push(
     output,
@@ -113,6 +127,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...diagnostics.register(),
     ...jobLog.register(),
     runner.onDidRun((r) => diagnostics.apply(r)),
+    languagesOutput,
+    languages,
+    // A session signed on again: includes it could not read may be there now.
+    sessions.onDidChange((st) => {
+      if (st?.state === 'connected') {
+        void languages.includesChanged({ connection: st.name });
+      }
+    }),
     ...registerTransferCommands({ provider: ifs, view: ifsView, store, sessions }, transfers, (f) => (ifsDrop.uploadDropped = f)),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
@@ -125,7 +147,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages };
 }
 
 export function deactivate(): void {

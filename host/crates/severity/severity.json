@@ -1,0 +1,5 @@
+[
+  { "below": 10, "severity": "information" },
+  { "below": 20, "severity": "warning" },
+  { "below": null, "severity": "error" }
+]

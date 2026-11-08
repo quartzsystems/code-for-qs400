@@ -23,6 +23,7 @@ serde_json.workspace = true
 clap.workspace = true
 qap-client.workspace = true
 qsa-net.workspace = true
+lsp-rpgle.workspace = true
 
 [lints]
 workspace = true
