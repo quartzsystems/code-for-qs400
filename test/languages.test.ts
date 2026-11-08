@@ -200,6 +200,29 @@ suite('Languages: the RPG server', () => {
     await diagnosticsOf(doc.uri, (ds) => !ds.some((x) => codeOf(x) === 'RNF5014'));
   });
 
+  test('each language has its server in the host', async () => {
+    await api();
+    const cases: [string, string, string, string, number][] = [
+      ['t.clle', 'qs400-cl', '             PGM\n             CHGVAR     VAR(&X) VALUE(1)\n             ENDPGM\n', 'CPD0727', 1],
+      ['T.pf', 'qs400-dds', '     A          R A\n     A            X              1A\n     A          R B\n     A            Y              1A\n', 'DDS1002', 2],
+      ['t.sql', 'qs400-sql', 'SELECT * FROM T WHERE A = = 1;\n', 'SQL0104', 0],
+      ['T.cmd', 'qs400-cmd', "             CMD        PROMPT('X')\n             PARM       KWD(A) TYPE(*CHAR) FOOBAR(1)\n", 'CPD0242', 1],
+    ];
+    for (const [name, language, text, id, line] of cases) {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, text);
+      let doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+      if (doc.languageId !== language) {
+        doc = await vscode.languages.setTextDocumentLanguage(doc, language);
+      }
+      // The client syncs a document that was open before it started only
+      // once the document is in an editor, as an opened member is.
+      await vscode.window.showTextDocument(doc);
+      const d = await diagnosticsOf(doc.uri, (ds) => ds.some((x) => codeOf(x) === id));
+      assert.equal(d.find((x) => codeOf(x) === id)!.range.start.line, line, `${language} ${id}`);
+    }
+  });
+
   test('qs400/fetchInclude round-trips through the client', async () => {
     const { host } = await api();
     const { deps, calls } = fakeDeps(

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Command definition (QS/400)",
+  "scopeName": "source.qs400-cmd",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#statement"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "begin": "/\\*",
+      "end": "\\*/",
+      "name": "comment.block.qs400-cmd"
+    },
+    "statement": {
+      "begin": "^\\s*(?:([A-Za-z@#$][A-Za-z0-9_@#$]*)(:))?\\s*((?i:CMD|PARM|ELEM|QUAL|DEP|PMTCTL))(?=[\\s(]|$)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.label.qs400-cmd"
+        },
+        "2": {
+          "name": "punctuation.separator.label.qs400-cmd"
+        },
+        "3": {
+          "name": "keyword.control.statement.qs400-cmd"
+        }
+      },
+      "end": "(?<![+\\-\\s])$|(?<=[^+\\-\\s])\\s+$",
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "match": "[+\\-](?=\\s*$)",
+          "name": "punctuation.separator.continuation.qs400-cmd"
+        },
+        {
+          "begin": "'",
+          "end": "'(?!')",
+          "name": "string.quoted.single.qs400-cmd",
+          "patterns": [
+            {
+              "match": "''",
+              "name": "constant.character.escape.qs400-cmd"
+            }
+          ]
+        },
+        {
+          "match": "(?i)(KWD)(\\()\\s*([A-Za-z@#$][A-Za-z0-9_@#$]*)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.qs400-cmd"
+            },
+            "3": {
+              "name": "entity.name.function.keyword.qs400-cmd"
+            }
+          }
+        },
+        {
+          "match": "\\*[A-Za-z][A-Za-z0-9_]*",
+          "name": "constant.language.qs400-cmd"
+        },
+        {
+          "match": "&[A-Za-z@#$][A-Za-z0-9_@#$]*",
+          "name": "variable.other.qs400-cmd"
+        },
+        {
+          "match": "(?<![\\w@#$])\\d+(?:\\.\\d+)?(?![\\w@#$])",
+          "name": "constant.numeric.qs400-cmd"
+        },
+        {
+          "match": "([A-Za-z@#$][A-Za-z0-9_@#$]*)(?=\\()",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.qs400-cmd"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

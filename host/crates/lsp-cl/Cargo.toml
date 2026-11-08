@@ -1,0 +1,26 @@
+# Copyright (C), 2026 Quartz Systems. Some rights reserved. This work is
+# licensed under the terms of the MIT license which can be found in the
+# root directory of this project.
+
+[package]
+name = "lsp-cl"
+description = "The CL language server, over the cl front end's analyze"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+lsp-common.workspace = true
+cl.workspace = true
+compdiag.workspace = true
+lsp-types.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+lsp-types.workspace = true
+
+[lints]
+workspace = true

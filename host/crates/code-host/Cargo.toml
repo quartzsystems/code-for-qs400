@@ -24,6 +24,10 @@ clap.workspace = true
 qap-client.workspace = true
 qsa-net.workspace = true
 lsp-rpgle.workspace = true
+lsp-cl.workspace = true
+lsp-dds.workspace = true
+lsp-sql.workspace = true
+lsp-cmd.workspace = true
 
 [lints]
 workspace = true

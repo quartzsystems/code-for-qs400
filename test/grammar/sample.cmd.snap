@@ -1,0 +1,95 @@
+>/* Do it */
+#^^ source.qs400-cmd comment.block.qs400-cmd
+#  ^^^^^^^ source.qs400-cmd comment.block.qs400-cmd
+#         ^^ source.qs400-cmd comment.block.qs400-cmd
+>             CMD        PROMPT('Do it')
+#^^^^^^^^^^^^^ source.qs400-cmd
+#             ^^^ source.qs400-cmd keyword.control.statement.qs400-cmd
+#                ^^^^^^^^ source.qs400-cmd
+#                        ^^^^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                              ^ source.qs400-cmd
+#                               ^ source.qs400-cmd string.quoted.single.qs400-cmd
+#                                ^^^^^ source.qs400-cmd string.quoted.single.qs400-cmd
+#                                     ^ source.qs400-cmd string.quoted.single.qs400-cmd
+#                                      ^ source.qs400-cmd
+>             PARM       KWD(FILE) TYPE(QUAL) MIN(1) +
+#^^^^^^^^^^^^^ source.qs400-cmd
+#             ^^^^ source.qs400-cmd keyword.control.statement.qs400-cmd
+#                 ^^^^^^^ source.qs400-cmd
+#                        ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                           ^ source.qs400-cmd
+#                            ^^^^ source.qs400-cmd entity.name.function.keyword.qs400-cmd
+#                                ^^ source.qs400-cmd
+#                                  ^^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                      ^^^^^^^ source.qs400-cmd
+#                                             ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                                ^ source.qs400-cmd
+#                                                 ^ source.qs400-cmd constant.numeric.qs400-cmd
+#                                                  ^^ source.qs400-cmd
+#                                                    ^ source.qs400-cmd punctuation.separator.continuation.qs400-cmd
+>                          PROMPT('File')
+#^^^^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-cmd
+#                          ^^^^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                ^ source.qs400-cmd
+#                                 ^ source.qs400-cmd string.quoted.single.qs400-cmd
+#                                  ^^^^ source.qs400-cmd string.quoted.single.qs400-cmd
+#                                      ^ source.qs400-cmd string.quoted.single.qs400-cmd
+#                                       ^ source.qs400-cmd
+> QUAL:       QUAL       TYPE(*NAME) LEN(10)
+#^ source.qs400-cmd
+# ^^^^ source.qs400-cmd entity.name.label.qs400-cmd
+#     ^ source.qs400-cmd punctuation.separator.label.qs400-cmd
+#      ^^^^^^^ source.qs400-cmd
+#             ^^^^ source.qs400-cmd keyword.control.statement.qs400-cmd
+#                 ^^^^^^^ source.qs400-cmd
+#                        ^^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                            ^ source.qs400-cmd
+#                             ^^^^^ source.qs400-cmd constant.language.qs400-cmd
+#                                  ^^ source.qs400-cmd
+#                                    ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                       ^ source.qs400-cmd
+#                                        ^^ source.qs400-cmd constant.numeric.qs400-cmd
+#                                          ^ source.qs400-cmd
+>             QUAL       TYPE(*NAME) LEN(10) DFT(*LIBL) SPCVAL((*LIBL))
+#^^^^^^^^^^^^^ source.qs400-cmd
+#             ^^^^ source.qs400-cmd keyword.control.statement.qs400-cmd
+#                 ^^^^^^^ source.qs400-cmd
+#                        ^^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                            ^ source.qs400-cmd
+#                             ^^^^^ source.qs400-cmd constant.language.qs400-cmd
+#                                  ^^ source.qs400-cmd
+#                                    ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                       ^ source.qs400-cmd
+#                                        ^^ source.qs400-cmd constant.numeric.qs400-cmd
+#                                          ^^ source.qs400-cmd
+#                                            ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                               ^ source.qs400-cmd
+#                                                ^^^^^ source.qs400-cmd constant.language.qs400-cmd
+#                                                     ^^ source.qs400-cmd
+#                                                       ^^^^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                                             ^^ source.qs400-cmd
+#                                                               ^^^^^ source.qs400-cmd constant.language.qs400-cmd
+#                                                                    ^^ source.qs400-cmd
+>             PARM       KWD(COUNT) TYPE(*DEC) LEN(5 0) DFT(1)
+#^^^^^^^^^^^^^ source.qs400-cmd
+#             ^^^^ source.qs400-cmd keyword.control.statement.qs400-cmd
+#                 ^^^^^^^ source.qs400-cmd
+#                        ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                           ^ source.qs400-cmd
+#                            ^^^^^ source.qs400-cmd entity.name.function.keyword.qs400-cmd
+#                                 ^^ source.qs400-cmd
+#                                   ^^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                       ^ source.qs400-cmd
+#                                        ^^^^ source.qs400-cmd constant.language.qs400-cmd
+#                                            ^^ source.qs400-cmd
+#                                              ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                                 ^ source.qs400-cmd
+#                                                  ^ source.qs400-cmd constant.numeric.qs400-cmd
+#                                                   ^ source.qs400-cmd
+#                                                    ^ source.qs400-cmd constant.numeric.qs400-cmd
+#                                                     ^^ source.qs400-cmd
+#                                                       ^^^ source.qs400-cmd variable.parameter.qs400-cmd
+#                                                          ^ source.qs400-cmd
+#                                                           ^ source.qs400-cmd constant.numeric.qs400-cmd
+#                                                            ^ source.qs400-cmd
+>

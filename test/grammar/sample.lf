@@ -1,0 +1,4 @@
+     A          R ITEMR                     PFILE(ITEMMST)
+     A          K ITCAT
+     A          K ITEMNO
+     A          S ITSTS                     COMP(EQ 'A')

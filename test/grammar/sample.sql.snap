@@ -1,0 +1,92 @@
+>-- Sample items
+#^^^^^^^^^^^^^^^ source.qs400-sql comment.line.double-dash.qs400-sql
+>CREATE TABLE HLINV.ITEMS (
+#^^^^^^ source.qs400-sql keyword.other.qs400-sql
+#      ^ source.qs400-sql
+#       ^^^^^ source.qs400-sql keyword.other.qs400-sql
+#            ^^^^^^^ source.qs400-sql
+#                   ^^^^^ source.qs400-sql support.function.qs400-sql
+#                        ^^^ source.qs400-sql
+>  ID INTEGER NOT NULL PRIMARY KEY,
+#^^^^^ source.qs400-sql
+#     ^^^^^^^ source.qs400-sql storage.type.qs400-sql
+#            ^ source.qs400-sql
+#             ^^^ source.qs400-sql keyword.other.qs400-sql
+#                ^ source.qs400-sql
+#                 ^^^^ source.qs400-sql keyword.other.qs400-sql
+#                     ^ source.qs400-sql
+#                      ^^^^^^^ source.qs400-sql keyword.other.qs400-sql
+#                             ^ source.qs400-sql
+#                              ^^^ source.qs400-sql keyword.other.qs400-sql
+#                                 ^^ source.qs400-sql
+>  NAME VARCHAR(30) DEFAULT '',
+#^^^^^^^ source.qs400-sql
+#       ^^^^^^^ source.qs400-sql storage.type.qs400-sql
+#              ^ source.qs400-sql
+#               ^^ source.qs400-sql constant.numeric.qs400-sql
+#                 ^^ source.qs400-sql
+#                   ^^^^^^^ source.qs400-sql keyword.other.qs400-sql
+#                          ^ source.qs400-sql
+#                           ^ source.qs400-sql string.quoted.single.qs400-sql
+#                            ^ source.qs400-sql string.quoted.single.qs400-sql
+#                             ^^ source.qs400-sql
+>  PRICE DECIMAL(11, 2)
+#^^^^^^^^ source.qs400-sql
+#        ^^^^^^^ source.qs400-sql storage.type.qs400-sql
+#               ^ source.qs400-sql
+#                ^^ source.qs400-sql constant.numeric.qs400-sql
+#                  ^^ source.qs400-sql
+#                    ^ source.qs400-sql constant.numeric.qs400-sql
+#                     ^^ source.qs400-sql
+>);
+#^ source.qs400-sql
+# ^ source.qs400-sql punctuation.terminator.statement.qs400-sql
+>/* Seed */
+#^^ source.qs400-sql comment.block.qs400-sql
+#  ^^^^^^ source.qs400-sql comment.block.qs400-sql
+#        ^^ source.qs400-sql comment.block.qs400-sql
+>INSERT INTO HLINV.ITEMS VALUES (1, 'Widget', 1.50), (2, 'It''s', 2e3);
+#^^^^^^ source.qs400-sql keyword.other.qs400-sql
+#      ^ source.qs400-sql
+#       ^^^^ source.qs400-sql keyword.other.qs400-sql
+#           ^^^^^^^^^^^^^ source.qs400-sql
+#                        ^^^^^^ source.qs400-sql keyword.other.qs400-sql
+#                              ^^ source.qs400-sql
+#                                ^ source.qs400-sql constant.numeric.qs400-sql
+#                                 ^^ source.qs400-sql
+#                                   ^ source.qs400-sql string.quoted.single.qs400-sql
+#                                    ^^^^^^ source.qs400-sql string.quoted.single.qs400-sql
+#                                          ^ source.qs400-sql string.quoted.single.qs400-sql
+#                                           ^^ source.qs400-sql
+#                                             ^^^^ source.qs400-sql constant.numeric.qs400-sql
+#                                                 ^^^^ source.qs400-sql
+#                                                     ^ source.qs400-sql constant.numeric.qs400-sql
+#                                                      ^^ source.qs400-sql
+#                                                        ^ source.qs400-sql string.quoted.single.qs400-sql
+#                                                         ^^ source.qs400-sql string.quoted.single.qs400-sql
+#                                                           ^^ source.qs400-sql string.quoted.single.qs400-sql constant.character.escape.qs400-sql
+#                                                             ^ source.qs400-sql string.quoted.single.qs400-sql
+#                                                              ^ source.qs400-sql string.quoted.single.qs400-sql
+#                                                               ^^ source.qs400-sql
+#                                                                 ^^^ source.qs400-sql constant.numeric.qs400-sql
+#                                                                    ^ source.qs400-sql
+#                                                                     ^ source.qs400-sql punctuation.terminator.statement.qs400-sql
+>SELECT ID, UPPER(NAME) FROM HLINV.ITEMS WHERE PRICE >= :MINPRICE ORDER BY ID;
+#^^^^^^ source.qs400-sql keyword.other.qs400-sql
+#      ^^^^^ source.qs400-sql
+#           ^^^^^ source.qs400-sql support.function.qs400-sql
+#                ^^^^^^^ source.qs400-sql
+#                       ^^^^ source.qs400-sql keyword.other.qs400-sql
+#                           ^^^^^^^^^^^^^ source.qs400-sql
+#                                        ^^^^^ source.qs400-sql keyword.other.qs400-sql
+#                                             ^^^^^^^ source.qs400-sql
+#                                                    ^^ source.qs400-sql keyword.operator.qs400-sql
+#                                                      ^ source.qs400-sql
+#                                                       ^^^^^^^^^ source.qs400-sql variable.other.host.qs400-sql
+#                                                                ^ source.qs400-sql
+#                                                                 ^^^^^ source.qs400-sql keyword.other.qs400-sql
+#                                                                      ^ source.qs400-sql
+#                                                                       ^^ source.qs400-sql keyword.other.qs400-sql
+#                                                                         ^^^ source.qs400-sql
+#                                                                            ^ source.qs400-sql punctuation.terminator.statement.qs400-sql
+>

@@ -45,6 +45,10 @@ fn main() -> ExitCode {
 fn run_lsp(lang: &str) -> ExitCode {
     let served = match lang.to_ascii_lowercase().as_str() {
         "rpgle" => lsp_rpgle::serve(),
+        "cl" => lsp_cl::serve(),
+        "dds" => lsp_dds::serve(),
+        "sql" => lsp_sql::serve(),
+        "cmd" => lsp_cmd::serve(),
         other => {
             eprintln!("[error] no language server for {other:?}: rpgle, cl, dds, sql or cmd");
             return ExitCode::from(2);

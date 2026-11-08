@@ -1,0 +1,5 @@
+     A          R HEADER                    SKIPB(1)
+     A                                     2'Stock status'
+     A                                    60DATE EDTCDE(Y)
+     A          R DETAIL                    SPACEA(1)
+     A            ITEMNO        15A        2

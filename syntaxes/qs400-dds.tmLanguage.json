@@ -1,0 +1,147 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "DDS (QS/400)",
+  "scopeName": "source.qs400-dds",
+  "patterns": [
+    {
+      "match": "^((?>.{0,5}))(.)(\\*.*)$",
+      "captures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-dds"
+        },
+        "2": {
+          "name": "comment.line.asterisk.qs400-dds"
+        },
+        "3": {
+          "name": "comment.line.asterisk.qs400-dds"
+        }
+      }
+    },
+    {
+      "match": "^((?>.{0,5}))([Aa ])(?!\\*)((?>.{0,1}))((?>.{0,9}))((?>.{0,1}))((?>.{0,1}))((?>.{0,10}))((?>.{0,1}))((?>.{0,5}))((?>.{0,1}))((?>.{0,2}))((?>.{0,1}))((?>.{0,3}))((?>.{0,3}))((?>.{0,36}))(.*)$",
+      "captures": {
+        "1": {
+          "name": "comment.block.sequence.qs400-dds"
+        },
+        "2": {
+          "name": "keyword.other.specification.qs400-dds"
+        },
+        "4": {
+          "name": "constant.language.indicator.qs400-dds"
+        },
+        "5": {
+          "name": "keyword.other.name-type.qs400-dds"
+        },
+        "7": {
+          "name": "entity.name.qs400-dds"
+        },
+        "8": {
+          "name": "storage.modifier.reference.qs400-dds"
+        },
+        "9": {
+          "name": "constant.numeric.qs400-dds"
+        },
+        "10": {
+          "name": "storage.type.qs400-dds"
+        },
+        "11": {
+          "name": "constant.numeric.qs400-dds"
+        },
+        "12": {
+          "name": "storage.modifier.usage.qs400-dds"
+        },
+        "13": {
+          "name": "constant.numeric.qs400-dds"
+        },
+        "14": {
+          "name": "constant.numeric.qs400-dds"
+        },
+        "15": {
+          "patterns": [
+            {
+              "include": "#keywords"
+            }
+          ]
+        },
+        "16": {
+          "name": "comment.line.columns-81-100.qs400-dds"
+        }
+      }
+    }
+  ],
+  "repository": {
+    "keywords": {
+      "patterns": [
+        {
+          "include": "#string"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.begin.qs400-dds"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.end.qs400-dds"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#args"
+            }
+          ]
+        },
+        {
+          "match": "[A-Za-z][A-Za-z0-9]*",
+          "name": "keyword.other.keyword.qs400-dds"
+        },
+        {
+          "match": "[+\\-](?=\\s*$)",
+          "name": "punctuation.separator.continuation.qs400-dds"
+        }
+      ]
+    },
+    "args": {
+      "patterns": [
+        {
+          "include": "#string"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "patterns": [
+            {
+              "include": "#args"
+            }
+          ]
+        },
+        {
+          "match": "\\*[A-Za-z][A-Za-z0-9]*",
+          "name": "constant.language.qs400-dds"
+        },
+        {
+          "match": "(?<![\\w@#$])\\d+(?:\\.\\d+)?(?![\\w@#$])",
+          "name": "constant.numeric.qs400-dds"
+        },
+        {
+          "match": "[+\\-](?=\\s*$)",
+          "name": "punctuation.separator.continuation.qs400-dds"
+        }
+      ]
+    },
+    "string": {
+      "begin": "'",
+      "end": "'(?!')",
+      "name": "string.quoted.single.qs400-dds",
+      "patterns": [
+        {
+          "match": "''",
+          "name": "constant.character.escape.qs400-dds"
+        }
+      ]
+    }
+  }
+}

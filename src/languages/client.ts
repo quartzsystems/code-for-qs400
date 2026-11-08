@@ -30,6 +30,10 @@ import {
 /** Each language with a server, and the host's `lsp` argument for it. */
 export const SERVERS: Readonly<Record<string, string>> = {
   'qs400-rpgle': 'rpgle',
+  'qs400-cl': 'cl',
+  'qs400-dds': 'dds',
+  'qs400-sql': 'sql',
+  'qs400-cmd': 'cmd',
 };
 
 /** The schemes a server's documents may be on. */

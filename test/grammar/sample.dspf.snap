@@ -1,0 +1,131 @@
+>     A                                      DSPSIZ(24 80 *DS3)
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                            ^^^^^^ source.qs400-dds keyword.other.keyword.qs400-dds
+#                                                  ^ source.qs400-dds punctuation.section.parens.begin.qs400-dds
+#                                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                                     ^ source.qs400-dds
+#                                                      ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                                        ^ source.qs400-dds
+#                                                         ^^^^ source.qs400-dds constant.language.qs400-dds
+#                                                             ^ source.qs400-dds punctuation.section.parens.end.qs400-dds
+>     A                                      CA03(03 'Exit')
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                            ^^^^ source.qs400-dds keyword.other.keyword.qs400-dds
+#                                                ^ source.qs400-dds punctuation.section.parens.begin.qs400-dds
+#                                                 ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                                   ^ source.qs400-dds
+#                                                    ^ source.qs400-dds string.quoted.single.qs400-dds
+#                                                     ^^^^ source.qs400-dds string.quoted.single.qs400-dds
+#                                                         ^ source.qs400-dds string.quoted.single.qs400-dds
+#                                                          ^ source.qs400-dds punctuation.section.parens.end.qs400-dds
+>     A          R SCREEN
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^ source.qs400-dds entity.name.qs400-dds
+>     A                                  1  2'Item inquiry'
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                            ^ source.qs400-dds string.quoted.single.qs400-dds
+#                                             ^^^^^^^^^^^^ source.qs400-dds string.quoted.single.qs400-dds
+#                                                         ^ source.qs400-dds string.quoted.single.qs400-dds
+>     A                                      COLOR(WHT) DSPATR(HI)
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                            ^^^^^ source.qs400-dds keyword.other.keyword.qs400-dds
+#                                                 ^ source.qs400-dds punctuation.section.parens.begin.qs400-dds
+#                                                  ^^^ source.qs400-dds
+#                                                     ^ source.qs400-dds punctuation.section.parens.end.qs400-dds
+#                                                      ^ source.qs400-dds
+#                                                       ^^^^^^ source.qs400-dds keyword.other.keyword.qs400-dds
+#                                                             ^ source.qs400-dds punctuation.section.parens.begin.qs400-dds
+#                                                              ^^ source.qs400-dds
+#                                                                ^ source.qs400-dds punctuation.section.parens.end.qs400-dds
+>     A            ITEMNO        15A  B  3 20
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+>     A  40                                  DSPATR(RI PC)
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                            ^^^^^^ source.qs400-dds keyword.other.keyword.qs400-dds
+#                                                  ^ source.qs400-dds punctuation.section.parens.begin.qs400-dds
+#                                                   ^^^^^ source.qs400-dds
+#                                                        ^ source.qs400-dds punctuation.section.parens.end.qs400-dds
+>

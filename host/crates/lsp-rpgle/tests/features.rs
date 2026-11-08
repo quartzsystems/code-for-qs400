@@ -263,12 +263,20 @@ fn folding_in_fixed_form() {
 ";
     c.open(uri, "qs400-rpgle", text);
     let _ = c.diagnostics(uri);
-    let v = c.request("textDocument/foldingRange", json!({ "textDocument": { "uri": uri } }));
+    let v = c.request(
+        "textDocument/foldingRange",
+        json!({ "textDocument": { "uri": uri } }),
+    );
     let mut r: Vec<(u64, u64)> = v
         .as_array()
         .unwrap()
         .iter()
-        .map(|f| (f["startLine"].as_u64().unwrap(), f["endLine"].as_u64().unwrap()))
+        .map(|f| {
+            (
+                f["startLine"].as_u64().unwrap(),
+                f["endLine"].as_u64().unwrap(),
+            )
+        })
         .collect();
     r.sort_unstable();
     assert_eq!(r, [(5, 7), (8, 10), (11, 14)]);

@@ -16,7 +16,17 @@
 #^^^^^ source.qs400-rpgle meta.embedded.block.sql comment.block.sequence.qs400-rpgle
 #     ^ source.qs400-rpgle meta.embedded.block.sql keyword.other.specification.qs400-rpgle
 #      ^ source.qs400-rpgle meta.embedded.block.sql punctuation.separator.continuation.qs400-rpgle
-#       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-rpgle meta.embedded.block.sql
+#       ^ source.qs400-rpgle meta.embedded.block.sql
+#        ^^^^^^ source.qs400-rpgle meta.embedded.block.sql keyword.other.qs400-sql
+#              ^ source.qs400-rpgle meta.embedded.block.sql
+#               ^^^ source.qs400-rpgle meta.embedded.block.sql support.function.qs400-sql
+#                  ^^^^^^^^^^ source.qs400-rpgle meta.embedded.block.sql
+#                            ^^^^ source.qs400-rpgle meta.embedded.block.sql keyword.other.qs400-sql
+#                                ^ source.qs400-rpgle meta.embedded.block.sql
+#                                 ^^^^^^ source.qs400-rpgle meta.embedded.block.sql variable.other.host.qs400-sql
+#                                       ^ source.qs400-rpgle meta.embedded.block.sql
+#                                        ^^^^ source.qs400-rpgle meta.embedded.block.sql keyword.other.qs400-sql
+#                                            ^^^^^^^^ source.qs400-rpgle meta.embedded.block.sql
 >     C/END-EXEC
 #^^^^^ source.qs400-rpgle comment.block.sequence.qs400-rpgle
 #     ^ source.qs400-rpgle keyword.other.specification.qs400-rpgle

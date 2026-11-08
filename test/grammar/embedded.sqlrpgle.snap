@@ -11,16 +11,28 @@
 #                       ^ source.qs400-rpgle
 #                        ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
 >exec sql select sum(itprice) into :total
-#^^^^^^^^^ source.qs400-rpgle
-#         ^^^^^^ source.qs400-rpgle keyword.control.qs400-rpgle
-#               ^^^^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-rpgle
+#^^^^ source.qs400-rpgle keyword.control.directive.exec-sql.qs400-rpgle
+#    ^ source.qs400-rpgle
+#     ^^^ source.qs400-rpgle keyword.control.directive.exec-sql.qs400-rpgle
+#        ^ source.qs400-rpgle meta.embedded.block.sql
+#         ^^^^^^ source.qs400-rpgle meta.embedded.block.sql keyword.other.qs400-sql
+#               ^ source.qs400-rpgle meta.embedded.block.sql
+#                ^^^ source.qs400-rpgle meta.embedded.block.sql support.function.qs400-sql
+#                   ^^^^^^^^^^ source.qs400-rpgle meta.embedded.block.sql
+#                             ^^^^ source.qs400-rpgle meta.embedded.block.sql keyword.other.qs400-sql
+#                                 ^ source.qs400-rpgle meta.embedded.block.sql
+#                                  ^^^^^^ source.qs400-rpgle meta.embedded.block.sql variable.other.host.qs400-sql
 >           from itemmst where itcat = 'TOOLS';
-#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-rpgle
-#                                    ^ source.qs400-rpgle keyword.operator.qs400-rpgle
-#                                     ^ source.qs400-rpgle
-#                                      ^ source.qs400-rpgle string.quoted.single.qs400-rpgle
-#                                       ^^^^^ source.qs400-rpgle string.quoted.single.qs400-rpgle
-#                                            ^ source.qs400-rpgle string.quoted.single.qs400-rpgle
+#^^^^^^^^^^^ source.qs400-rpgle meta.embedded.block.sql
+#           ^^^^ source.qs400-rpgle meta.embedded.block.sql keyword.other.qs400-sql
+#               ^^^^^^^^^ source.qs400-rpgle meta.embedded.block.sql
+#                        ^^^^^ source.qs400-rpgle meta.embedded.block.sql keyword.other.qs400-sql
+#                             ^^^^^^^ source.qs400-rpgle meta.embedded.block.sql
+#                                    ^ source.qs400-rpgle meta.embedded.block.sql keyword.operator.qs400-sql
+#                                     ^ source.qs400-rpgle meta.embedded.block.sql
+#                                      ^ source.qs400-rpgle meta.embedded.block.sql string.quoted.single.qs400-sql
+#                                       ^^^^^ source.qs400-rpgle meta.embedded.block.sql string.quoted.single.qs400-sql
+#                                            ^ source.qs400-rpgle meta.embedded.block.sql string.quoted.single.qs400-sql
 #                                             ^ source.qs400-rpgle punctuation.terminator.statement.qs400-rpgle
 >*inlr = *on;
 #^^^^^ source.qs400-rpgle constant.language.indicator.qs400-rpgle

@@ -1,0 +1,7 @@
+     A                                      DSPSIZ(24 80 *DS3)
+     A                                      CA03(03 'Exit')
+     A          R SCREEN
+     A                                  1  2'Item inquiry'
+     A                                      COLOR(WHT) DSPATR(HI)
+     A            ITEMNO        15A  B  3 20
+     A  40                                  DSPATR(RI PC)

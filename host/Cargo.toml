@@ -10,6 +10,10 @@ members = [
     "crates/severity",
     "crates/lsp-common",
     "crates/lsp-rpgle",
+    "crates/lsp-cl",
+    "crates/lsp-dds",
+    "crates/lsp-sql",
+    "crates/lsp-cmd",
 ]
 
 [workspace.package]
@@ -50,6 +54,10 @@ crossbeam-channel = "0.5"
 severity = { path = "crates/severity" }
 lsp-common = { path = "crates/lsp-common" }
 lsp-rpgle = { path = "crates/lsp-rpgle" }
+lsp-cl = { path = "crates/lsp-cl" }
+lsp-dds = { path = "crates/lsp-dds" }
+lsp-sql = { path = "crates/lsp-sql" }
+lsp-cmd = { path = "crates/lsp-cmd" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

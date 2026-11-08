@@ -1,0 +1,58 @@
+>     A          R ITEMR                     PFILE(ITEMMST)
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                            ^^^^^ source.qs400-dds keyword.other.keyword.qs400-dds
+#                                                 ^ source.qs400-dds punctuation.section.parens.begin.qs400-dds
+#                                                  ^^^^^^^ source.qs400-dds
+#                                                         ^ source.qs400-dds punctuation.section.parens.end.qs400-dds
+>     A          K ITCAT
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^ source.qs400-dds entity.name.qs400-dds
+>     A          K ITEMNO
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^ source.qs400-dds entity.name.qs400-dds
+>     A          S ITSTS                     COMP(EQ 'A')
+#^^^^^ source.qs400-dds comment.block.sequence.qs400-dds
+#     ^ source.qs400-dds keyword.other.specification.qs400-dds
+#      ^ source.qs400-dds
+#       ^^^^^^^^^ source.qs400-dds constant.language.indicator.qs400-dds
+#                ^ source.qs400-dds keyword.other.name-type.qs400-dds
+#                 ^ source.qs400-dds
+#                  ^^^^^^^^^^ source.qs400-dds entity.name.qs400-dds
+#                            ^ source.qs400-dds storage.modifier.reference.qs400-dds
+#                             ^^^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                  ^ source.qs400-dds storage.type.qs400-dds
+#                                   ^^ source.qs400-dds constant.numeric.qs400-dds
+#                                     ^ source.qs400-dds storage.modifier.usage.qs400-dds
+#                                      ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                         ^^^ source.qs400-dds constant.numeric.qs400-dds
+#                                            ^^^^ source.qs400-dds keyword.other.keyword.qs400-dds
+#                                                ^ source.qs400-dds punctuation.section.parens.begin.qs400-dds
+#                                                 ^^^ source.qs400-dds
+#                                                    ^ source.qs400-dds string.quoted.single.qs400-dds
+#                                                     ^ source.qs400-dds string.quoted.single.qs400-dds
+#                                                      ^ source.qs400-dds string.quoted.single.qs400-dds
+#                                                       ^ source.qs400-dds punctuation.section.parens.end.qs400-dds
+>

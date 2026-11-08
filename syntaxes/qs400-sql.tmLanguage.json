@@ -1,0 +1,73 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SQL (QS/400)",
+  "scopeName": "source.qs400-sql",
+  "patterns": [
+    {
+      "include": "#tokens"
+    }
+  ],
+  "repository": {
+    "tokens": {
+      "patterns": [
+        {
+          "match": "--.*$",
+          "name": "comment.line.double-dash.qs400-sql"
+        },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.qs400-sql"
+        },
+        {
+          "begin": "(?i)[xg]?'",
+          "end": "'(?!')",
+          "name": "string.quoted.single.qs400-sql",
+          "patterns": [
+            {
+              "match": "''",
+              "name": "constant.character.escape.qs400-sql"
+            }
+          ]
+        },
+        {
+          "begin": "\"",
+          "end": "\"(?!\")",
+          "name": "variable.other.delimited.qs400-sql"
+        },
+        {
+          "match": ":[A-Za-z_@#$][A-Za-z0-9_@#$.]*",
+          "name": "variable.other.host.qs400-sql"
+        },
+        {
+          "match": "(?i)\\b(?:BIGINT|BINARY|BLOB|BOOLEAN|CHAR|CHARACTER|CLOB|DATE|DBCLOB|DEC|DECIMAL|DECFLOAT|DOUBLE|FLOAT|GRAPHIC|INT|INTEGER|NUMERIC|REAL|ROWID|SMALLINT|TIME|TIMESTAMP|VARBINARY|VARCHAR|VARGRAPHIC|XML|NCHAR|NVARCHAR|NCLOB)\\b",
+          "name": "storage.type.qs400-sql"
+        },
+        {
+          "match": "(?i)\\b(?:ADD|AFTER|ALIAS|ALL|ALLOCATE|ALTER|AND|ANY|AS|ASC|ASENSITIVE|AT|ATOMIC|BEFORE|BEGIN|BETWEEN|BY|CALL|CALLED|CASCADE|CASE|CAST|CHECK|CLOSE|COLUMN|COMMENT|COMMIT|CONDITION|CONNECT|CONSTRAINT|CONTINUE|CREATE|CROSS|CURRENT|CURSOR|DECLARE|DEFAULT|DELETE|DESC|DESCRIBE|DETERMINISTIC|DISTINCT|DO|DROP|EACH|ELSE|ELSEIF|END|ESCAPE|EXCEPT|EXCEPTION|EXECUTE|EXISTS|EXIT|EXTERNAL|FETCH|FIRST|FOR|FOREIGN|FROM|FULL|FUNCTION|GET|GO|GOTO|GRANT|GROUP|HANDLER|HAVING|HOLD|IF|IMMEDIATE|IN|INDEX|INNER|INOUT|INSERT|INTERSECT|INTO|IS|ITERATE|JOIN|KEY|LABEL|LANGUAGE|LEAVE|LEFT|LIKE|LIMIT|LOCK|LOOP|MERGE|MODIFIES|NEXT|NO|NOT|NULL|OF|OFFSET|ON|ONLY|OPEN|OPTIMIZE|OR|ORDER|OUT|OUTER|OVER|PARAMETER|PARTITION|PREPARE|PRIMARY|PROCEDURE|READ|READS|REFERENCES|RELEASE|RENAME|REPEAT|REPLACE|RESIGNAL|RESTRICT|RESULT|RETURN|RETURNS|REVOKE|RIGHT|ROLLBACK|ROW|ROWS|SAVEPOINT|SCHEMA|SELECT|SEQUENCE|SET|SIGNAL|SOME|SPECIFIC|SQL|SQLEXCEPTION|SQLSTATE|SQLWARNING|START|TABLE|THEN|TO|TRIGGER|UNION|UNIQUE|UNTIL|UPDATE|USING|VALUES|VARIABLE|VIEW|WHEN|WHERE|WHILE|WITH|WITHOUT|WORK|WRITE)\\b",
+          "name": "keyword.other.qs400-sql"
+        },
+        {
+          "match": "(?i)\\b(?:TRUE|FALSE|UNKNOWN)\\b",
+          "name": "constant.language.qs400-sql"
+        },
+        {
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()",
+          "name": "support.function.qs400-sql"
+        },
+        {
+          "match": "(?<![\\w@#$])\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?(?![\\w@#$])",
+          "name": "constant.numeric.qs400-sql"
+        },
+        {
+          "match": "\\|\\||<>|<=|>=|!=|[-+*/=<>]",
+          "name": "keyword.operator.qs400-sql"
+        },
+        {
+          "match": ";",
+          "name": "punctuation.terminator.statement.qs400-sql"
+        }
+      ]
+    }
+  }
+}

@@ -1079,25 +1079,40 @@
         "id": "qs400-cl",
         "aliases": [
           "CL (QS/400)"
-        ]
+        ],
+        "extensions": [
+          ".clle",
+          ".clp"
+        ],
+        "configuration": "./languages/qs400-cl.language-configuration.json"
       },
       {
         "id": "qs400-dds",
         "aliases": [
           "DDS (QS/400)"
-        ]
+        ],
+        "extensions": [
+          ".pf",
+          ".lf",
+          ".dspf",
+          ".prtf",
+          ".icff"
+        ],
+        "configuration": "./languages/qs400-dds.language-configuration.json"
       },
       {
         "id": "qs400-sql",
         "aliases": [
           "SQL (QS/400)"
-        ]
+        ],
+        "configuration": "./languages/qs400-sql.language-configuration.json"
       },
       {
         "id": "qs400-cmd",
         "aliases": [
           "Command definition (QS/400)"
-        ]
+        ],
+        "configuration": "./languages/qs400-cmd.language-configuration.json"
       },
       {
         "id": "qs400-properties",
@@ -1116,6 +1131,26 @@
       "[qs400-properties]": {
         "editor.fontFamily": "'Courier New', Courier, monospace",
         "editor.wordWrap": "off"
+      },
+      "[qs400-dds]": {
+        "editor.rulers": [
+          5,
+          6,
+          7,
+          16,
+          17,
+          18,
+          28,
+          29,
+          34,
+          35,
+          37,
+          38,
+          41,
+          44,
+          80
+        ],
+        "editor.wordWrap": "off"
       }
     },
     "jsonValidation": [
@@ -1132,6 +1167,26 @@
         "embeddedLanguages": {
           "meta.embedded.block.sql": "qs400-sql"
         }
+      },
+      {
+        "language": "qs400-cl",
+        "scopeName": "source.qs400-cl",
+        "path": "./syntaxes/qs400-cl.tmLanguage.json"
+      },
+      {
+        "language": "qs400-dds",
+        "scopeName": "source.qs400-dds",
+        "path": "./syntaxes/qs400-dds.tmLanguage.json"
+      },
+      {
+        "language": "qs400-sql",
+        "scopeName": "source.qs400-sql",
+        "path": "./syntaxes/qs400-sql.tmLanguage.json"
+      },
+      {
+        "language": "qs400-cmd",
+        "scopeName": "source.qs400-cmd",
+        "path": "./syntaxes/qs400-cmd.tmLanguage.json"
       }
     ]
   },
@@ -1143,7 +1198,7 @@
     "pretest": "npm run build && npm run compile-tests && npm run test:grammar",
     "test": "vscode-test",
     "package": "bash scripts/package.sh",
-    "test:grammar": "vscode-tmgrammar-snap \"test/grammar/*.rpgle\" \"test/grammar/*.sqlrpgle\""
+    "test:grammar": "vscode-tmgrammar-snap \"test/grammar/*.rpgle\" \"test/grammar/*.sqlrpgle\" \"test/grammar/*.clle\" \"test/grammar/*.pf\" \"test/grammar/*.lf\" \"test/grammar/*.dspf\" \"test/grammar/*.prtf\" && vscode-tmgrammar-snap -s source.qs400-sql \"test/grammar/*.sql\" && vscode-tmgrammar-snap -s source.qs400-cmd \"test/grammar/*.cmd\""
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

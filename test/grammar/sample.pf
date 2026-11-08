@@ -1,0 +1,7 @@
+     A*  Item master
+     A                                      UNIQUE
+     A          R ITEMR                     TEXT('Item')
+     A            ITEMNO        15A         COLHDG('Item' 'Number')
+     A            ITQOH         11P 2       EDTCDE(J)
+     A            ITDESC    R               REFFLD(DESC REFFILE)
+     A          K ITEMNO

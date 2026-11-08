@@ -1,0 +1,14 @@
+             PGM        PARM(&LIB)
+/* Build the inventory objects */
+             DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)
+             DCL        VAR(&N) TYPE(*DEC) LEN(5 0) VALUE(0)
+             DCLF       FILE(ITEMMST)
+             MONMSG     MSGID(CPF0000) EXEC(GOTO CMDLBL(ERROR))
+             IF         COND(&N *EQ 0 *AND &LIB *NE ' ') THEN(DO)
+                CHGVAR     VAR(&N) +
+                             VALUE(%LEN(&LIB) + 1)
+             ENDDO
+             CRTPF      FILE(&LIB/ITEMMST) SRCFILE(&LIB/QDDSSRC) -
+                          TEXT('Item master')
+ ERROR:      SNDPGMMSG  MSG('It''s done')
+             ENDPGM

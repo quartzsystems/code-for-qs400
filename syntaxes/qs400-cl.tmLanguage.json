@@ -1,0 +1,100 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CL (QS/400)",
+  "scopeName": "source.qs400-cl",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#statement"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "begin": "/\\*",
+      "end": "\\*/",
+      "name": "comment.block.qs400-cl"
+    },
+    "statement": {
+      "begin": "^\\s*(?:([A-Za-z@#$][A-Za-z0-9_@#$.]*)(:))?\\s*(?:(?i:(PGM|ENDPGM|DO|ENDDO|DOWHILE|DOUNTIL|DOFOR|LEAVE|ITERATE|IF|ELSE|SELECT|WHEN|OTHERWISE|ENDSELECT|GOTO|RETURN|MONMSG|SUBR|ENDSUBR|CALLSUBR|RTNSUBR|TFRCTL|CALL|CALLPRC))|(?i:(DCL|DCLF|DCLPRCOPT|COPYRIGHT|INCLUDE))|((?:[A-Za-z@#$][A-Za-z0-9_@#$.]*/)?[A-Za-z@#$][A-Za-z0-9_@#$.]*))(?=[\\s(]|$)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.label.qs400-cl"
+        },
+        "2": {
+          "name": "punctuation.separator.label.qs400-cl"
+        },
+        "3": {
+          "name": "keyword.control.qs400-cl"
+        },
+        "4": {
+          "name": "storage.type.qs400-cl"
+        },
+        "5": {
+          "name": "support.function.command.qs400-cl"
+        }
+      },
+      "end": "(?<![+\\-\\s])$|(?<=[^+\\-\\s])\\s+$",
+      "patterns": [
+        {
+          "include": "#parameters"
+        }
+      ]
+    },
+    "parameters": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "match": "[+\\-](?=\\s*$)",
+          "name": "punctuation.separator.continuation.qs400-cl"
+        },
+        {
+          "begin": "'",
+          "end": "'(?!')",
+          "name": "string.quoted.single.qs400-cl",
+          "patterns": [
+            {
+              "match": "''",
+              "name": "constant.character.escape.qs400-cl"
+            }
+          ]
+        },
+        {
+          "match": "&[A-Za-z@#$][A-Za-z0-9_@#$]*",
+          "name": "variable.other.qs400-cl"
+        },
+        {
+          "match": "%[A-Za-z]+",
+          "name": "support.function.builtin.qs400-cl"
+        },
+        {
+          "match": "(?i)\\*(?:EQ|NE|GT|LT|GE|LE|NG|NL|AND|OR|NOT|CAT|BCAT|TCAT)\\b",
+          "name": "keyword.operator.qs400-cl"
+        },
+        {
+          "match": "\\*[A-Za-z][A-Za-z0-9_]*",
+          "name": "constant.language.qs400-cl"
+        },
+        {
+          "match": "(?<![\\w@#$&.])[-+]?\\d+(?:\\.\\d+)?(?![\\w@#$])",
+          "name": "constant.numeric.qs400-cl"
+        },
+        {
+          "match": "([A-Za-z@#$][A-Za-z0-9_@#$]*)(?=\\()",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.qs400-cl"
+            }
+          }
+        },
+        {
+          "match": "[=<>\u00ac|]+",
+          "name": "keyword.operator.qs400-cl"
+        }
+      ]
+    }
+  }
+}

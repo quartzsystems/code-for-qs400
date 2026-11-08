@@ -1,0 +1,152 @@
+>             PGM        PARM(&LIB)
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^ source.qs400-cl keyword.control.qs400-cl
+#                ^^^^^^^^ source.qs400-cl
+#                        ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                            ^ source.qs400-cl
+#                             ^^^^ source.qs400-cl variable.other.qs400-cl
+#                                 ^ source.qs400-cl
+>/* Build the inventory objects */
+#^^ source.qs400-cl comment.block.qs400-cl
+#  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-cl comment.block.qs400-cl
+#                               ^^ source.qs400-cl comment.block.qs400-cl
+>             DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^ source.qs400-cl storage.type.qs400-cl
+#                ^^^^^^^^ source.qs400-cl
+#                        ^^^ source.qs400-cl variable.parameter.qs400-cl
+#                           ^ source.qs400-cl
+#                            ^^^^ source.qs400-cl variable.other.qs400-cl
+#                                ^^ source.qs400-cl
+#                                  ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                      ^ source.qs400-cl
+#                                       ^^^^^ source.qs400-cl constant.language.qs400-cl
+#                                            ^^ source.qs400-cl
+#                                              ^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                                 ^ source.qs400-cl
+#                                                  ^^ source.qs400-cl constant.numeric.qs400-cl
+#                                                    ^ source.qs400-cl
+>             DCL        VAR(&N) TYPE(*DEC) LEN(5 0) VALUE(0)
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^ source.qs400-cl storage.type.qs400-cl
+#                ^^^^^^^^ source.qs400-cl
+#                        ^^^ source.qs400-cl variable.parameter.qs400-cl
+#                           ^ source.qs400-cl
+#                            ^^ source.qs400-cl variable.other.qs400-cl
+#                              ^^ source.qs400-cl
+#                                ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                    ^ source.qs400-cl
+#                                     ^^^^ source.qs400-cl constant.language.qs400-cl
+#                                         ^^ source.qs400-cl
+#                                           ^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                              ^ source.qs400-cl
+#                                               ^ source.qs400-cl constant.numeric.qs400-cl
+#                                                ^ source.qs400-cl
+#                                                 ^ source.qs400-cl constant.numeric.qs400-cl
+#                                                  ^^ source.qs400-cl
+#                                                    ^^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                                         ^ source.qs400-cl
+#                                                          ^ source.qs400-cl constant.numeric.qs400-cl
+#                                                           ^ source.qs400-cl
+>             DCLF       FILE(ITEMMST)
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^^ source.qs400-cl storage.type.qs400-cl
+#                 ^^^^^^^ source.qs400-cl
+#                        ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                            ^^^^^^^^^ source.qs400-cl
+>             MONMSG     MSGID(CPF0000) EXEC(GOTO CMDLBL(ERROR))
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^^^^ source.qs400-cl keyword.control.qs400-cl
+#                   ^^^^^ source.qs400-cl
+#                        ^^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                             ^^^^^^^^^^ source.qs400-cl
+#                                       ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                           ^^^^^^ source.qs400-cl
+#                                                 ^^^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                                       ^^^^^^^^ source.qs400-cl
+>             IF         COND(&N *EQ 0 *AND &LIB *NE ' ') THEN(DO)
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^ source.qs400-cl keyword.control.qs400-cl
+#               ^^^^^^^^^ source.qs400-cl
+#                        ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                            ^ source.qs400-cl
+#                             ^^ source.qs400-cl variable.other.qs400-cl
+#                               ^ source.qs400-cl
+#                                ^^^ source.qs400-cl keyword.operator.qs400-cl
+#                                   ^ source.qs400-cl
+#                                    ^ source.qs400-cl constant.numeric.qs400-cl
+#                                     ^ source.qs400-cl
+#                                      ^^^^ source.qs400-cl keyword.operator.qs400-cl
+#                                          ^ source.qs400-cl
+#                                           ^^^^ source.qs400-cl variable.other.qs400-cl
+#                                               ^ source.qs400-cl
+#                                                ^^^ source.qs400-cl keyword.operator.qs400-cl
+#                                                   ^ source.qs400-cl
+#                                                    ^ source.qs400-cl string.quoted.single.qs400-cl
+#                                                     ^ source.qs400-cl string.quoted.single.qs400-cl
+#                                                      ^ source.qs400-cl string.quoted.single.qs400-cl
+#                                                       ^^ source.qs400-cl
+#                                                         ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                                             ^^^^ source.qs400-cl
+>                CHGVAR     VAR(&N) +
+#^^^^^^^^^^^^^^^^ source.qs400-cl
+#                ^^^^^^ source.qs400-cl support.function.command.qs400-cl
+#                      ^^^^^ source.qs400-cl
+#                           ^^^ source.qs400-cl variable.parameter.qs400-cl
+#                              ^ source.qs400-cl
+#                               ^^ source.qs400-cl variable.other.qs400-cl
+#                                 ^^ source.qs400-cl
+#                                   ^ source.qs400-cl punctuation.separator.continuation.qs400-cl
+>                             VALUE(%LEN(&LIB) + 1)
+#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-cl
+#                             ^^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                  ^ source.qs400-cl
+#                                   ^^^^ source.qs400-cl support.function.builtin.qs400-cl
+#                                       ^ source.qs400-cl
+#                                        ^^^^ source.qs400-cl variable.other.qs400-cl
+#                                            ^^^^ source.qs400-cl
+#                                                ^ source.qs400-cl constant.numeric.qs400-cl
+#                                                 ^ source.qs400-cl
+>             ENDDO
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^^^ source.qs400-cl keyword.control.qs400-cl
+>             CRTPF      FILE(&LIB/ITEMMST) SRCFILE(&LIB/QDDSSRC) -
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^^^ source.qs400-cl support.function.command.qs400-cl
+#                  ^^^^^^ source.qs400-cl
+#                        ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                            ^ source.qs400-cl
+#                             ^^^^ source.qs400-cl variable.other.qs400-cl
+#                                 ^^^^^^^^^^ source.qs400-cl
+#                                           ^^^^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                                                  ^ source.qs400-cl
+#                                                   ^^^^ source.qs400-cl variable.other.qs400-cl
+#                                                       ^^^^^^^^^^ source.qs400-cl
+#                                                                 ^ source.qs400-cl punctuation.separator.continuation.qs400-cl
+>                          TEXT('Item master')
+#^^^^^^^^^^^^^^^^^^^^^^^^^^ source.qs400-cl
+#                          ^^^^ source.qs400-cl variable.parameter.qs400-cl
+#                              ^ source.qs400-cl
+#                               ^ source.qs400-cl string.quoted.single.qs400-cl
+#                                ^^^^^^^^^^^ source.qs400-cl string.quoted.single.qs400-cl
+#                                           ^ source.qs400-cl string.quoted.single.qs400-cl
+#                                            ^ source.qs400-cl
+> ERROR:      SNDPGMMSG  MSG('It''s done')
+#^ source.qs400-cl
+# ^^^^^ source.qs400-cl entity.name.label.qs400-cl
+#      ^ source.qs400-cl punctuation.separator.label.qs400-cl
+#       ^^^^^^ source.qs400-cl
+#             ^^^^^^^^^ source.qs400-cl support.function.command.qs400-cl
+#                      ^^ source.qs400-cl
+#                        ^^^ source.qs400-cl variable.parameter.qs400-cl
+#                           ^ source.qs400-cl
+#                            ^ source.qs400-cl string.quoted.single.qs400-cl
+#                             ^^ source.qs400-cl string.quoted.single.qs400-cl
+#                               ^^ source.qs400-cl string.quoted.single.qs400-cl constant.character.escape.qs400-cl
+#                                 ^^^^^^ source.qs400-cl string.quoted.single.qs400-cl
+#                                       ^ source.qs400-cl string.quoted.single.qs400-cl
+#                                        ^ source.qs400-cl
+>             ENDPGM
+#^^^^^^^^^^^^^ source.qs400-cl
+#             ^^^^^^ source.qs400-cl keyword.control.qs400-cl
+>
