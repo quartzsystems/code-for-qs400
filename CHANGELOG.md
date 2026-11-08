@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.0.0-pre · Phase 7 · jobs, spooled files and messages
+
+- The **Jobs** view: My jobs, another profile's or `*ALL` (saved per
+  connection), grouped Active, On job queue and On output queue, the
+  connection's own job marked; Job Log, Hold, Release, End… (`*CNTRLD`
+  with a delay, or `*IMMED`, confirmed by the job's qualified name),
+  Spooled Files and Copy Qualified Name; Refresh, and every 30 seconds
+  with `code-for-qs400.jobs.autoRefresh`.
+- The job log of any job, active or ended (its spooled job log), with each
+  message's kind as a glyph in the gutter and `from → to` in the hover.
+- The **Spooled files** view: My spooled files, the output queues of a
+  library (default `*LIBL`) and a job's files from the Jobs view; Save as
+  Text, Save as PDF (made by the system), Hold at the end of the page or
+  immediately, Release, Move to another queue (at its end or top) and
+  Delete; your own files watched while the view is shown, new ones on its
+  badge.
+- The spooled file viewer: a read-only editor that keeps every column,
+  rulers at 80 and 132, `— page n —` before each page, the page in the
+  status bar, Go to Page, and Load All Pages for files of 2000 pages or
+  more.
+- The **Messages** view: My messages, System operator when your profile
+  may read it, and named queues; inquiries waiting first; Reply, Remove,
+  Copy Text, Send Message (to a profile or a queue, informational or an
+  inquiry) and Remove All Answered. Your own queue is watched for as long
+  as you are signed on: the badge counts what waits and what arrived, and
+  an inquiry shows a notification with Reply and Show
+  (`code-for-qs400.messages.notify`).
+- The output channel: `Listing: Open` after a compile that wrote its
+  listing, and after a batch run once its job has; the job on `Job:` and
+  `Submitted:` opens the Jobs view on it; `Job log: Show` opens the log of
+  the block's own job.
+- The host's `jobs.*`, `spool.*` and `messages.*` methods over QAP's `Jobs`,
+  `Spool` and `Messages` services, with the watches' events as
+  `spool.changed` and `messages.arrived`.
+  See [docs/jobs-spool-messages.md](docs/jobs-spool-messages.md).
+
 ## 1.0.0-pre · Phase 6 · SQL
 
 - **Run Statement** (`Ctrl+Enter`) on SQL members, stream files, local

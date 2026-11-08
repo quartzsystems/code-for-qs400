@@ -56,20 +56,28 @@ Job:     123456/QUSER/QAPCNN
 RNS9310  Program ASSETS42 was not created in library CWELLMAN.
 Ended:   Error
 Job log: Show
+Listing: Open  QSYSPRT(8) 123456/QUSER/QAPCNN · QSHQ400
 ```
 
 The command is shown as sent, with its variables replaced. The messages
 are the system's own, oldest first, as `ID  text`; the escape message
-that ended the command comes last. **Show** on the last line opens the
-connection job's log.
+that ended the command comes last. The job on the `Job:` line opens the
+**Jobs** view on it, and **Show** on `Job log: Show` opens its log. When a
+compile wrote its listing during the run (the command's `PRTFILE`, else
+`QSYSPRT`), **Open** on `Listing: Open` shows it in the spooled file
+viewer; see [Jobs, spooled files and messages](jobs-spool-messages.md).
 
 ### Batch
 
 An action with `"runAs": "batch"` is submitted instead:
 `SBMJOB CMD(<command>) JOB(<name>) JOBQ(QBATCH)`, where the job is named
 after the target (`&NAME`) when that is a valid name. The output channel
-names the job submitted (`Submitted: 654321/CWELLMAN/ASSETS`). A batch
-job runs outside the connection job, so its diagnostics do not come back.
+names the job submitted (`Submitted: 654321/CWELLMAN/ASSETS`), and its
+`Job log: Show` opens that job's log. A batch job runs outside the
+connection job, so its diagnostics do not come back; its listing does:
+when the submitted job writes it, within 10 minutes, a `Listing: Open`
+line naming the file and the connection is added, after whatever the
+channel shows by then.
 
 ## Diagnostics
 
@@ -100,8 +108,10 @@ runs and cancelled compiles do not change them.
 **Job Log** (`code-for-qs400.job.log`) opens the log of the active
 connection's job, the job actions run in, as a read-only document named
 `Job log nnnnnn/USER/NAME`. Each line is `time  ID  text`, oldest first,
-so the newest message is at the bottom. Hover a message ID for its
-second-level text. **Refresh** on the editor title bar reads it again.
+so the newest message is at the bottom, with its kind as a glyph in the
+gutter. Hover a message ID for its second-level text and the programs it
+went from and to. **Refresh** on the editor title bar reads it again. The
+**Jobs** view's **Job Log** opens the same document for any job.
 
 ## Where actions come from
 

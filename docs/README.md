@@ -31,6 +31,10 @@ This guide grows with each phase and ships with the marketplace listing.
   editor's diagnostics are held to the compiler's.
 - [SQL](sql.md): running statements, the results panel, CSV export, the
   SQL view, commit levels and the history.
+- [Jobs, spooled files and messages](jobs-spool-messages.md): the Jobs
+  view and job logs, the Spooled files view and its viewer, the Messages
+  view, inquiry replies and notifications, and the listing link after a
+  compile.
 
 ## Troubleshooting
 

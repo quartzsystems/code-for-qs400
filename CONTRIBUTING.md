@@ -17,10 +17,13 @@ decided along the way.
 | `src/ifs/` | `paths.ts` (paths, sorting, roots), `types.ts` (the binary table and languages), `tree.ts` (the delete and copy walks; none of the three imports `vscode`), `uri.ts` (`qs400ifs` URIs), `provider.ts` (the file system provider), `transfers.ts` (uploads and downloads) |
 | `src/views/`, `src/commands/` | The Connections, Objects and IFS trees, the status bar item and commands |
 | `src/actions/` | `model.ts` (the action fields, merge order, matching and the compile list), `variables.ts`, `targets.ts` (each variable's value per target), `output.ts` (the output channel's block), `placement.ts` and `severity.ts` (where a diagnostic goes, the one severity table); none of these imports `vscode`. `store.ts` (the three layers, the check on save), `run.ts` (**Run Action…**), `diagnostics.ts` (the Problems panel) |
-| `src/jobs/jobLog.ts` | The Job log document and its hover |
+| `src/jobs/` | `model.ts` (the Jobs view's groups, descriptions, qualified names, End's choices, the log's glyphs; no `vscode` import), `jobLog.ts` (the Job log document, its hover and gutter) |
+| `src/spool/` | `model.ts` (statuses, labels, the listing's name and match) and `layout.ts` (the viewer's page markers), neither importing `vscode`; `viewer.ts` (the `qs400spl` viewer) |
+| `src/messages/model.ts` | The Messages view's order, descriptions, answered keys and the notify rule (no `vscode` import) |
 | `src/languages/` | `client.ts` (one language client per language, the include notifications), `includes.ts` (`qs400/fetchInclude` and `qs400/listMembers` through the host), `protocol.ts` (keep in step with `host/crates/lsp-common/src/protocol.rs`), `rpgColumns.ts` (the fixed-form columns; no `vscode` import), `fixedForm.ts` (the guides and the column in the status bar) |
 | `src/sql/` | `statements.ts` (the split and the statement under the cursor), `format.ts` (labels), `generate.ts` (the SQL the tree writes), none of which imports `vscode`; `resultsHtml.ts` (the results page; no `vscode` import), `session.ts` (each document's connection, the options, the status bar, Commit, Rollback, the disconnect question), `run.ts` (**Run Statement**, the Problems panel), `results.ts` (the **SQL results** panel), `export.ts` (Export CSV), `history.ts` |
 | `src/views/sql.ts` | The SQL tree and its commands |
+| `src/views/jobs.ts`, `spool.ts`, `messages.ts` | The Jobs, Spooled files and Messages trees, their watches, badges and commands |
 | `syntaxes/`, `languages/` | The five TextMate grammars and language configurations |
 | `schemas/actions.json`, `defaults/actions.json` | The schema of `.vscode/actions.json`, and the default actions shipped |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
@@ -29,7 +32,8 @@ decided along the way.
 | `host/crates/code-host/src/session.rs` | Sessions: one per connection name, the state machine, `session.*` and `libl.*`, and `DevelopBackend` |
 | `host/crates/code-host/src/objects.rs`, `members.rs` | `object.*` and `member.*`, thin over `qap-client`'s `Develop`; `members::codec` is the one place `seq` and `date` convert |
 | `host/crates/code-host/src/ifs.rs` | `ifs.*`, thin over `qap-client`'s `Files`, `read` and `write`; the transfers and their threads |
-| `host/crates/code-host/src/actions.rs`, `jobs.rs` | `action.*` over `Command` and `Develop::compile`, each run on a thread of its own; `job.log` over `Jobs::job_log` |
+| `host/crates/code-host/src/actions.rs`, `jobs.rs` | `action.*` over `Command` and `Develop::compile`, each run on a thread of its own; `job.log` and `jobs.*` over `Jobs` |
+| `host/crates/code-host/src/spool.rs`, `messages.rs`, `watches.rs`, `codec.rs` | `spool.*` and `messages.*` over `Client`'s `Spool` and `Messages` through `WorkBackend`; the watches the extension and the one-shot waits hold, and their events as notifications; `codec.rs` the one place keys, job names, queues and enum names convert |
 | `host/crates/code-host/src/sql/` | `sql.*` over one `SqlConnection` per session and the `Sql` catalog; `values.rs` is the one place a `SqlValue` becomes JSON or CSV text, `csv.rs` the CSV writer |
 | `host/crates/lsp-common` | What the language servers share: the loop (`server.rs`), positions (`position.rs`), the URI's source (`uri.rs`), the include cache (`includes.rs`), the features (`features.rs`), the custom messages (`protocol.rs`) and a test client (`testing.rs`) |
 | `host/crates/lsp-rpgle`, `lsp-cl`, `lsp-dds`, `lsp-sql`, `lsp-cmd` | One `Language` each over its front end's `analyze`: options, folding, completion words |
@@ -115,6 +119,15 @@ hold a request in the lane until it is cancelled. The canned messages use
 QS/400's own IDs and texts (`RNF7030`, `RNS9304`, `RNS9310`, `CPF9812`,
 `CPD0030`, `CPF1321`).
 
+`host/crates/code-host/tests/work.rs` does it for `jobs.*`, `spool.*` and
+`messages.*` with a fake `WorkBackend` (`tests/common/mod.rs`) whose
+spooled-file reads and actions go over a real `Connection` on an in-memory
+transport, and checks `spool.changed` and `messages.arrived` against the
+events the fake hands the watcher (Phase 7 decision 17). The canned
+messages use QS/400's IDs and texts (`CPF1321`, `CPF1343`, `CPF1362`,
+`CPF2204`, `CPF2403`, `CPF2422`, `CPF3337`, `CPF9802`, `TCP1A56`,
+`TCP1A57`).
+
 `host/crates/code-host/tests/sql.rs` does it for `sql.*`. `qap-client`'s
 `SqlConnection` needs an `Attached`, which opens a TCP connection of its
 own, so the host reaches it through the object-safe `sql::SqlConn` (each
@@ -128,8 +141,11 @@ their edges.
 
 ### Live tests
 
-`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3, 4 and 6
-exit tests against a real system. Phase 6 makes and drops the table
+`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3, 4, 6 and
+7 exit tests against a real system. Phase 7 compiles its own member
+`QS4SPL7` in `QS400_TEST_SRCPF` (the program stays in the current
+library), submits `CODETEST` and ends it, and sends itself an inquiry and
+a message, which it removes. Phase 6 makes and drops the table
 `HLINV.QS4SQL6`; `HLINV` must be journaled for its commit level step. Phase 3 makes and removes
 `/home/<QS400_TEST_USER>/code-test`. Phase 4 makes and removes the member
 `QS4ACT42` in `QS400_TEST_SRCPF`, compiles it into `QS400_TEST_CURLIB`
@@ -1061,6 +1077,153 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     `SYSPARMS` column; both are gone.
 23. **Not in this phase:** values for parameter markers. A statement with
     `?` is sent with no parameter rows, and the system refuses it.
+
+## Decisions made in Phase 7
+
+1. **No new pins.** `qap-client` stays at `quartz-systems-access`
+   `90d9bba`. The prompt calls the spooled-file service "Service 5
+   `Spool`"; `docs/QAP.md` at `7f82a43f` numbers it **Service 4 `Spool`**
+   (version 3; `WatchSpool`, `UnwatchSpool` and `SpooledFileChanged`
+   version 6), and Service 5 is `Sql`. "Service 7 `Messages`" (version 6)
+   and "Service 10 `Jobs`" (version 8) match. Below those versions each
+   method answers `-32001` with the version and sends nothing, as before.
+2. **`WorkBackend`.** `qap-client`'s `Jobs` is generic over `Requests`, but
+   its `Spool` and `Messages` operations and the watches are methods of
+   `Client` only. So `session::WorkBackend` is one object-safe trait for
+   all three and the watches, implemented for `Client` (each method the
+   `qap-client` call of the same name), reached with `Backend::work`
+   (default `None`, so the other services' fakes are unchanged) and
+   `Sessions::work`. `jobs.log` and Phase 4's `job.log` keep going through
+   `CommandBackend::job_log`.
+3. **Where the watches' events come from.** The client keeps what its
+   watches report until `watch_events` takes it. The host takes it after
+   every call on a session (`Sessions::with_backend`, which also covers a
+   resume, after which the client watches again by itself) and whenever
+   the watcher thread looks: woken by the connection's `Wake` when an
+   event arrives, else every 5 s. A session busy with a call is skipped
+   and its events go out when the call ends. `Sessions::on_events` hands
+   them, with the session let go, to `watches::Watches`, which sends
+   `spool.changed` and `messages.arrived`. So an event's delay is the
+   server's look (250 ms, `Config::watch_poll`) plus the wake.
+4. **Who wants a watch.** The client keeps one watch per `Queue` or
+   `SpoolTarget` value, and `unwatch` forgets it whoever else wanted it.
+   `Watches` counts the extension's watch (`spool.watch`,
+   `messages.watch`, once) and each one-shot wait, and tells the client to
+   unwatch only when nobody wants it. A session's end (disconnect, or a new
+   sign-on, whose new client watches nothing) forgets that session's
+   watches and answers its waits `null`. The extension watches again when
+   a connection's session job changes: the Spooled files view while it is
+   shown, the Messages view's own queue always.
+5. **Notifications.** `spool.changed` is `{ name, target, change, id,
+   file? }`, `file` the file as listed after the change (absent for
+   `removed`); `SpoolRewatched` is `change: "rewatched"` with no `id`, for
+   the view to read its list again. `messages.arrived` is `{ name, queue,
+   message, caughtUp }`, `caughtUp` for a message found by a catch-up after
+   a resume or a sign-on. `Watching`, `CaughtUp` and `Failed` go to the
+   host log; a `Failed` that is `NotAuthorized` has taken the watch away.
+6. **JSON shapes** (`codec.rs`, the one place): a key is 8 upper-case
+   hexadecimal characters, read in either case; a `JobId` is `{ number,
+   user, name }`, the number six digits, names trimmed and never
+   case-folded, written `nnnnnn/USER/NAME`; an `ObjectName` is `{ library,
+   name }`; a `Queue` is `"own"`, `"sysopr"` or `{ library, queue }`; a
+   `Recipient` `{ profile }` or `{ queue }`; a `SpoolTarget` `{ outq }` or
+   `{ profile }` (`*ALL` refused, as the spec does); enums are the spec's
+   names in lower camel case (`onJobQueue`, `held`, `senderCopy`). A job
+   log entry's `kind` is now the same `MessageType` name: Phase 4 sent
+   `Debug` in lower case, which made `senderCopy` `sendercopy`.
+7. **`jobs.end`.** `how` is `controlled` or `immediate`; `delay`, seconds,
+   only with `controlled`, 1 to 999999 as `ENDJOB DELAY` takes; anything
+   else is `-32602`. The extension offers **End…** on every job but the
+   connection's own, which the spec refuses (`InvalidRequest`).
+8. **`spool.files` takes a `job`.** `ListSpooledFiles` has no job among its
+   filters, so the host lists `user`'s files (`*CURRENT` when absent) and
+   keeps that job's. A job's files are listed as its user's, but the
+   connection job's (`123456/QUSER/QAPCNN`), whose spooled files belong to
+   the signed-on profile, are listed as `*CURRENT`.
+9. **Reading.** `spool.readText` sends one `ReadSpooledFile` as `Text` for
+   the range itself: `qap_client::spool::read` reads `Text` and `Pdf`
+   whole, whatever range it is given. It answers `{ pages, firstPage,
+   lastPage, text }`, `pages` the whole file's. `spool.readText`,
+   `spool.download` and `spool.awaitFile` are deferred, each on a thread of
+   its own, and the extension does not time them out. `spool.download`
+   goes through `qap_client::spool::read` (SCS in batches of 25 pages),
+   takes a `download` ID for `spool.progress` (at most every 250 ms) and
+   `spool.cancel`, answers `-32040` when cancelled (`data: { download,
+   pages }`), and removes its file when cancelled or failed. Spooled-file
+   actions are sent in the session and waited for outside it.
+10. **`spool.awaitFile { name, job, file?, timeoutMs? }`** is the one-shot
+    the prompt describes for batch runs, a method of its own. It watches
+    the profile's own files, lists them once (so a file written before the
+    watch counts), and answers the first file of the job named `file` that
+    is not `Open` or `Writing`, or `null` after 10 minutes or when the
+    session ends. A rewatch lists again.
+11. **How the compile listing is matched to its run.** Before a compile the
+    extension reads the connection job's highest spooled file number
+    (`spool.files` with the job); after it, the job's files again, and the
+    listing is the newest file named for the listing (the command's
+    `PRTFILE`, else `QSYSPRT`) numbered above that. Numbers in a job only
+    go up, so it is a file the run made, and a compile that wrote none
+    gets no line. That is two lists per compile; when either fails, no line
+    and no error. A batch run waits for its submitted job's file named for
+    its command's listing with `spool.awaitFile`, for any batch run, not
+    only compiles (a `CALL` may print to `QSYSPRT`).
+12. **The output channel's links.** `Job: Open` is the qualified job on the
+    `Job:` and `Submitted:` lines made a link to the Jobs view, so the
+    lines stay as Phase 4 wrote them. `Job log: Show` now opens the log of
+    the block's job: the submitted one for a batch run. The listing line,
+    `Listing: Open  QSYSPRT(8) 123456/QUSER/QAPCNN · QSHQ400`, names its
+    file and connection, since a batch run's comes after other blocks
+    perhaps. **Show in Jobs view** makes the job's connection the active
+    one; a job the view's filter does not list offers its job log.
+13. **The viewer.** A `TextDocumentContentProvider` on `qs400spl`, read-only
+    by being one (Phase 2 decision 9). The form feeds are not kept in the
+    text: before each page, the first included, is an empty line that an
+    `after` decoration shows as `— page n —`, so no printed line moves a
+    column and Find searches the text as printed. Monospace is the
+    editor's font; `qs400-spool` is a language of its own whose
+    `configurationDefaults` turn word wrap off and put rulers at 80 and 132
+    (rulers are per language, Phase 5 decision 10). A file under 2000 pages
+    is read whole, a larger one at pages 1 to 100 with **Load All Pages**
+    (context key `code-for-qs400.spoolPartial`); a viewer restored without
+    the page count reads 100 pages, then the whole file when it has fewer
+    than 2000. Its connection is matched without case against the saved
+    connections and the signed-on sessions (Phase 2 decision 15).
+    Deleting the file closes its viewers.
+14. **Statuses shown without a spec description.** The spec lists
+    `SpoolStatus` by name and describes only `Message` ("waiting for a
+    reply"); the tree shows `Ready`, `Held`, `Open`, `Closed`, `Writing`,
+    `Printing`, `Message waiting`, `Pending` and `Saved`, `WRKSPLF`'s words
+    for the `qap-proto` states. QS/400 never sends `Writing` ("QS/400 has
+    no separate state for a file being written"). Every `MessageType` has
+    a spec name; the tooltip shows them as `Information`, `Inquiry`,
+    `Reply`, `Completion`, `Diagnostic`, `Escape`, `Notify` and `Sender's
+    copy`. **Hold** is not offered on a held file.
+15. **Messages.** The own queue of every signed-on connection at QAP 6 or
+    later is watched once per session job, whether the view is shown or
+    not, and listed once then, so inquiries already waiting count. The
+    badge is the active connection's inquiries waiting plus arrivals not
+    yet seen (cleared when the view is shown); a reply that arrives, a
+    reply sent and a remove take an inquiry off it. Notifications come for
+    any signed-on connection, prefixed with its name; `all` includes
+    caught-up arrivals. `messages.canRead` for **System operator** is asked
+    once per session job. The description is `ID · from user · time ·
+    key`: the exit test looks for the key in the list. **Remove All
+    Answered** removes answered inquiries and sender's copies and every
+    reply, after a modal naming the count.
+16. **Replies are passed as typed.** The extension refuses an empty reply
+    in its input box; the host does not, since the spec makes an empty
+    reply the message's default.
+17. **Tests.** `tests/work.rs` drives `jobs.*`, `spool.*` and `messages.*`
+    through the registry with a fake `WorkBackend` (`tests/common/mod.rs`):
+    canned lists and refusals as `qap-client`'s own `Error::Status`, and
+    `ReadSpooledFile` and the spooled-file actions over a real
+    `qap_client::Connection` on an in-memory transport, so their `Pending`
+    replies are `qap-client`'s. Watch events are handed to the fake and
+    the watcher's look (`Sessions::check_all`) is called. The extension's
+    suites must not register the extension's own command IDs: running a
+    contributed command activates the extension, whose registration then
+    fails on the ID already taken, and every later suite with it. So the
+    viewer's tests register only its provider (`registerProvider`).
 
 ## Phase 0 exit test
 

@@ -2,8 +2,9 @@
 // licensed under the terms of the MIT license which can be found in the
 // root directory of this project.
 
-// The Phase 1, 2, 3, 4 and 6 exit tests' automatic steps against a real
-// QS/400 system. Phase 6 makes and drops the table HLINV.QS4SQL6. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
+// The Phase 1, 2, 3, 4, 6 and 7 exit tests' automatic steps against a real
+// QS/400 system. Phase 6 makes and drops the table HLINV.QS4SQL6; Phase 7
+// compiles QS4SPL7 and submits CODETEST. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
 // QS400_TEST_PASSWORD are set. Optional: QS400_TEST_PORT, QS400_TEST_CA_FILE,
 // QS400_TEST_LIBRARY (added to the list, default QGPL),
 // QS400_TEST_CURLIB (set as the current library, default the user profile),
@@ -23,6 +24,7 @@ import * as vscode from 'vscode';
 import { ConnectionConfig, connectParams } from '../src/connections/config';
 import { moved, withAdded } from '../src/connections/libraryList';
 import { jobText } from '../src/actions/output';
+import { parseQualifiedJob, sameJob } from '../src/jobs/model';
 import type { ExtensionApi } from '../src/extension';
 import { HostRpcError } from '../src/host/client';
 import { IfsErrorCodes, LibraryList, SessionErrorCodes } from '../src/host/protocol';
@@ -919,5 +921,157 @@ suite('Live: Phase 6 exit test', function () {
     const again = await api.history.rerun(NAME, top[2]);
     assert.ok(again.result);
     assert.equal(again.sql, 'VALUES 1');
+  });
+});
+
+// Phase 7: the test copies QS400_TEST_SOURCE to QS4SPL7 in
+// QS400_TEST_SRCPF and compiles it with the default Compile (CRTBNDRPG)
+// into the current library; the listing the output channel links is read,
+// saved as PDF, held, released and deleted. It submits DLYJOB 300 as
+// CODETEST, reads its log and ends it *IMMED; sends an inquiry to the
+// user's own queue, times its arrival, replies OK and checks it no longer
+// waits; and sends a plain message and finds it with its key. It removes
+// its member and its messages at the end; the program stays in the current
+// library.
+
+const SPL = 'QS4SPL7';
+
+suite('Live: Phase 7 exit test', function () {
+  let api: ExtensionApi;
+  const at = { name: NAME, library: SRC_LIB, file: SRC_FILE, member: SPL };
+  const uri = () => memberUri(NAME, SRC_LIB, SRC_FILE, SPL, 'RPGLE');
+  const keys: string[] = [];
+
+  suiteSetup(async function () {
+    if (!HOST || !USER || !PASSWORD || !SOURCE) {
+      this.skip();
+    }
+    const ext = vscode.extensions.getExtension<ExtensionApi>('quartzsystems.code-for-qs400');
+    assert.ok(ext);
+    api = await ext.activate();
+    await config().update('connections', [connection()], true);
+    await api.sessions.signOn(connection(), { password: PASSWORD, save: false }, false);
+    const qap = api.sessions.status(NAME).system?.qap ?? 0;
+    if (qap < 8) {
+      console.log(`live: Phase 7 skipped: the server agreed QAP ${qap}; Jobs needs 8`);
+      this.skip();
+    }
+    const list = await api.host.request('libl.get', { name: NAME });
+    const curlib = (env.QS400_TEST_CURLIB ?? USER).toUpperCase();
+    await api.host.request('libl.set', { name: NAME, current: curlib, user: list.user.filter((l) => l !== curlib) });
+    const [, library, file, member] = SOURCE;
+    await api.host.request('member.copy', { name: NAME, from: { library, file, member }, to: { library: SRC_LIB, file: SRC_FILE, member: SPL }, replace: true });
+  });
+
+  suiteTeardown(async function () {
+    if (!api) {
+      return;
+    }
+    if (keys.length) {
+      await api.host.request('messages.remove', { name: NAME, queue: 'own', keys }).catch(() => undefined);
+    }
+    await api.host.request('member.delete', at).catch(() => undefined);
+    await api.host.request('session.disconnect', { name: NAME }).catch(() => undefined);
+    await config().update('connections', undefined, true);
+  });
+
+  test('compile → listing: 132 columns, page breaks, the RNF summary; PDF; hold, release, delete', async () => {
+    const r = await api.runner.run(uri(), 'Compile (CRTBNDRPG)');
+    assert.ok(r?.outcome, `an outcome: ${String(r?.error)}`);
+    const f = await r.listing;
+    assert.ok(f, 'the compile made a listing during the run');
+    console.log(`live: listing ${f.id.file}(${f.id.number}) ${jobText(f.id.job)}, ${f.pages} pages, ${f.status}, device ${f.deviceType}`);
+    const text = await api.host.request('spool.readText', { name: NAME, id: f.id });
+    assert.equal(text.text.split('\f').length, text.pages, 'a form feed between pages');
+    const widest = Math.max(...text.text.split(/\r?\n/).map((l) => l.replace(/\f/g, '').length));
+    console.log(`live: listing read, ${text.pages} pages, widest line ${widest}`);
+    assert.ok(widest > 80 && widest <= 132, `a 132-column listing: widest ${widest}`);
+    assert.match(text.text, /RNF\d{4}|RNS\d{4}/, 'the RNF summary is there');
+    const ed = await api.viewer.open({ connection: NAME, id: f.id }, f.pages);
+    assert.ok(ed);
+    assert.equal(api.viewer.state(ed.document.uri)?.layout.markers.length, text.pages);
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+    const pdf = path.join(os.tmpdir(), `qs4-live-${process.pid}.pdf`);
+    const d = await api.host.request('spool.download', { name: NAME, id: f.id, format: 'pdf', to: pdf });
+    const head = fs.readFileSync(pdf).subarray(0, 4).toString('latin1');
+    console.log(`live: PDF ${d.size} bytes, ${d.pages} pages, starts ${JSON.stringify(head)}`);
+    assert.ok(d.size > 0);
+    assert.equal(head, '%PDF');
+    fs.rmSync(pdf, { force: true });
+    const status = async () => (await api.host.request('spool.files', { name: NAME, job: f.id.job })).find((x) => x.id.number === f.id.number)?.status;
+    await api.host.request('spool.hold', { name: NAME, id: f.id, immediately: false });
+    assert.equal(await status(), 'held');
+    await api.host.request('spool.release', { name: NAME, id: f.id });
+    assert.notEqual(await status(), 'held');
+    await api.host.request('spool.delete', { name: NAME, id: f.id });
+    assert.equal(await status(), undefined, 'deleted');
+  });
+
+  test('SBMJOB DLYJOB 300 as CODETEST: listed, its log read, ended *IMMED', async () => {
+    const run = await api.host.request('action.run', { name: NAME, command: 'SBMJOB CMD(DLYJOB DLY(300)) JOB(CODETEST) JOBQ(QBATCH)', kind: 'command' });
+    const submitted = run.messages.find((m) => m.id === 'CPC1221');
+    console.log(`live: ${submitted?.id ?? run.status}: ${submitted?.text ?? ''}`);
+    const job = parseQualifiedJob(/\b(\d{6}\/[^/\s]+\/[^/\s.]+)/.exec(submitted?.text ?? '')?.[1] ?? '');
+    assert.ok(job, 'the job submitted');
+    const find = async () => (await api.host.request('jobs.list', { name: NAME, user: '*CURRENT' })).find((j) => sameJob(j.job, job));
+    const started = Date.now();
+    let entry = await find();
+    while (entry?.state !== 'active' && Date.now() - started < 30_000) {
+      await new Promise((r) => setTimeout(r, 1000));
+      entry = await find();
+    }
+    assert.equal(entry?.state, 'active', `CODETEST active: ${entry?.status ?? 'not listed'}`);
+    console.log(`live: ${jobText(job)} ${entry.status} ${entry.type} ${entry.subsystem} ${entry.function}`);
+    const log = await api.host.request('jobs.log', { name: NAME, job });
+    console.log(`live: its log has ${log.length} entries, first ${log[0]?.id ?? 'none'}`);
+    assert.ok(log.length > 0);
+    await api.host.request('jobs.end', { name: NAME, job, how: 'immediate' });
+    const ending = Date.now();
+    entry = await find();
+    while (entry?.state === 'active' && Date.now() - ending < 30_000) {
+      await new Promise((r) => setTimeout(r, 1000));
+      entry = await find();
+    }
+    console.log(`live: after *IMMED: ${entry ? `${entry.state} ${entry.status}` : 'not listed'}`);
+    assert.notEqual(entry?.state, 'active');
+  });
+
+  test('an inquiry to self arrives, is answered OK, and no longer waits', async () => {
+    await api.host.request('messages.watch', { name: NAME, queue: 'own' });
+    const t0 = Date.now();
+    const arrived = new Promise<{ key: string; ms: number }>((resolve) => {
+      const sub = api.host.onDidArriveMessage((a) => {
+        if (a.queue === 'own' && a.message.needsReply && a.message.text === 'reply test') {
+          sub.dispose();
+          resolve({ key: a.message.key, ms: Date.now() - t0 });
+        }
+      });
+    });
+    const sent = await api.host.request('messages.send', { name: NAME, to: { profile: USER }, text: 'reply test', inquiry: true });
+    assert.ok(sent.key, 'an inquiry answers its key');
+    keys.push(sent.key);
+    const timeout = new Promise<never>((_, no) => setTimeout(() => no(new Error('no messages.arrived in 15 s')), 15_000));
+    const a = await Promise.race([arrived, timeout]);
+    console.log(`live: inquiry ${a.key} arrived ${a.ms} ms after the send (key sent ${sent.key})`);
+    await api.host.request('messages.reply', { name: NAME, queue: 'own', key: a.key, reply: 'OK' });
+    const list = await api.host.request('messages.list', { name: NAME, queue: 'own', newestFirst: true });
+    const inquiry = list.find((m) => m.key === a.key);
+    assert.ok(inquiry);
+    assert.equal(inquiry.needsReply, false);
+    console.log(`live: after the reply: ${inquiry.kind}, reply ${JSON.stringify(inquiry.reply)}`);
+    const reply = list.find((m) => m.kind === 'reply' && m.answers === a.key);
+    if (reply) {
+      keys.push(reply.key);
+    }
+  });
+
+  test('a message sent to self is listed with its key and time', async () => {
+    const text = `live test ${Date.now()}`;
+    await api.host.request('messages.send', { name: NAME, to: { profile: USER }, text, inquiry: false });
+    const m = (await api.host.request('messages.list', { name: NAME, queue: 'own', newestFirst: true })).find((x) => x.text === text);
+    assert.ok(m, 'listed');
+    assert.match(m.key, /^[0-9A-F]{8}$/);
+    console.log(`live: sent ${m.key} at ${new Date(m.sent).toISOString()} from ${m.fromUser}`);
+    keys.push(m.key);
   });
 });
