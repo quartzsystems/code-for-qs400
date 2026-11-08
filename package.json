@@ -182,6 +182,42 @@
         "title": "Renumber Member",
         "category": "Code for QS/400",
         "icon": "$(list-ordered)"
+      },
+      {
+        "command": "code-for-qs400.member.create",
+        "title": "New Member",
+        "category": "Code for QS/400",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "code-for-qs400.member.copy",
+        "title": "Copy Member",
+        "category": "Code for QS/400",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "code-for-qs400.member.rename",
+        "title": "Rename Member",
+        "category": "Code for QS/400",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "code-for-qs400.member.delete",
+        "title": "Delete Member",
+        "category": "Code for QS/400",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "code-for-qs400.member.changeText",
+        "title": "Change Member Text",
+        "category": "Code for QS/400",
+        "icon": "$(note)"
+      },
+      {
+        "command": "code-for-qs400.member.compare",
+        "title": "Compare with…",
+        "category": "Code for QS/400",
+        "icon": "$(diff)"
       }
     ],
     "configuration": {
@@ -472,6 +508,41 @@
           "command": "code-for-qs400.member.openReadOnly",
           "when": "view == code-for-qs400.objects && viewItem == objects.member",
           "group": "1_open@2"
+        },
+        {
+          "command": "code-for-qs400.member.create",
+          "when": "view == code-for-qs400.objects && viewItem == object.file.srcpf",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.member.create",
+          "when": "view == code-for-qs400.objects && viewItem == object.file.srcpf",
+          "group": "1_object@0"
+        },
+        {
+          "command": "code-for-qs400.member.copy",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "2_member@1"
+        },
+        {
+          "command": "code-for-qs400.member.rename",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "2_member@2"
+        },
+        {
+          "command": "code-for-qs400.member.changeText",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "2_member@3"
+        },
+        {
+          "command": "code-for-qs400.member.compare",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "2_member@4"
+        },
+        {
+          "command": "code-for-qs400.member.delete",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "3_remove@1"
         }
       ],
       "commandPalette": [
@@ -514,6 +585,30 @@
         {
           "command": "code-for-qs400.member.renumber",
           "when": "resourceScheme == qs400mbr"
+        },
+        {
+          "command": "code-for-qs400.member.create",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.copy",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.rename",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.delete",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.changeText",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.member.compare",
+          "when": "false"
         }
       ],
       "editor/context": [
