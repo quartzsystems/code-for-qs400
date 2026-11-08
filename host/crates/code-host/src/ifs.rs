@@ -19,12 +19,26 @@
 //!   change in between is seen as one. A write with `expect` refuses with
 //!   [`codes::CHANGED`] when the stamp differs, before sending anything.
 //! - Text documents are capped at [`TEXT_LIMIT`] file bytes.
+//! - Transfers (`ifs.download`, `ifs.upload`) move bytes exactly as stored
+//!   (`data_ccsid: None`), each on a thread of its own: the method is
+//!   answered when the transfer ends, while the host goes on reading
+//!   requests, `ifs.cancel` among them. The session is held only to send
+//!   each request. `ifs.progress` goes at most every [`PROGRESS_EVERY`],
+//!   `ifs.transferEnded` once at the end.
+//! - A cancelled or failed upload leaves what the system has, for
+//!   `mode: "resume"` to go on from (`qap-client`'s `resume_offset`: the
+//!   system's size, no further than the local file); `replace` starts the
+//!   file again. A cancelled or failed download deletes its local file.
 
-use std::io::Cursor;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::cell::Cell;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Cursor, Seek, SeekFrom};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
-use host_rpc::{Context, Registry, RpcError};
+use host_rpc::{Context, Outbound, Registry, Responder, RpcError};
 use qap_client::ifs::{self, End, ReadOptions, Stamp, UTF8, WriteOptions};
 use qap_client::proto::Status;
 use qap_client::proto::ops::ifs::{Entry, EntryKind, WriteMode};
@@ -424,8 +438,380 @@ pub fn resolve(s: &Sessions, p: &PathParams) -> Result<ResolvedDto, RpcError> {
     ))
 }
 
+/// The shortest time between two `ifs.progress` of one transfer.
+pub const PROGRESS_EVERY: Duration = Duration::from_millis(250);
+
+/// Params of `ifs.download`.
+#[derive(Debug, Deserialize)]
+pub struct DownloadParams {
+    pub name: String,
+    pub path: String,
+    /// The local file written, created or replaced.
+    pub to: String,
+    /// The ID `ifs.progress`, `ifs.transferEnded` and `ifs.cancel` use;
+    /// the host makes one when absent.
+    #[serde(default)]
+    pub transfer: Option<String>,
+}
+
+/// Params of `ifs.upload`.
+#[derive(Debug, Deserialize)]
+pub struct UploadParams {
+    pub name: String,
+    /// The local file read.
+    pub from: String,
+    pub path: String,
+    /// The CCSID of a file created; absent for 1208.
+    #[serde(default)]
+    pub ccsid: Option<u16>,
+    pub mode: Mode,
+    #[serde(default)]
+    pub transfer: Option<String>,
+}
+
+/// Params of `ifs.cancel`.
+#[derive(Debug, Deserialize)]
+pub struct CancelParams {
+    pub name: String,
+    pub transfer: String,
+}
+
+/// Result of `ifs.download` and `ifs.upload`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SizeDto {
+    /// The file's size: the system's after an upload, the local file's
+    /// after a download.
+    pub size: u64,
+}
+
+/// `ifs.progress`.
+#[derive(Serialize)]
+struct ProgressNote<'a> {
+    transfer: &'a str,
+    path: &'a str,
+    /// Bytes confirmed: the system has them (upload), or the local file
+    /// does (download).
+    done: u64,
+    total: u64,
+}
+
+/// How a transfer ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Outcome {
+    Done,
+    Cancelled,
+    Error,
+}
+
+/// `ifs.transferEnded`.
+#[derive(Serialize)]
+struct EndedNote<'a> {
+    transfer: &'a str,
+    outcome: Outcome,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    /// An upload's bytes confirmed when it stopped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    offset: Option<u64>,
+}
+
+/// The transfers running, by ID, each with its cancel flag.
+#[derive(Default)]
+pub struct Transfers {
+    running: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    made: AtomicU64,
+}
+
+impl Transfers {
+    fn running(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<AtomicBool>>> {
+        self.running.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A transfer begins under `asked`, or an ID made here.
+    fn begin(&self, asked: Option<&str>) -> Result<(String, Arc<AtomicBool>), RpcError> {
+        let id = match asked {
+            Some("") => return Err(RpcError::invalid_params("transfer is empty")),
+            Some(t) => t.to_owned(),
+            None => format!("t{}", self.made.fetch_add(1, Ordering::SeqCst) + 1),
+        };
+        let mut running = self.running();
+        if running.contains_key(&id) {
+            return Err(RpcError::invalid_params(format!(
+                "transfer {id} is running"
+            )));
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        running.insert(id.clone(), Arc::clone(&cancel));
+        Ok((id, cancel))
+    }
+
+    fn end(&self, id: &str) {
+        self.running().remove(id);
+    }
+
+    /// Asks a running transfer to stop; false when none has that ID.
+    pub fn cancel(&self, id: &str) -> bool {
+        match self.running().get(id) {
+            Some(c) => {
+                c.store(true, Ordering::SeqCst);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// Sends `ifs.progress`, at most every [`PROGRESS_EVERY`].
+struct Reporter<'a> {
+    outbound: &'a Outbound,
+    transfer: &'a str,
+    path: &'a str,
+    last: Option<Instant>,
+}
+
+impl<'a> Reporter<'a> {
+    fn new(outbound: &'a Outbound, transfer: &'a str, path: &'a str) -> Reporter<'a> {
+        Reporter {
+            outbound,
+            transfer,
+            path,
+            last: None,
+        }
+    }
+
+    fn report(&mut self, done: u64, total: u64) {
+        let now = Instant::now();
+        if self
+            .last
+            .is_some_and(|t| now.duration_since(t) < PROGRESS_EVERY)
+        {
+            return;
+        }
+        self.last = Some(now);
+        let _ = self.outbound.notify(
+            "ifs.progress",
+            &ProgressNote {
+                transfer: self.transfer,
+                path: self.path,
+                done,
+                total,
+            },
+        );
+    }
+}
+
+/// A local file that failed: [`crate::session::codes::LOCAL`].
+fn local(path: &str, e: &std::io::Error) -> RpcError {
+    RpcError::new(crate::session::codes::LOCAL, format!("{path}: {e}"))
+}
+
+fn cancelled(transfer: &str, offset: u64) -> RpcError {
+    let mut e = RpcError::new(codes::CANCELLED, "cancelled");
+    e.data = Some(json!({ "transfer": transfer, "offset": offset }));
+    e
+}
+
+/// A transfer's end: the error and, for an upload, the bytes confirmed.
+type Stopped = (RpcError, Option<u64>);
+
+/// `ifs.download`, to its end.
+fn run_download(
+    s: &Sessions,
+    outbound: &Outbound,
+    p: &DownloadParams,
+    id: &str,
+    cancel: &AtomicBool,
+) -> Result<SizeDto, Stopped> {
+    let path = path_param("path", &p.path).map_err(|e| (e, None))?;
+    let to = path_param("to", &p.to).map_err(|e| (e, None))?;
+    let file = File::create(to).map_err(|e| (local(to, &e), None))?;
+    let mut sink = BufWriter::new(file);
+    let mut reporter = Reporter::new(outbound, id, path);
+    let mut failure = SendFailure::new();
+    let read = ifs::read(
+        |r| failure.keep(s.ifs(&p.name, |f| f.send_read(r))),
+        path,
+        ReadOptions::default(),
+        &mut sink,
+        |pr| reporter.report(pr.offset, pr.size),
+        cancel,
+    );
+    drop(sink);
+    let out = match read {
+        Ok(End::Done(pr)) => return Ok(SizeDto { size: pr.size }),
+        Ok(End::Cancelled(pr)) => (cancelled(id, pr.offset), None),
+        Err(e) => (failure.error(&e), None),
+    };
+    // Nothing half-written is left looking like the file.
+    let _ = std::fs::remove_file(to);
+    Err(out)
+}
+
+/// `ifs.upload`, to its end.
+fn run_upload(
+    s: &Sessions,
+    outbound: &Outbound,
+    p: &UploadParams,
+    id: &str,
+    cancel: &AtomicBool,
+) -> Result<SizeDto, Stopped> {
+    let from = path_param("from", &p.from).map_err(|e| (e, None))?;
+    let path = path_param("path", &p.path).map_err(|e| (e, None))?;
+    let mut file = File::open(from).map_err(|e| (local(from, &e), None))?;
+    let len = file.metadata().map_err(|e| (local(from, &e), None))?.len();
+    let (first, resume_at) = match p.mode {
+        Mode::Create => (WriteMode::Create, None),
+        Mode::Replace => (WriteMode::Replace, None),
+        Mode::Resume => {
+            let at = s
+                .ifs(&p.name, |f| f.resume_offset(path, len))
+                .map_err(|e| (e, None))?;
+            if at == 0 {
+                // Nothing there to go on from: the whole file.
+                (WriteMode::Replace, None)
+            } else {
+                file.seek(SeekFrom::Start(at))
+                    .map_err(|e| (local(from, &e), None))?;
+                (WriteMode::Replace, Some(at))
+            }
+        }
+    };
+    let opts = WriteOptions {
+        data_ccsid: None,
+        ccsid: p.ccsid.unwrap_or(0),
+        first,
+        resume_at,
+        ..WriteOptions::default()
+    };
+    let confirmed = Cell::new(resume_at.unwrap_or(0));
+    let mut reporter = Reporter::new(outbound, id, path);
+    reporter.report(confirmed.get(), len);
+    let mut failure = SendFailure::new();
+    let written = ifs::write(
+        |w| failure.keep(s.ifs(&p.name, |f| f.send_write(w))),
+        path,
+        &mut BufReader::new(file),
+        opts,
+        |pr| {
+            confirmed.set(pr.offset);
+            reporter.report(pr.offset, len);
+        },
+        cancel,
+    );
+    match written {
+        // Resumed with nothing left to send: the system has it all.
+        Ok(End::Done(pr)) if pr.bytes == 0 && resume_at.is_some() => Ok(SizeDto {
+            size: resume_at.unwrap_or(0),
+        }),
+        Ok(End::Done(pr)) => Ok(SizeDto { size: pr.size }),
+        Ok(End::Cancelled(pr)) => Err((cancelled(id, pr.offset), Some(pr.offset))),
+        Err(e) => Err((failure.error(&e), Some(confirmed.get()))),
+    }
+}
+
+/// Ends a transfer: `ifs.transferEnded`, then the method's answer.
+fn finish(
+    transfers: &Transfers,
+    outbound: &Outbound,
+    id: &str,
+    out: Result<SizeDto, Stopped>,
+    responder: Responder,
+) {
+    transfers.end(id);
+    let (result, note) = match out {
+        Ok(size) => (
+            Ok(size),
+            EndedNote {
+                transfer: id,
+                outcome: Outcome::Done,
+                message: None,
+                offset: None,
+            },
+        ),
+        Err((e, offset)) => {
+            let outcome = if e.code == codes::CANCELLED {
+                Outcome::Cancelled
+            } else {
+                Outcome::Error
+            };
+            let message = (outcome == Outcome::Error).then(|| e.message.clone());
+            (
+                Err(e),
+                EndedNote {
+                    transfer: id,
+                    outcome,
+                    message,
+                    offset,
+                },
+            )
+        }
+    };
+    let _ = outbound.notify("ifs.transferEnded", &note);
+    responder.send(result);
+}
+
+/// Starts `run` on a thread of its own as transfer `asked`; the method is
+/// answered when it ends.
+fn spawn_transfer(
+    transfers: &Arc<Transfers>,
+    ctx: &Context,
+    asked: Option<&str>,
+    responder: Responder,
+    run: impl FnOnce(&Outbound, &str, &AtomicBool) -> Result<SizeDto, Stopped> + Send + 'static,
+) {
+    let (id, cancel) = match transfers.begin(asked) {
+        Ok(t) => t,
+        Err(e) => return responder.send::<SizeDto>(Err(e)),
+    };
+    let t = Arc::clone(transfers);
+    let outbound = ctx.outbound().clone();
+    let name = format!("ifs transfer {id}");
+    let spawned = std::thread::Builder::new().name(name).spawn({
+        let id = id.clone();
+        move || {
+            let out = run(&outbound, &id, &cancel);
+            finish(&t, &outbound, &id, out, responder);
+        }
+    });
+    if spawned.is_err() {
+        // The closure, and the responder with it, is dropped: answered.
+        transfers.end(&id);
+    }
+}
+
 /// Registers `ifs.*`.
 pub fn register(r: &mut Registry, sessions: &Arc<Sessions>) {
+    let transfers = Arc::new(Transfers::default());
+    let s = Arc::clone(sessions);
+    let t = Arc::clone(&transfers);
+    r.register_deferred(
+        "ifs.download",
+        move |p: DownloadParams, ctx: &Context, responder: Responder| {
+            let s = Arc::clone(&s);
+            let asked = p.transfer.clone();
+            spawn_transfer(&t, ctx, asked.as_deref(), responder, move |o, id, c| {
+                run_download(&s, o, &p, id, c)
+            });
+        },
+    );
+    let s = Arc::clone(sessions);
+    let t = Arc::clone(&transfers);
+    r.register_deferred(
+        "ifs.upload",
+        move |p: UploadParams, ctx: &Context, responder: Responder| {
+            let s = Arc::clone(&s);
+            let asked = p.transfer.clone();
+            spawn_transfer(&t, ctx, asked.as_deref(), responder, move |o, id, c| {
+                run_upload(&s, o, &p, id, c)
+            });
+        },
+    );
+    let t = Arc::clone(&transfers);
+    r.register("ifs.cancel", move |p: CancelParams, _: &Context| {
+        t.cancel(&p.transfer);
+        Ok::<_, RpcError>(())
+    });
     let s = Arc::clone(sessions);
     r.register("ifs.list", move |p: ListParams, _: &Context| list(&s, &p));
     let s = Arc::clone(sessions);

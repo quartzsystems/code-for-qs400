@@ -14,4 +14,4 @@ pub mod message;
 pub mod server;
 
 pub use message::{Incoming, NoParams, RpcError, codes};
-pub use server::{Context, Exit, Outbound, Registry, serve};
+pub use server::{Context, Exit, Outbound, Registry, Responder, serve};

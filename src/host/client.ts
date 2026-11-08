@@ -78,10 +78,13 @@ export type HostState = 'idle' | 'running' | 'stopped';
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | undefined;
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Methods answered only when the work ends (a transfer): no timeout. */
+export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>(['ifs.download', 'ifs.upload']);
 const SHUTDOWN_GRACE_MS = 2_000;
 
 /** File name of the host binary on this platform. */
@@ -103,6 +106,8 @@ export class HostClient implements vscode.Disposable {
   private readonly stateEmitter = new vscode.EventEmitter<HostState>();
   private readonly logEmitter = new vscode.EventEmitter<LogParams>();
   private readonly sessionEmitter = new vscode.EventEmitter<HostNotifications['session.changed']>();
+  private readonly progressEmitter = new vscode.EventEmitter<HostNotifications['ifs.progress']>();
+  private readonly transferEmitter = new vscode.EventEmitter<HostNotifications['ifs.transferEnded']>();
 
   /** Fires on every state change. */
   readonly onDidChangeState = this.stateEmitter.event;
@@ -110,6 +115,10 @@ export class HostClient implements vscode.Disposable {
   readonly onDidLog = this.logEmitter.event;
   /** Fires for each `session.changed` notification. */
   readonly onDidChangeSession = this.sessionEmitter.event;
+  /** Fires for each `ifs.progress` notification. */
+  readonly onDidProgress = this.progressEmitter.event;
+  /** Fires for each `ifs.transferEnded` notification. */
+  readonly onDidEndTransfer = this.transferEmitter.event;
 
   constructor(
     private readonly extensionPath: string,
@@ -136,7 +145,10 @@ export class HostClient implements vscode.Disposable {
       : path.join(this.extensionPath, 'bin', hostBinaryName());
   }
 
-  /** Sends a request, starting the host first if needed. */
+  /**
+   * Sends a request, starting the host first if needed. It fails after
+   * 30 s without a reply, except the `UNTIMED_METHODS`.
+   */
   async request<M extends MethodName>(method: M, ...args: ParamsOf<M> extends undefined ? [] : [ParamsOf<M>]): Promise<ResultOf<M>> {
     const child = this.ensureStarted();
     const id = this.nextId++;
@@ -145,10 +157,12 @@ export class HostClient implements vscode.Disposable {
       message.params = args[0];
     }
     return new Promise<ResultOf<M>>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${method} timed out after ${REQUEST_TIMEOUT_MS} ms`));
-      }, REQUEST_TIMEOUT_MS);
+      const timer = UNTIMED_METHODS.has(method)
+        ? undefined
+        : setTimeout(() => {
+            this.pending.delete(id);
+            reject(new Error(`${method} timed out after ${REQUEST_TIMEOUT_MS} ms`));
+          }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
       child.stdin.write(encodeFrame(message), (err) => {
         if (err) {
@@ -199,6 +213,8 @@ export class HostClient implements vscode.Disposable {
     this.stateEmitter.dispose();
     this.logEmitter.dispose();
     this.sessionEmitter.dispose();
+    this.progressEmitter.dispose();
+    this.transferEmitter.dispose();
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -297,6 +313,14 @@ export class HostClient implements vscode.Disposable {
     }
     if (method === 'session.changed') {
       this.sessionEmitter.fire(params as HostNotifications['session.changed']);
+      return;
+    }
+    if (method === 'ifs.progress') {
+      this.progressEmitter.fire(params as HostNotifications['ifs.progress']);
+      return;
+    }
+    if (method === 'ifs.transferEnded') {
+      this.transferEmitter.fire(params as HostNotifications['ifs.transferEnded']);
       return;
     }
     this.output.debug(`unhandled notification ${method}`);

@@ -13,7 +13,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 
 /// Shared, thread-safe handle on the outgoing stream. Responses and
 /// notifications go through it so frames never interleave.
@@ -73,12 +73,78 @@ impl Context {
     }
 }
 
+/// Where a deferred method's answer goes.
+enum Answer {
+    /// The response to request `id`, written on the stream.
+    Wire { id: Value, outbound: Outbound },
+    /// Back to [`Registry::dispatch`], which waits for it.
+    Channel(mpsc::Sender<Result<Value, RpcError>>),
+    /// A notification: nobody waits.
+    Discard,
+}
+
+/// The answer to one request of a deferred method
+/// ([`Registry::register_deferred`]), sent later from any thread. Dropped
+/// without [`Responder::send`], it answers an internal error, so every
+/// request is answered once.
+pub struct Responder {
+    answer: Option<Answer>,
+}
+
+impl Responder {
+    fn new(answer: Answer) -> Responder {
+        Responder {
+            answer: Some(answer),
+        }
+    }
+
+    /// Answers the request.
+    pub fn send<R: Serialize>(mut self, result: Result<R, RpcError>) {
+        let result = result
+            .and_then(|r| serde_json::to_value(r).map_err(|e| RpcError::internal(e.to_string())));
+        self.answer_with(result);
+    }
+
+    fn answer_with(&mut self, result: Result<Value, RpcError>) {
+        match self.answer.take() {
+            Some(Answer::Wire { id, outbound }) => {
+                let reply = match &result {
+                    Ok(v) => response_ok(&id, v),
+                    Err(e) => response_err(&id, e),
+                };
+                let _ = outbound.send(&reply);
+            }
+            Some(Answer::Channel(tx)) => {
+                let _ = tx.send(result);
+            }
+            Some(Answer::Discard) | None => {}
+        }
+    }
+}
+
+impl Drop for Responder {
+    fn drop(&mut self) {
+        if self.answer.is_some() {
+            self.answer_with(Err(RpcError::internal("the method ended without a reply")));
+        }
+    }
+}
+
 type Handler = Box<dyn Fn(Value, &Context) -> Result<Value, RpcError> + Send + Sync>;
+type Deferred = Box<dyn Fn(Value, &Context, Responder) + Send + Sync>;
+
+/// How a method answers.
+enum Method {
+    /// Before the serve loop reads the next request.
+    Now(Handler),
+    /// Later, through its [`Responder`]: the serve loop goes on at once.
+    Later(Deferred),
+}
 
 /// Methods keyed by name.
 #[derive(Default)]
 pub struct Registry {
-    methods: HashMap<String, Handler>,
+    methods: HashMap<String, Method>,
 }
 
 impl Registry {
@@ -103,7 +169,33 @@ impl Registry {
             let r = handler(p, ctx)?;
             serde_json::to_value(r).map_err(|e| RpcError::internal(e.to_string()))
         });
-        let previous = self.methods.insert(name.to_owned(), wrapped);
+        self.insert(name, Method::Now(wrapped));
+    }
+
+    /// Registers a typed method that answers later, from any thread,
+    /// through the [`Responder`] it is handed: the serve loop reads the
+    /// next request at once, so a long operation does not hold up the
+    /// ones after it (a cancel among them). Params that do not
+    /// deserialize into `P` are answered with `-32602` at once.
+    ///
+    /// # Panics
+    /// If `name` is already registered.
+    pub fn register_deferred<P, F>(&mut self, name: &str, handler: F)
+    where
+        P: DeserializeOwned,
+        F: Fn(P, &Context, Responder) + Send + Sync + 'static,
+    {
+        let wrapped: Deferred = Box::new(
+            move |params, ctx, responder| match serde_json::from_value::<P>(params) {
+                Ok(p) => handler(p, ctx, responder),
+                Err(e) => responder.send::<Value>(Err(RpcError::invalid_params(e.to_string()))),
+            },
+        );
+        self.insert(name, Method::Later(wrapped));
+    }
+
+    fn insert(&mut self, name: &str, method: Method) {
+        let previous = self.methods.insert(name.to_owned(), method);
         assert!(previous.is_none(), "method registered twice: {name}");
     }
 
@@ -114,15 +206,40 @@ impl Registry {
         v
     }
 
-    /// Calls a method by name.
+    /// Calls a method by name and waits for its answer, a deferred one's
+    /// too.
     pub fn dispatch(&self, method: &str, params: Value, ctx: &Context) -> Result<Value, RpcError> {
-        let handler = self
-            .methods
-            .get(method)
-            .ok_or_else(|| RpcError::method_not_found(method))?;
-        match catch_unwind(AssertUnwindSafe(|| handler(params, ctx))) {
-            Ok(r) => r,
-            Err(_) => Err(RpcError::internal(format!("handler for {method} panicked"))),
+        let (tx, rx) = mpsc::channel();
+        match self.start(method, params, ctx, Answer::Channel(tx)) {
+            Some(r) => r,
+            None => rx
+                .recv()
+                .unwrap_or_else(|_| Err(RpcError::internal("the method ended without a reply"))),
+        }
+    }
+
+    /// Starts a method: its answer now, or `None` when its [`Responder`]
+    /// (built from `later`) answers.
+    fn start(
+        &self,
+        method: &str,
+        params: Value,
+        ctx: &Context,
+        later: Answer,
+    ) -> Option<Result<Value, RpcError>> {
+        let panicked = || RpcError::internal(format!("handler for {method} panicked"));
+        match self.methods.get(method) {
+            None => Some(Err(RpcError::method_not_found(method))),
+            Some(Method::Now(handler)) => Some(
+                catch_unwind(AssertUnwindSafe(|| handler(params, ctx)))
+                    .unwrap_or_else(|_| Err(panicked())),
+            ),
+            Some(Method::Later(handler)) => {
+                let responder = Responder::new(later);
+                // A panic drops the responder, which answers.
+                let _ = catch_unwind(AssertUnwindSafe(|| handler(params, ctx, responder)));
+                None
+            }
         }
     }
 }
@@ -153,14 +270,20 @@ pub fn serve<R: BufRead>(
             Ok(value) => match Incoming::from_value(value) {
                 Err((id, err)) => Some(response_err(&id, &err)),
                 Ok(Incoming::Request { id, method, params }) => {
-                    Some(match registry.dispatch(&method, params, &ctx) {
-                        Ok(result) => response_ok(&id, &result),
-                        Err(err) => response_err(&id, &err),
-                    })
+                    let later = Answer::Wire {
+                        id: id.clone(),
+                        outbound: ctx.outbound.clone(),
+                    };
+                    registry
+                        .start(&method, params, &ctx, later)
+                        .map(|r| match r {
+                            Ok(result) => response_ok(&id, &result),
+                            Err(err) => response_err(&id, &err),
+                        })
                 }
                 Ok(Incoming::Notification { method, params }) => {
                     // Notifications are never answered, errors included.
-                    let _ = registry.dispatch(&method, params, &ctx);
+                    let _ = registry.start(&method, params, &ctx, Answer::Discard);
                     None
                 }
                 Ok(Incoming::Response { .. }) => None,
@@ -335,6 +458,88 @@ mod tests {
             registry().method_names(),
             vec!["t.add", "t.fail", "t.notify", "t.panic", "t.stop"]
         );
+    }
+
+    /// `t.later` answers from a thread once `t.release` has been called.
+    fn deferred() -> (Registry, Arc<(Mutex<bool>, std::sync::Condvar)>) {
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let mut r = registry();
+        let g = Arc::clone(&gate);
+        r.register_deferred("t.later", move |p: Add, _, responder| {
+            let g = Arc::clone(&g);
+            std::thread::spawn(move || {
+                let (m, cv) = &*g;
+                let mut open = m.lock().unwrap();
+                while !*open {
+                    open = cv.wait(open).unwrap();
+                }
+                responder.send(Ok(p.a * p.b));
+            });
+        });
+        let g = Arc::clone(&gate);
+        r.register("t.release", move |_: NoParams, _| {
+            let (m, cv) = &*g;
+            *m.lock().unwrap() = true;
+            cv.notify_all();
+            Ok(())
+        });
+        r.register_deferred("t.forget", |_: NoParams, _, responder| drop(responder));
+        (r, gate)
+    }
+
+    #[test]
+    fn deferred_answers_after_the_requests_behind_it() {
+        let (r, _) = deferred();
+        let sink = Sink::default();
+        let input = &mut frames(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"t.later","params":{"a":6,"b":7}}),
+            json!({"jsonrpc":"2.0","id":2,"method":"t.release"}),
+        ]);
+        serve(&r, input, Outbound::new(sink.clone())).unwrap();
+        let mut out = read_all(&sink);
+        for _ in 0..200 {
+            if out.len() == 2 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            out = read_all(&sink);
+        }
+        // t.release was read while t.later waited: without that, neither
+        // would be answered. Which reply is written first is the threads'.
+        out.sort_by_key(|v| v["id"].as_i64());
+        assert_eq!(
+            out,
+            vec![
+                json!({"jsonrpc":"2.0","id":1,"result":42}),
+                json!({"jsonrpc":"2.0","id":2,"result":null}),
+            ]
+        );
+    }
+
+    #[test]
+    fn dispatch_waits_for_a_deferred_answer() {
+        let (r, gate) = deferred();
+        {
+            let (m, cv) = &*gate;
+            *m.lock().unwrap() = true;
+            cv.notify_all();
+        }
+        let ctx = Context::new(Outbound::new(io::sink()));
+        assert_eq!(
+            r.dispatch("t.later", json!({"a":2,"b":5}), &ctx).unwrap(),
+            json!(10)
+        );
+    }
+
+    #[test]
+    fn deferred_bad_params_and_a_dropped_responder_are_answered() {
+        let (r, _) = deferred();
+        let ctx = Context::new(Outbound::new(io::sink()));
+        let e = r.dispatch("t.later", json!({"a":"x"}), &ctx).unwrap_err();
+        assert_eq!(e.code, codes::INVALID_PARAMS);
+        let e = r.dispatch("t.forget", json!({}), &ctx).unwrap_err();
+        assert_eq!(e.code, codes::INTERNAL_ERROR);
+        assert!(r.method_names().contains(&"t.later"));
     }
 
     #[test]

@@ -325,6 +325,48 @@ export interface IfsFromToParams {
   replace: boolean;
 }
 
+export interface IfsDownloadParams extends IfsPathParams {
+  /** The local file written, created or replaced. Deleted again when the download does not finish. */
+  to: string;
+  /** The ID progress, the end and `ifs.cancel` use; the host makes one when absent. */
+  transfer?: string;
+}
+
+export type IfsUploadMode = 'create' | 'replace' | 'resume';
+
+export interface IfsUploadParams extends IfsPathParams {
+  /** The local file read. */
+  from: string;
+  /** The CCSID of a file created; absent for 1208. */
+  ccsid?: number;
+  /** `resume` goes on from the size the system has; `replace` starts again. */
+  mode: IfsUploadMode;
+  transfer?: string;
+}
+
+export interface IfsCancelParams {
+  name: string;
+  transfer: string;
+}
+
+/** `ifs.progress`, at most every 250 ms per transfer. */
+export interface IfsProgress {
+  transfer: string;
+  path: string;
+  /** Bytes the system (upload) or the local file (download) has. */
+  done: number;
+  total: number;
+}
+
+/** `ifs.transferEnded`, once per transfer, before its answer. */
+export interface IfsTransferEnded {
+  transfer: string;
+  outcome: 'done' | 'cancelled' | 'error';
+  message?: string;
+  /** An upload's bytes confirmed when it stopped. */
+  offset?: number;
+}
+
 /** Requests the extension sends, by method name. */
 export interface HostMethods {
   'host.version': { params: undefined; result: HostVersionResult };
@@ -358,12 +400,19 @@ export interface HostMethods {
   'ifs.rename': { params: IfsFromToParams; result: null };
   'ifs.copy': { params: IfsFromToParams; result: null };
   'ifs.resolve': { params: IfsPathParams; result: { path: string } };
+  /** Answered when the transfer ends: no request timeout. */
+  'ifs.download': { params: IfsDownloadParams; result: { size: number } };
+  /** Answered when the transfer ends: no request timeout. */
+  'ifs.upload': { params: IfsUploadParams; result: { size: number } };
+  'ifs.cancel': { params: IfsCancelParams; result: null };
 }
 
 /** Notifications the host sends, by method name. */
 export interface HostNotifications {
   'host.log': LogParams;
   'session.changed': SessionStatus;
+  'ifs.progress': IfsProgress;
+  'ifs.transferEnded': IfsTransferEnded;
 }
 
 export type MethodName = keyof HostMethods;

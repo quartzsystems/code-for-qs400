@@ -68,6 +68,10 @@ struct Script {
     writes: usize,
     /// Called after each `WriteFile` is applied, before its reply goes.
     on_write: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    /// `ReadFile`s answered over the connection so far.
+    reads: usize,
+    /// Called after each such `ReadFile`, before its reply goes.
+    on_read: Option<Arc<dyn Fn(usize) + Send + Sync>>,
 }
 
 type Shared = Arc<Mutex<Script>>;
@@ -465,15 +469,22 @@ impl Canned {
             };
             vec![Envelope::reply(&env, Status::Ok, None, Vec::new()).with_body(&hello)]
         } else {
-            let (status, msg, body, hook, writes) = {
+            let (status, msg, body, hook) = {
                 let mut s = self.script.lock().unwrap();
                 let before = s.writes;
                 let (status, msg, body) = s.handle(&env);
-                let hook = (s.writes > before).then(|| s.on_write.clone()).flatten();
-                (status, msg, body, hook, s.writes)
+                let hook = if s.writes > before {
+                    s.on_write.clone().map(|h| (h, s.writes))
+                } else if env.operation() == Some(Op::ReadFile) && status == Status::Ok {
+                    s.reads += 1;
+                    s.on_read.clone().map(|h| (h, s.reads))
+                } else {
+                    None
+                };
+                (status, msg, body, hook)
             };
-            if let Some(hook) = hook {
-                hook(writes);
+            if let Some((hook, n)) = hook {
+                hook(n);
             }
             Envelope::replies(&env, status, msg, body).expect("replies that frame")
         };
@@ -645,7 +656,7 @@ struct Host {
     script: Shared,
     registry: Arc<Registry>,
     outbound: Outbound,
-    _sink: Sink,
+    sink: Sink,
 }
 
 impl Host {
@@ -671,7 +682,7 @@ impl Host {
             script,
             registry: Arc::new(registry_with(&sessions)),
             outbound,
-            _sink: sink,
+            sink,
         };
         h.call(
             "session.connect",
@@ -693,6 +704,49 @@ impl Host {
     fn asked(&self) -> Vec<String> {
         std::mem::take(&mut self.script().asked)
     }
+
+    /// The params of every notification sent with `method`, in order.
+    fn notes(&self, method: &str) -> Vec<Value> {
+        let bytes = self.sink.0.lock().unwrap().clone();
+        let mut r = io::Cursor::new(bytes);
+        let mut out = Vec::new();
+        while let Some(b) = host_rpc::framing::read_frame(&mut r).unwrap() {
+            let v: Value = serde_json::from_slice(&b).unwrap();
+            if v["method"] == method {
+                out.push(v["params"].clone());
+            }
+        }
+        out
+    }
+
+    /// Cancels `transfer` the way the extension does: `ifs.cancel`.
+    fn canceller(&self, transfer: &str) -> impl Fn() + Send + Sync + 'static {
+        let registry = Arc::clone(&self.registry);
+        let outbound = self.outbound.clone();
+        let params = json!({"name":"QSHQ400","transfer":transfer});
+        move || {
+            let ctx = Context::new(outbound.clone());
+            assert_eq!(
+                registry
+                    .dispatch("ifs.cancel", params.clone(), &ctx)
+                    .unwrap(),
+                Value::Null
+            );
+        }
+    }
+}
+
+/// A directory of the test's own under the system's temporary directory.
+fn scratch(test: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("qs400-ifs-{}-{test}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+/// `n` bytes that are not all the same.
+fn pattern_bytes(n: usize) -> Vec<u8> {
+    (0..n).map(|i| (i * 31 + i / 997) as u8).collect()
 }
 
 /// The server's refusal as the host must pass it on: `-32010`, the
@@ -720,6 +774,7 @@ fn ifs_code(name: &str) -> i64 {
     match name {
         "changed" => code_host::ifs::codes::CHANGED,
         "too large" => code_host::ifs::codes::TOO_LARGE,
+        "cancelled" => code_host::ifs::codes::CANCELLED,
         "loop" => code_host::ifs::codes::LINK_LOOP,
         _ => unreachable!(),
     }
@@ -1206,4 +1261,306 @@ fn resolve_of_a_broken_link_is_not_found_and_a_loop_is_refused() {
     assert_eq!(e.data.unwrap()["messageId"], "CPFA0A9");
     let e = h.call("ifs.resolve", p(json!({"path":"/a"}))).unwrap_err();
     assert_eq!(e.code, ifs_code("loop"));
+}
+
+// Transfers
+
+fn chunk_for(path: &str) -> usize {
+    ifs::WRITE_CHUNK - path.len()
+}
+
+#[test]
+fn download_writes_the_bytes_as_stored_and_ends_done() {
+    let h = Host::new();
+    let path = format!("{HOME}/big.bin");
+    let data = pattern_bytes(3 * (1 << 20) + 17);
+    h.script().bytes(&path, 65535, data.clone());
+    let dir = scratch("download");
+    let to = dir.join("big.bin");
+    let r = h
+        .call(
+            "ifs.download",
+            p(json!({"path":path,"to":to,"transfer":"d1"})),
+        )
+        .unwrap();
+    assert_eq!(r, json!({"size":data.len()}));
+    assert_eq!(std::fs::read(&to).unwrap(), data);
+    // As stored: no conversion asked.
+    let reads: Vec<String> = h.asked();
+    assert_eq!(reads.len(), 4);
+    assert!(reads.iter().all(|l| l.ends_with(" None")), "{reads:?}");
+    let progress = h.notes("ifs.progress");
+    assert!(!progress.is_empty());
+    assert_eq!(progress[0]["transfer"], "d1");
+    assert_eq!(progress[0]["path"], path);
+    assert_eq!(progress[0]["total"], data.len());
+    assert_eq!(
+        h.notes("ifs.transferEnded"),
+        vec![json!({"transfer":"d1","outcome":"done"})]
+    );
+}
+
+#[test]
+fn a_cancelled_download_deletes_its_local_file() {
+    let h = Host::new();
+    let path = format!("{HOME}/big.bin");
+    h.script().bytes(&path, 65535, pattern_bytes(5 << 20));
+    let cancel = h.canceller("d2");
+    h.script().on_read = Some(Arc::new(move |n| {
+        if n == 2 {
+            cancel();
+            // Long enough for the transfer to see it before the reply.
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }));
+    let to = scratch("download-cancel").join("big.bin");
+    let e = h
+        .call(
+            "ifs.download",
+            p(json!({"path":path,"to":to,"transfer":"d2"})),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, ifs_code("cancelled"));
+    assert_eq!(e.data, Some(json!({"transfer":"d2","offset":1 << 20})));
+    assert!(!to.exists());
+    let ended = h.notes("ifs.transferEnded");
+    assert_eq!(ended, vec![json!({"transfer":"d2","outcome":"cancelled"})]);
+}
+
+#[test]
+fn upload_create_writes_exact_bytes_tagged_with_the_ccsid() {
+    let h = Host::new();
+    let path = format!("{HOME}/up.dat");
+    let chunk = chunk_for(&path);
+    let data = pattern_bytes(2 * chunk + 100);
+    let from = scratch("upload").join("up.dat");
+    std::fs::write(&from, &data).unwrap();
+    let r = h
+        .call(
+            "ifs.upload",
+            p(json!({"from":from,"path":path,"ccsid":819,"mode":"create","transfer":"u1"})),
+        )
+        .unwrap();
+    assert_eq!(r, json!({"size":data.len()}));
+    let node = h.script().files[&path].clone();
+    assert_eq!(node.data, data);
+    assert_eq!(node.ccsid, 819);
+    assert_eq!(
+        h.asked(),
+        vec![
+            format!("WriteFile {path} Create 0 ccsid=819 bytes={chunk} data_ccsid=None"),
+            format!("WriteFile {path} Update {chunk} ccsid=819 bytes={chunk} data_ccsid=None"),
+            format!(
+                "WriteFile {path} Update {} ccsid=819 bytes=100 data_ccsid=None",
+                2 * chunk
+            ),
+        ]
+    );
+    let progress = h.notes("ifs.progress");
+    assert_eq!(
+        progress[0],
+        json!({"transfer":"u1","path":path,"done":0,"total":data.len()})
+    );
+    assert_eq!(
+        h.notes("ifs.transferEnded"),
+        vec![json!({"transfer":"u1","outcome":"done"})]
+    );
+}
+
+#[test]
+fn a_cancelled_upload_leaves_the_partial_file_reports_its_offset_and_resumes() {
+    let h = Host::new();
+    let path = format!("{HOME}/twenty.dat");
+    let chunk = chunk_for(&path);
+    let data = pattern_bytes(5 * chunk + 4321);
+    let from = scratch("upload-cancel").join("twenty.dat");
+    std::fs::write(&from, &data).unwrap();
+    let cancel = h.canceller("u2");
+    h.script().on_write = Some(Arc::new(move |n| {
+        if n == 3 {
+            cancel();
+            // The transfer sees the cancel while the third reply is still
+            // to come: the system has three chunks, two confirmed.
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }));
+    let e = h
+        .call(
+            "ifs.upload",
+            p(json!({"from":from,"path":path,"mode":"create","transfer":"u2"})),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, ifs_code("cancelled"));
+    assert_eq!(e.data, Some(json!({"transfer":"u2","offset":2 * chunk})));
+    assert_eq!(
+        h.notes("ifs.transferEnded"),
+        vec![json!({"transfer":"u2","outcome":"cancelled","offset":2 * chunk})]
+    );
+    // Left as the system has it.
+    assert_eq!(h.script().files[&path].data, data[..3 * chunk]);
+    h.script().on_write = None;
+    h.asked();
+
+    // Resume: from the size on the system, not the offset confirmed.
+    let r = h
+        .call(
+            "ifs.upload",
+            p(json!({"from":from,"path":path,"mode":"resume","transfer":"u3"})),
+        )
+        .unwrap();
+    assert_eq!(r, json!({"size":data.len()}));
+    assert_eq!(h.script().files[&path].data, data);
+    let asked = h.asked();
+    assert_eq!(asked[0], format!("GetInfo {path}"));
+    assert_eq!(
+        asked[1],
+        format!(
+            "WriteFile {path} Update {} ccsid=0 bytes={chunk} data_ccsid=None",
+            3 * chunk
+        )
+    );
+    assert_eq!(asked.len(), 4);
+
+    // Resuming a file the system has whole sends nothing.
+    let r = h
+        .call(
+            "ifs.upload",
+            p(json!({"from":from,"path":path,"mode":"resume"})),
+        )
+        .unwrap();
+    assert_eq!(r, json!({"size":data.len()}));
+    assert_eq!(h.asked(), vec![format!("GetInfo {path}")]);
+
+    // Replace starts it again from nothing.
+    h.call(
+        "ifs.upload",
+        p(json!({"from":from,"path":path,"mode":"replace"})),
+    )
+    .unwrap();
+    assert_eq!(
+        h.asked()[0],
+        format!("WriteFile {path} Replace 0 ccsid=0 bytes={chunk} data_ccsid=None")
+    );
+    assert_eq!(h.script().files[&path].data, data);
+}
+
+#[test]
+fn resume_with_nothing_on_the_system_sends_the_whole_file() {
+    let h = Host::new();
+    let path = format!("{HOME}/new.dat");
+    let from = scratch("upload-resume-new").join("new.dat");
+    std::fs::write(&from, b"abc").unwrap();
+    h.call(
+        "ifs.upload",
+        p(json!({"from":from,"path":path,"mode":"resume"})),
+    )
+    .unwrap();
+    assert_eq!(
+        h.asked(),
+        vec![
+            format!("GetInfo {path}"),
+            format!("WriteFile {path} Replace 0 ccsid=0 bytes=3 data_ccsid=None"),
+        ]
+    );
+}
+
+#[test]
+fn upload_create_over_an_existing_file_is_cpfa0a0_and_ends_in_error() {
+    let h = Host::new();
+    let path = format!("{HOME}/a.txt");
+    h.script().file(&path, 1208, "keep");
+    let from = scratch("upload-exists").join("a.txt");
+    std::fs::write(&from, b"new").unwrap();
+    let e = h
+        .call(
+            "ifs.upload",
+            p(json!({"from":from,"path":path,"mode":"create","transfer":"u4"})),
+        )
+        .unwrap_err();
+    assert_eq!(e.data.as_ref().unwrap()["messageId"], "CPFA0A0");
+    assert_eq!(h.script().files[&path].data, b"keep");
+    assert_eq!(
+        h.notes("ifs.transferEnded"),
+        vec![json!({
+            "transfer":"u4",
+            "outcome":"error",
+            "message":"CPFA0A0: Object already exists.",
+            "offset":0
+        })]
+    );
+}
+
+#[test]
+fn a_local_file_that_cannot_be_opened_is_a_local_error_and_nothing_is_sent() {
+    let h = Host::new();
+    let from = scratch("upload-missing").join("not-there.dat");
+    let e = h
+        .call(
+            "ifs.upload",
+            p(json!({"from":from,"path":format!("{HOME}/x"),"mode":"create"})),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, codes::LOCAL);
+    assert!(e.message.contains("not-there.dat"), "{}", e.message);
+    assert!(h.asked().is_empty());
+}
+
+#[test]
+fn progress_is_sent_at_most_every_250_ms() {
+    let h = Host::new();
+    let path = format!("{HOME}/slow.dat");
+    let chunk = chunk_for(&path);
+    let from = scratch("upload-slow").join("slow.dat");
+    std::fs::write(&from, pattern_bytes(10 * chunk)).unwrap();
+    h.script().on_write = Some(Arc::new(|_| std::thread::sleep(Duration::from_millis(60))));
+    let start = std::time::Instant::now();
+    h.call(
+        "ifs.upload",
+        p(json!({"from":from,"path":path,"mode":"create","transfer":"u5"})),
+    )
+    .unwrap();
+    let took = start.elapsed().as_millis();
+    let n = h.notes("ifs.progress").len() as u128;
+    // Ten writes, but no more notifications than 250 ms spans allow.
+    assert!(n >= 2 && n <= took / 250 + 1, "{n} in {took} ms");
+    let dones: Vec<u64> = h
+        .notes("ifs.progress")
+        .iter()
+        .map(|v| v["done"].as_u64().unwrap())
+        .collect();
+    assert!(dones.windows(2).all(|w| w[0] < w[1]), "{dones:?}");
+}
+
+#[test]
+fn a_running_transfers_id_cannot_be_used_twice_and_unknown_cancels_are_null() {
+    let h = Host::new();
+    let path = format!("{HOME}/held.dat");
+    let from = scratch("upload-held").join("held.dat");
+    std::fs::write(&from, pattern_bytes(1000)).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let rx = Mutex::new(rx);
+    h.script().on_write = Some(Arc::new(move |_| {
+        let _ = rx.lock().unwrap().recv();
+    }));
+    let registry = Arc::clone(&h.registry);
+    let outbound = h.outbound.clone();
+    let params = p(json!({"from":from,"path":path,"mode":"create","transfer":"same"}));
+    let first = {
+        let params = params.clone();
+        std::thread::spawn(move || registry.dispatch("ifs.upload", params, &Context::new(outbound)))
+    };
+    // Wait until the first is running.
+    while h.notes("ifs.progress").is_empty() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let e = h.call("ifs.upload", params).unwrap_err();
+    assert_eq!(e.code, host_rpc::codes::INVALID_PARAMS);
+    assert_eq!(e.message, "transfer same is running");
+    assert_eq!(
+        h.call("ifs.cancel", p(json!({"transfer":"nobody"})))
+            .unwrap(),
+        Value::Null
+    );
+    tx.send(()).unwrap();
+    assert_eq!(first.join().unwrap().unwrap(), json!({"size":1000}));
 }
