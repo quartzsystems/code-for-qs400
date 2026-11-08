@@ -20,6 +20,8 @@ export class FakeSystem {
   readonly lib = fakeLibrary();
   readonly dev = new Map<string, { type: string; text: string; lines: string[]; changed: number }>();
   readonly files = new Set<string>();
+  /** Files `object.list` leaves out, as if made after the list was read. */
+  readonly unlisted = new Set<string>();
   clock = 10_000;
   readonly deploys: DeployMemberParams[] = [];
   readonly commands: string[] = [];
@@ -33,7 +35,12 @@ export class FakeSystem {
     const key = `${String(p.file)}/${String(p.member)}`;
     switch (method) {
       case 'object.list':
-        return [...this.files].map((f) => ({ library: 'HLINVDEV', object: f, type: '*FILE', attribute: 'PF-SRC', text: '', size: 0, changed: 0, owner: '' }));
+        // As QS/400's ListObjects: a source file keeps the attribute `PF`,
+        // and the attribute filter matches that, so `PF-SRC` finds none.
+        return [...this.files]
+          .filter((f) => !this.unlisted.has(f))
+          .map((f) => ({ library: 'HLINVDEV', object: f, type: '*FILE', attribute: 'PF', text: '', size: 0, changed: 0, owner: '' }))
+          .filter((o) => p.attribute === undefined || o.attribute === String(p.attribute).toUpperCase());
       case 'member.list':
         return [...this.dev.entries()]
           .filter(([k]) => k.startsWith(`${String(p.file)}/`))
@@ -49,6 +56,10 @@ export class FakeSystem {
       case 'action.run': {
         this.commands.push(String(p.command));
         const f = /FILE\(HLINVDEV\/(\w+)\)/.exec(String(p.command))?.[1];
+        if (f && this.files.has(f)) {
+          const escape = { id: 'CPF2111', severity: 40, text: `object ${f} in library HLINVDEV already exists` };
+          return { status: 'Error', escape, messages: [escape], diagnostics: [] };
+        }
         if (f) {
           this.files.add(f);
         }
@@ -117,6 +128,36 @@ suite('Projects: deploy to a library', () => {
       assert.equal(rig.lines[rig.lines.length - 1], '5 deployed, 0 skipped, 0 conflicts');
       const state = parseState(await rig.read('.qs400/state.json'));
       assert.equal(state.files['QRPGLESRC/ASSETS.rpgle'].remote, sys.dev.get('QRPGLESRC/ASSETS')?.changed);
+    } finally {
+      await rig.dispose();
+    }
+  });
+
+  test('a second deploy finds the source files the first made, though QS/400 lists them as PF', async () => {
+    const { sys, rig, project, deployer } = await pulled();
+    try {
+      await deployer.deploy(project, 'all');
+      rig.ui.asked.length = 0;
+      sys.commands.length = 0;
+      await rig.write('QSQLSRC/SEED.sql', "INSERT INTO ASSETS VALUES(2, 'B');\n");
+      const r = await deployer.deploy(project, 'file', 'QSQLSRC/SEED.sql');
+      assert.deepEqual(r?.deployed, ['QSQLSRC/SEED.sql']);
+      assert.deepEqual(rig.ui.asked, [], 'no question: QSQLSRC is there');
+      assert.deepEqual(sys.commands, [], 'no CRTSRCPF');
+    } finally {
+      await rig.dispose();
+    }
+  });
+
+  test('CRTSRCPF answering that the file already exists lets its members go on', async () => {
+    const { sys, rig, project, deployer } = await pulled();
+    try {
+      // Made at a 5250 session after the deploy read the list: the list says no, CRTSRCPF says it is there.
+      sys.files.add('QSQLSRC');
+      sys.unlisted.add('QSQLSRC');
+      const r = await deployer.deploy(project, 'file', 'QSQLSRC/SEED.sql');
+      assert.deepEqual(r?.deployed, ['QSQLSRC/SEED.sql']);
+      assert.ok(rig.lines.some((l) => l.startsWith('Exists   HLINVDEV/QSQLSRC: CPF2111')), rig.lines.join('\n'));
     } finally {
       await rig.dispose();
     }

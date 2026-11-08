@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { errorText } from '../connections/prompts';
 import { ifsUri } from '../ifs/uri';
 import { memberUri } from '../members/uri';
-import { Deployer, UsableProject } from '../projects/deploy';
+import { Deployer, UsableProject, fileNames } from '../projects/deploy';
 import { contentHash, isMember, memberKey, memberOf, remotePathOf } from '../projects/layout';
 import { FileRow, STATUS_ICON, STATUS_LABEL, fileRows, groupByDir, pendingCount, statusBarText } from '../projects/model';
 import { ProjectDeps, Puller } from '../projects/pull';
@@ -157,9 +157,7 @@ export class ProjectView implements vscode.TreeDataProvider<ProjectNode>, vscode
           byDir.set(m.file, [...(byDir.get(m.file) ?? []), rel]);
         }
       }
-      const sourceFiles = new Set(
-        (await this.deps.sessions.call(connection, 'object.list', { name: connection, library: t.library, pattern: '*ALL', types: ['*FILE'], attribute: 'PF-SRC' })).map((o) => o.object.toUpperCase()),
-      );
+      const sourceFiles = await fileNames(this.deps.sessions, connection, t.library);
       for (const [file, rels] of byDir) {
         if (!sourceFiles.has(file)) {
           continue;

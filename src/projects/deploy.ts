@@ -17,6 +17,20 @@ import { FileRecord, ProjectState, baseline, remoteChanged } from './state';
 import { Project, relativeTo } from './store';
 import { blockHeader } from './ui';
 
+/** `CRTSRCPF`'s answers for a file that is already there: QS/400's, then IBM i's. */
+export const ALREADY_EXISTS: readonly string[] = ['CPF2111', 'CPF5813', 'CPF7302'];
+
+/**
+ * The names of the files in `library`, upper case: every `*FILE`, with no
+ * attribute filter. QS/400's ListObjects matches the attribute against
+ * the one each object keeps, `PF` for a source file as for a data file,
+ * so a `PF-SRC` filter returns no source file at all.
+ */
+export async function fileNames(sessions: ProjectDeps['sessions'], connection: string, library: string): Promise<Set<string>> {
+  const objects = await sessions.call(connection, 'object.list', { name: connection, library, pattern: '*ALL', types: ['*FILE'] });
+  return new Set(objects.map((o) => o.object.toUpperCase()));
+}
+
 /** Which files a deploy takes: changed by hash, all, changed in git, or one. */
 export type DeployScope = 'changed' | 'all' | 'git' | 'file';
 
@@ -260,17 +274,14 @@ export class Deployer {
     }
 
     // Source files that are not there are made first, after a question naming them.
+    // Whether a file is there is asked by name alone, any *FILE: QS/400's
+    // ListObjects keeps a source file's stored attribute, `PF`, so a
+    // `PF-SRC` filter finds none; and a data file of the name would make
+    // CRTSRCPF fail all the same.
     const dirs = [...new Set(ok.map((c) => (c.member as LocalMember).file))];
     let existing: Set<string>;
     try {
-      const objects = await this.deps.sessions.call(connection, 'object.list', {
-        name: connection,
-        library,
-        pattern: '*ALL',
-        types: ['*FILE'],
-        attribute: 'PF-SRC',
-      });
-      existing = new Set(objects.map((o) => o.object.toUpperCase()));
+      existing = await fileNames(this.deps.sessions, connection, library);
     } catch (err) {
       this.deps.append(`Failed   ${library}: ${errorText(err, connection)}`);
       result.failed.push(...ok.map((c) => c.rel));
@@ -291,6 +302,9 @@ export class Deployer {
             const o = await this.deps.sessions.call(connection, 'action.run', { name: connection, command, kind: 'command' });
             if (o.status === 'Ok') {
               this.deps.append(`Created  ${library}/${f}: ${command}`);
+            } else if (o.escape && ALREADY_EXISTS.includes(o.escape.id)) {
+              // There after all (made since the list was read): its members go on.
+              this.deps.append(`Exists   ${library}/${f}: ${o.escape.id}: ${o.escape.text}`);
             } else {
               const why = o.escape ? `${o.escape.id}: ${o.escape.text}` : o.status;
               unmade.set(f, `${command} failed: ${why}`);
