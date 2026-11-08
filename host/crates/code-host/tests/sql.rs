@@ -1454,3 +1454,100 @@ fn a_cancelled_export_removes_its_file() {
     assert!(!to.exists());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+// The catalog.
+
+#[test]
+fn schemas_are_read_in_pages_of_500_until_the_total() {
+    let h = Host::new();
+    h.script().schemas = (0..1203)
+        .map(|i| Schema {
+            name: format!("S{i:04}"),
+            text: String::new(),
+        })
+        .collect();
+    let out = h.call("sql.schemas", json!({"name":"QSHQ400"})).unwrap();
+    assert_eq!(out.as_array().unwrap().len(), 1203);
+    assert_eq!(out[1202], json!({"name":"S1202","text":""}));
+    assert_eq!(
+        h.asked(),
+        vec![
+            "ListSchemas % 0 500",
+            "ListSchemas % 500 500",
+            "ListSchemas % 1000 500"
+        ]
+    );
+}
+
+#[test]
+fn tables_columns_routines_and_indexes() {
+    let h = Host::new();
+    let t = h
+        .call(
+            "sql.tables",
+            json!({"name":"QSHQ400","schema":"HLINV","kinds":["view","table"]}),
+        )
+        .unwrap();
+    assert_eq!(
+        t[1],
+        json!({"schema":"HLINV","name":"ASSETS_BY_SITE","kind":"view","text":"Assets by site"})
+    );
+    let c = h
+        .call(
+            "sql.columns",
+            json!({"name":"QSHQ400","schema":"HLINV","table":"ASSETS"}),
+        )
+        .unwrap();
+    assert_eq!(c[1]["type"], json!("DECIMAL"));
+    assert_eq!(c[1]["scale"], json!(2));
+    let r = h
+        .call(
+            "sql.routines",
+            json!({"name":"QSHQ400","schema":"HLINV","kinds":["procedure"]}),
+        )
+        .unwrap();
+    assert_eq!(
+        r,
+        json!([{"schema":"HLINV","name":"RETIRE_ASSET","specific":"RETIRE00001","kind":"procedure","text":"Retire an asset"}])
+    );
+    let i = h
+        .call(
+            "sql.indexes",
+            json!({"name":"QSHQ400","schema":"HLINV","table":"ASSETS"}),
+        )
+        .unwrap();
+    assert_eq!(
+        i,
+        json!([{"schema":"HLINV","name":"ASSETS_PK","unique":true,"columns":["ASSET_ID"]}])
+    );
+    assert_eq!(
+        h.asked(),
+        vec![
+            "ListTables HLINV % [View, Table]",
+            "ListColumns HLINV ASSETS",
+            "ListRoutines HLINV [Procedure]",
+            "ListIndexes HLINV ASSETS",
+        ]
+    );
+    let e = h
+        .call(
+            "sql.columns",
+            json!({"name":"QSHQ400","schema":"HLPAY","table":"SALARIES"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.data.unwrap()["messageId"], json!("SQL0551"));
+}
+
+#[test]
+fn routines_and_indexes_need_version_8() {
+    let h = Host::at(Some(6));
+    let e = h
+        .call(
+            "sql.indexes",
+            json!({"name":"QSHQ400","schema":"HLINV","table":"ASSETS"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.message, "QAP version 8 not available on this server");
+    h.call("sql.tables", json!({"name":"QSHQ400","schema":"HLINV"}))
+        .unwrap();
+}

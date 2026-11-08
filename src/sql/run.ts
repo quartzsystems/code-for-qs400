@@ -204,10 +204,11 @@ export class SqlRunner implements vscode.Disposable {
     return ids.length;
   }
 
-  /** New SQL Editor: an untitled `qs400-sql` document on the active connection. */
-  async newEditor(content = ''): Promise<vscode.TextEditor> {
+  /** New SQL Editor: an untitled `qs400-sql` document on `connection`, else the active one. */
+  async newEditor(content = '', connection?: string): Promise<vscode.TextEditor> {
     const doc = await vscode.workspace.openTextDocument({ language: 'qs400-sql', content });
-    const name = this.sessions.active ?? (await pickConnection(this.store, this.sessions, undefined, 'Connection for the SQL editor'))?.name;
+    const name =
+      connection ?? this.sessions.active ?? (await pickConnection(this.store, this.sessions, undefined, 'Connection for the SQL editor'))?.name;
     if (name) {
       this.sql.bind(doc, name);
     }

@@ -24,6 +24,7 @@
     "onCommand:code-for-qs400.host.restart",
     "onView:code-for-qs400.objects",
     "onView:code-for-qs400.ifs",
+    "onView:code-for-qs400.sql",
     "onFileSystem:qs400ifs",
     "workspaceContains:.vscode/actions.json",
     "onLanguage:qs400-rpgle",
@@ -55,6 +56,10 @@
         {
           "id": "code-for-qs400.ifs",
           "name": "IFS"
+        },
+        {
+          "id": "code-for-qs400.sql",
+          "name": "SQL"
         }
       ]
     },
@@ -410,6 +415,48 @@
         "title": "Change SQL Connection…",
         "category": "Code for QS/400",
         "icon": "$(plug)"
+      },
+      {
+        "command": "code-for-qs400.sql.refresh",
+        "title": "Refresh SQL",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.sql.filterSchemas",
+        "title": "Filter Schemas…",
+        "category": "Code for QS/400",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "code-for-qs400.sql.viewData",
+        "title": "View Data",
+        "category": "Code for QS/400",
+        "icon": "$(table)"
+      },
+      {
+        "command": "code-for-qs400.sql.generateSelect",
+        "title": "Generate SELECT",
+        "category": "Code for QS/400",
+        "icon": "$(code)"
+      },
+      {
+        "command": "code-for-qs400.sql.generateInsert",
+        "title": "Generate INSERT",
+        "category": "Code for QS/400",
+        "icon": "$(add)"
+      },
+      {
+        "command": "code-for-qs400.sql.copyName",
+        "title": "Copy Name",
+        "category": "Code for QS/400",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "code-for-qs400.sql.copyCall",
+        "title": "Copy CALL",
+        "category": "Code for QS/400",
+        "icon": "$(copy)"
       }
     ],
     "configuration": {
@@ -681,6 +728,21 @@
           "command": "code-for-qs400.ifs.addRoot",
           "when": "view == code-for-qs400.ifs",
           "group": "1_roots@1"
+        },
+        {
+          "command": "code-for-qs400.sql.newEditor",
+          "when": "view == code-for-qs400.sql",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.sql.filterSchemas",
+          "when": "view == code-for-qs400.sql",
+          "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.sql.refresh",
+          "when": "view == code-for-qs400.sql",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -958,6 +1020,41 @@
           "command": "code-for-qs400.action.run",
           "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(file|symlink)$/",
           "group": "0_run@1"
+        },
+        {
+          "command": "code-for-qs400.sql.viewData",
+          "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.table\\./",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.sql.viewData",
+          "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.table\\./",
+          "group": "1_data@1"
+        },
+        {
+          "command": "code-for-qs400.sql.generateSelect",
+          "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.table\\./",
+          "group": "2_generate@1"
+        },
+        {
+          "command": "code-for-qs400.sql.generateInsert",
+          "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.table\\./",
+          "group": "2_generate@2"
+        },
+        {
+          "command": "code-for-qs400.sql.copyName",
+          "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.table\\./",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "code-for-qs400.sql.copyCall",
+          "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.routine\\./",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "code-for-qs400.sql.copyName",
+          "when": "view == code-for-qs400.sql && viewItem =~ /^sql\\.(column|schema)$/",
+          "group": "3_copy@1"
         }
       ],
       "commandPalette": [
@@ -1084,6 +1181,26 @@
         {
           "command": "code-for-qs400.sql.changeConnection",
           "when": "editorLangId =~ /^(qs400-)?sql$/"
+        },
+        {
+          "command": "code-for-qs400.sql.viewData",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.sql.generateSelect",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.sql.generateInsert",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.sql.copyName",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.sql.copyCall",
+          "when": "false"
         }
       ],
       "editor/context": [

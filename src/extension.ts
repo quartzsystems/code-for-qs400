@@ -26,6 +26,7 @@ import { ConnectionsProvider } from './views/connections';
 import { IfsNode, IfsProvider } from './views/ifs';
 import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
+import { SqlNode, SqlProvider, registerSqlViewCommands } from './views/sql';
 import { LanguageServers } from './languages/client';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -59,6 +60,8 @@ export interface ExtensionApi {
   readonly sqlRunner: SqlRunner;
   readonly results: ResultPanel;
   readonly exporter: Exporter;
+  readonly sqlTree: SqlProvider;
+  readonly sqlView: vscode.TreeView<SqlNode>;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -114,6 +117,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   );
   const results = new ResultPanel(sessions, sqlRunner, sql);
   const exporter = new Exporter(host, sessions, results);
+  const sqlTree = new SqlProvider(store, sessions, context.workspaceState);
+  const sqlView = vscode.window.createTreeView('code-for-qs400.sql', { treeDataProvider: sqlTree, showCollapseAll: true });
 
   context.subscriptions.push(
     output,
@@ -153,6 +158,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     sql,
     sqlRunner,
     results,
+    sqlTree,
+    sqlView,
+    ...registerSqlViewCommands(sqlTree, sql, sqlRunner, sessions),
     ...sql.register(),
     ...sqlRunner.register(),
     // A session signed on again: includes it could not read may be there now.
@@ -173,7 +181,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView };
 }
 
 export function deactivate(): void {

@@ -38,15 +38,15 @@ use std::time::{Duration, Instant};
 
 use host_rpc::{Context, Outbound, Registry, Responder, RpcError};
 use qap_client::proto::ops::sql::{
-    Column, CommitLevel, Index, ListRoutines, ListSchemas, ListTables, Naming, Prepared, Routines,
-    Schemas, SetOptions, SqlValue, Tables,
+    Column, CommitLevel, Index, ListRoutines, ListSchemas, ListTables, Naming, Prepared,
+    RoutineKind, Routines, Schemas, SetOptions, SqlValue, TableKind, Tables,
 };
 use qap_client::{Client, Error, ExecuteOutcome, FetchOutcome, Pending, Reply, SqlConnection};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::actions::{MessageDto, on_thread};
-use crate::session::{QAP_SQL, Sessions, rpc_error};
+use crate::session::{QAP_DEVELOP, QAP_SQL, Sessions, rpc_error};
 use crate::{LogLevel, log};
 
 /// JSON-RPC error codes of `sql.*`.
@@ -59,6 +59,9 @@ pub mod codes {
 
 /// Rows a page asks for when none is given.
 pub const PAGE: u32 = 500;
+
+/// Catalog lists are read in pages of this many.
+pub const LIST_PAGE: u32 = 500;
 
 /// How often a wait looks for a cancel.
 const CANCEL_EVERY: Duration = Duration::from_millis(50);
@@ -400,6 +403,122 @@ pub struct CancelParams {
     #[serde(default)]
     pub name: Option<String>,
     pub id: String,
+}
+
+/// Params of `sql.schemas`.
+#[derive(Debug, Deserialize)]
+pub struct SchemasParams {
+    pub name: String,
+    #[serde(default)]
+    pub pattern: Option<String>,
+}
+
+/// A schema.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SchemaDto {
+    pub name: String,
+    pub text: String,
+}
+
+/// What a catalog entry is, as JSON names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TableKindDto {
+    Table,
+    View,
+    Alias,
+    PhysicalFile,
+    LogicalFile,
+}
+
+impl From<TableKind> for TableKindDto {
+    fn from(k: TableKind) -> TableKindDto {
+        match k {
+            TableKind::Table => TableKindDto::Table,
+            TableKind::View => TableKindDto::View,
+            TableKind::Alias => TableKindDto::Alias,
+            TableKind::PhysicalFile => TableKindDto::PhysicalFile,
+            TableKind::LogicalFile => TableKindDto::LogicalFile,
+        }
+    }
+}
+
+impl From<TableKindDto> for TableKind {
+    fn from(k: TableKindDto) -> TableKind {
+        match k {
+            TableKindDto::Table => TableKind::Table,
+            TableKindDto::View => TableKind::View,
+            TableKindDto::Alias => TableKind::Alias,
+            TableKindDto::PhysicalFile => TableKind::PhysicalFile,
+            TableKindDto::LogicalFile => TableKind::LogicalFile,
+        }
+    }
+}
+
+/// Params of `sql.tables`.
+#[derive(Debug, Deserialize)]
+pub struct TablesParams {
+    pub name: String,
+    pub schema: String,
+    #[serde(default)]
+    pub pattern: Option<String>,
+    #[serde(default)]
+    pub kinds: Vec<TableKindDto>,
+}
+
+/// A table, view, alias or file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableDto {
+    pub schema: String,
+    pub name: String,
+    pub kind: TableKindDto,
+    pub text: String,
+}
+
+/// Params of `sql.columns` and `sql.indexes`.
+#[derive(Debug, Deserialize)]
+pub struct TableParams {
+    pub name: String,
+    pub schema: String,
+    pub table: String,
+}
+
+/// A routine's kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RoutineKindDto {
+    Procedure,
+    Function,
+}
+
+/// Params of `sql.routines`.
+#[derive(Debug, Deserialize)]
+pub struct RoutinesParams {
+    pub name: String,
+    pub schema: String,
+    #[serde(default)]
+    pub pattern: Option<String>,
+    #[serde(default)]
+    pub kinds: Vec<RoutineKindDto>,
+}
+
+/// A procedure or function, as the spec's `Routine`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineDto {
+    pub schema: String,
+    pub name: String,
+    pub specific: String,
+    pub kind: RoutineKindDto,
+    pub text: String,
+}
+
+/// An index, as the spec's `Index`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexDto {
+    pub schema: String,
+    pub name: String,
+    pub unique: bool,
+    pub columns: Vec<String>,
 }
 
 /// `sql.lost`: the session's SQL connection was lost or replaced, with
@@ -1051,6 +1170,142 @@ impl Sql {
         }
         out
     }
+
+    /// Every page of a catalog list.
+    fn drain<T>(
+        mut page: impl FnMut(u32) -> Result<(u32, Vec<T>), RpcError>,
+    ) -> Result<Vec<T>, RpcError> {
+        let mut out = Vec::new();
+        loop {
+            let start = u32::try_from(out.len()).unwrap_or(u32::MAX);
+            let (total, items) = page(start)?;
+            let n = items.len();
+            out.extend(items);
+            if n == 0 || out.len() >= total as usize {
+                return Ok(out);
+            }
+        }
+    }
+
+    pub fn schemas(&self, p: &SchemasParams) -> Result<Vec<SchemaDto>, RpcError> {
+        let pattern = pattern_of(p.pattern.as_deref());
+        Sql::drain(|start| {
+            let req = ListSchemas {
+                pattern: pattern.clone(),
+                start,
+                max: LIST_PAGE,
+            };
+            let (s, _) = self
+                .sessions
+                .sql(&p.name, QAP_SQL, |b| b.list_schemas(&req))?;
+            Ok((
+                s.total,
+                s.schemas
+                    .into_iter()
+                    .map(|s| SchemaDto {
+                        name: s.name,
+                        text: s.text,
+                    })
+                    .collect(),
+            ))
+        })
+    }
+
+    pub fn tables(&self, p: &TablesParams) -> Result<Vec<TableDto>, RpcError> {
+        let schema = name_param("schema", &p.schema)?;
+        let pattern = pattern_of(p.pattern.as_deref());
+        let kinds: Vec<TableKind> = p.kinds.iter().map(|k| (*k).into()).collect();
+        Sql::drain(|start| {
+            let req = ListTables {
+                schema: schema.clone(),
+                pattern: pattern.clone(),
+                kinds: kinds.clone(),
+                start,
+                max: LIST_PAGE,
+            };
+            let (t, _) = self
+                .sessions
+                .sql(&p.name, QAP_SQL, |b| b.list_tables(&req))?;
+            Ok((
+                t.total,
+                t.tables
+                    .into_iter()
+                    .map(|t| TableDto {
+                        schema: t.schema,
+                        name: t.name,
+                        kind: t.kind.into(),
+                        text: t.text,
+                    })
+                    .collect(),
+            ))
+        })
+    }
+
+    pub fn columns(&self, p: &TableParams) -> Result<Vec<ColumnDto>, RpcError> {
+        let schema = name_param("schema", &p.schema)?;
+        let table = name_param("table", &p.table)?;
+        let (c, _) = self
+            .sessions
+            .sql(&p.name, QAP_SQL, |b| b.list_columns(&schema, &table))?;
+        Ok(c.iter().map(ColumnDto::from).collect())
+    }
+
+    pub fn routines(&self, p: &RoutinesParams) -> Result<Vec<RoutineDto>, RpcError> {
+        let schema = name_param("schema", &p.schema)?;
+        let pattern = pattern_of(p.pattern.as_deref());
+        let kinds: Vec<RoutineKind> = p
+            .kinds
+            .iter()
+            .map(|k| match k {
+                RoutineKindDto::Procedure => RoutineKind::Procedure,
+                RoutineKindDto::Function => RoutineKind::Function,
+            })
+            .collect();
+        Sql::drain(|start| {
+            let req = ListRoutines {
+                schema: schema.clone(),
+                pattern: pattern.clone(),
+                kinds: kinds.clone(),
+                start,
+                max: LIST_PAGE,
+            };
+            let (r, _) = self
+                .sessions
+                .sql(&p.name, QAP_DEVELOP, |b| b.list_routines(&req))?;
+            Ok((
+                r.total,
+                r.routines
+                    .into_iter()
+                    .map(|r| RoutineDto {
+                        schema: r.schema,
+                        name: r.name,
+                        specific: r.specific,
+                        kind: match r.kind {
+                            RoutineKind::Procedure => RoutineKindDto::Procedure,
+                            RoutineKind::Function => RoutineKindDto::Function,
+                        },
+                        text: r.text,
+                    })
+                    .collect(),
+            ))
+        })
+    }
+
+    pub fn indexes(&self, p: &TableParams) -> Result<Vec<IndexDto>, RpcError> {
+        let schema = name_param("schema", &p.schema)?;
+        let table = name_param("table", &p.table)?;
+        let (i, _) = self
+            .sessions
+            .sql(&p.name, QAP_DEVELOP, |b| b.list_indexes(&schema, &table))?;
+        Ok(i.into_iter()
+            .map(|i| IndexDto {
+                schema: i.schema,
+                name: i.name,
+                unique: i.unique,
+                columns: i.columns,
+            })
+            .collect())
+    }
 }
 
 /// A result whose cursor went with its connection.
@@ -1059,6 +1314,23 @@ fn gone_error() -> RpcError {
         codes::NO_RESULT,
         "the cursor went with its connection; run the statement again",
     )
+}
+
+/// A `LIKE` pattern as sent; absent or empty is `%`.
+fn pattern_of(p: Option<&str>) -> String {
+    match p.map(str::trim) {
+        None | Some("") => "%".to_owned(),
+        Some(s) => s.to_owned(),
+    }
+}
+
+/// A name as typed, trimmed; `-32602` when empty. The server folds case.
+fn name_param(field: &str, v: &str) -> Result<String, RpcError> {
+    let t = v.trim();
+    if t.is_empty() {
+        return Err(RpcError::invalid_params(format!("{field} is empty")));
+    }
+    Ok(t.to_owned())
 }
 
 /// Answers `responder` with `f()` on a thread of its own.
@@ -1117,6 +1389,13 @@ pub fn register(r: &mut Registry, sessions: &Arc<Sessions>) {
     deferred(r, "sql.rollback", &sql, |s, p: NameParams| {
         s.end_unit(&p.name, false)
     });
+    deferred(r, "sql.schemas", &sql, |s, p: SchemasParams| s.schemas(&p));
+    deferred(r, "sql.tables", &sql, |s, p: TablesParams| s.tables(&p));
+    deferred(r, "sql.columns", &sql, |s, p: TableParams| s.columns(&p));
+    deferred(r, "sql.routines", &sql, |s, p: RoutinesParams| {
+        s.routines(&p)
+    });
+    deferred(r, "sql.indexes", &sql, |s, p: TableParams| s.indexes(&p));
     {
         let sql = Arc::clone(&sql);
         r.register_deferred(

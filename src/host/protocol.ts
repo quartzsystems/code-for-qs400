@@ -579,6 +579,37 @@ export interface SqlCancelParams {
   id: string;
 }
 
+export interface SqlSchema {
+  name: string;
+  text: string;
+}
+
+export type SqlTableKind = 'table' | 'view' | 'alias' | 'physicalFile' | 'logicalFile';
+
+export interface SqlTable {
+  schema: string;
+  name: string;
+  kind: SqlTableKind;
+  text: string;
+}
+
+export interface SqlRoutine {
+  schema: string;
+  name: string;
+  /** The specific name. */
+  specific: string;
+  kind: 'procedure' | 'function';
+  text: string;
+}
+
+export interface SqlIndex {
+  schema: string;
+  name: string;
+  unique: boolean;
+  /** The key columns, in key order. */
+  columns: string[];
+}
+
 /** `sql.lost`: uncommitted changes and open cursors went with the connection. */
 export interface SqlLost {
   name: string;
@@ -660,6 +691,11 @@ export interface HostMethods {
   /** Waits in the lane: no request timeout. */
   'sql.rollback': { params: NameParams; result: SqlOptions };
   'sql.cancel': { params: SqlCancelParams; result: null };
+  'sql.schemas': { params: { name: string; pattern?: string }; result: SqlSchema[] };
+  'sql.tables': { params: { name: string; schema: string; pattern?: string; kinds?: SqlTableKind[] }; result: SqlTable[] };
+  'sql.columns': { params: { name: string; schema: string; table: string }; result: SqlColumn[] };
+  'sql.routines': { params: { name: string; schema: string; pattern?: string; kinds?: ('procedure' | 'function')[] }; result: SqlRoutine[] };
+  'sql.indexes': { params: { name: string; schema: string; table: string }; result: SqlIndex[] };
   /** Answered when the export ends: no request timeout. */
   'sql.export': { params: SqlExportParams; result: { rows: number } };
 }

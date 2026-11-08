@@ -16,6 +16,8 @@ import { ResultPanel } from '../src/sql/results';
 import { SqlRunner } from '../src/sql/run';
 import { SqlSessions } from '../src/sql/session';
 import { Span, splitStatements, statementAt } from '../src/sql/statements';
+import { callText, insertText, parametersQuery, qualified, quoteName, selectText, viewDataText } from '../src/sql/generate';
+import { SqlNode, SqlProvider, SqlViewActions, columnTooltip, sqlTreeItem, sqlViewActions } from '../src/views/sql';
 import { FakeHost, Memento } from './members.test';
 
 /** Scripts whose strings and comments hold `;`. */
@@ -353,5 +355,153 @@ suite('SQL: results', () => {
     const p = panel.page(panel.activeTab!);
     assert.equal(p.more, false);
     assert.match(p.note ?? '', /lost/);
+  });
+});
+
+suite('SQL: generators', () => {
+  test('SELECT, INSERT, CALL and View data, in either naming, odd names delimited', () => {
+    assert.equal(quoteName('ASSETS'), 'ASSETS');
+    assert.equal(quoteName('Mixed case'), '"Mixed case"');
+    assert.equal(quoteName('SAY"HI'), '"SAY""HI"');
+    assert.equal(quoteName('1ST'), '"1ST"');
+    assert.equal(qualified('HLINV', 'ASSETS'), 'HLINV.ASSETS');
+    assert.equal(qualified('HLINV', 'ASSETS', 'system'), 'HLINV/ASSETS');
+    assert.equal(selectText('HLINV', 'ASSETS', ['ASSET_ID', 'COST', 'site name']), 'SELECT ASSET_ID,\n       COST,\n       "site name"\n  FROM HLINV.ASSETS');
+    assert.equal(insertText('HLINV', 'ASSETS', ['ASSET_ID', 'COST']), 'INSERT INTO HLINV.ASSETS (ASSET_ID, COST)\n  VALUES (?, ?)');
+    assert.equal(insertText('HLINV', 'ASSETS', ['A'], 'system'), 'INSERT INTO HLINV/ASSETS (A)\n  VALUES (?)');
+    assert.equal(callText('HLINV', 'RETIRE_ASSET', ['ASSET_ID', 'REASON'], 'procedure'), 'CALL HLINV.RETIRE_ASSET(? /* ASSET_ID */, ? /* REASON */)');
+    assert.equal(callText('HLINV', 'AGE', ['D'], 'function'), 'VALUES HLINV.AGE(? /* D */)');
+    assert.equal(callText('HLINV', 'NOW', [], 'procedure'), 'CALL HLINV.NOW()');
+    assert.equal(viewDataText('HLINV', 'ASSETS_BY_SITE'), 'SELECT * FROM HLINV.ASSETS_BY_SITE FETCH FIRST 500 ROWS ONLY');
+    assert.equal(
+      parametersQuery('HLINV', "O'K"),
+      "SELECT * FROM QSYS2.SYSPARMS WHERE SPECIFIC_SCHEMA = 'HLINV' AND SPECIFIC_NAME = 'O''K' AND ROW_TYPE = 'P' ORDER BY 3",
+    );
+  });
+});
+
+suite('SQL: the SQL view', () => {
+  let parts: vscode.Disposable[] = [];
+  let host: FakeHost;
+  let tree: SqlProvider;
+  let sessions: SessionManager;
+  let actions: SqlViewActions;
+
+  const COLS = [
+    { name: 'ASSET_ID', label: 'Asset ID', type: 'INTEGER', length: 4, scale: 0, nullable: false, ccsid: 0 },
+    { name: 'SITE', label: 'SITE', type: 'CHAR', length: 10, scale: 0, nullable: true, ccsid: 37 },
+  ];
+  const SYSTEM = { name: 'QSHQ400', product: 'QS00SS1', version: 'V1R0M0', qap: 9 };
+
+  setup(async () => {
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', [{ name: 'QSHQ400', host: 'qshq400.example', user: 'CWELLMAN' }], true);
+    const output = vscode.window.createOutputChannel('sql view test', { log: true });
+    host = new FakeHost((method, params) => {
+      switch (method) {
+        case 'sql.schemas':
+          return [{ name: 'HLINV', text: 'Inventory' }];
+        case 'sql.tables':
+          return (params.kinds as string[])[0] === 'view' ? [{ schema: 'HLINV', name: 'ASSETS_BY_SITE', kind: 'view', text: 'Assets by site' }] : [];
+        case 'sql.columns':
+          return COLS;
+        case 'sql.indexes':
+          return [{ schema: 'HLINV', name: 'ASSETS_PK', unique: true, columns: ['ASSET_ID'] }];
+        case 'sql.routines':
+          return [{ schema: 'HLINV', name: 'RETIRE_ASSET', specific: 'RETIRE00001', kind: 'procedure', text: '' }];
+        case 'sql.run':
+          return String(params.sql).includes('SYSPARMS')
+            ? {
+                kind: 'query',
+                columns: [
+                  { name: 'SPECIFIC_SCHEMA', label: '', type: 'VARCHAR', length: 128, scale: 0, nullable: false, ccsid: 37 },
+                  { name: 'PARAMETER_NAME', label: '', type: 'VARCHAR', length: 128, scale: 0, nullable: true, ccsid: 37 },
+                ],
+                rows: [
+                  ['HLINV', 'ASSET_ID'],
+                  ['HLINV', 'REASON'],
+                ],
+                end: true,
+                cursor: 9,
+                messages: [],
+                uncommitted: false,
+              }
+            : { kind: 'query', columns: COLS, rows: [], end: true, cursor: 1, messages: [], uncommitted: false };
+        case 'sql.options.get':
+          return { commit: 'none', naming: 'sql', uncommitted: false };
+        default:
+          return null;
+      }
+    });
+    const secrets = { get: async () => undefined, store: async () => {}, delete: async () => {} };
+    const store = new ConnectionStore(secrets as unknown as vscode.SecretStorage, output);
+    const memento = new Memento();
+    sessions = new SessionManager(host as unknown as HostClient, store, memento, output);
+    sessions.update({ name: 'QSHQ400', state: 'connected', user: 'CWELLMAN', system: SYSTEM });
+    await sessions.setActive('QSHQ400');
+    tree = new SqlProvider(store, sessions, memento);
+    const sql = new SqlSessions(host as unknown as HostClient, store, sessions);
+    const runner = new SqlRunner(host as unknown as HostClient, store, sessions, sql, async () => null);
+    actions = sqlViewActions(sql, runner, sessions);
+    parts = [runner, sql, tree, sessions, store, output, host];
+  });
+
+  teardown(async () => {
+    parts.forEach((p) => p.dispose());
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', undefined, true);
+  });
+
+  const labels = (ns: SqlNode[]) => ns.map((n) => String(sqlTreeItem(n).label));
+
+  test('schemas by the saved pattern, their groups, a view, its columns and indexes', async () => {
+    const roots = await tree.getChildren();
+    assert.deepEqual(labels(roots), ['HLINV']);
+    assert.equal(sqlTreeItem(roots[0]).description, 'Inventory');
+    assert.equal(host.sent[0].params.pattern, '%');
+    await tree.setPattern('QSHQ400', 'HL%');
+    await tree.getChildren();
+    assert.equal(host.sent.at(-1)?.params.pattern, 'HL%');
+    const groups = await tree.getChildren(roots[0]);
+    assert.deepEqual(labels(groups), ['Tables', 'Views', 'Aliases', 'Physical files', 'Logical files', 'Procedures', 'Functions']);
+    assert.deepEqual(labels(await tree.getChildren(groups[0])), ['No tables']);
+    const views = await tree.getChildren(groups[1]);
+    assert.deepEqual(host.sent.at(-1)?.params, { name: 'QSHQ400', schema: 'HLINV', kinds: ['view'] });
+    assert.equal(sqlTreeItem(views[0]).contextValue, 'sql.table.view');
+    assert.equal(sqlTreeItem(views[0]).description, 'Assets by site');
+    const [columns, indexes] = await tree.getChildren(views[0]);
+    const cols = await tree.getChildren(columns);
+    assert.deepEqual(labels(cols), ['ASSET_ID', 'SITE']);
+    assert.equal(sqlTreeItem(cols[0]).description, 'INTEGER not null');
+    assert.equal(sqlTreeItem(cols[1]).description, 'CHAR(10)');
+    assert.equal(sqlTreeItem(cols[1]).tooltip, 'SITE\nType: CHAR\nLength: 10\nScale: 0\nNullable: yes\nCCSID: 37');
+    assert.equal(columnTooltip(COLS[0]).split('\n')[0], 'ASSET_ID — Asset ID');
+    const idx = await tree.getChildren(indexes);
+    assert.equal(sqlTreeItem(idx[0]).description, 'unique · (ASSET_ID)');
+    const procs = await tree.getChildren(groups[5]);
+    assert.equal(sqlTreeItem(procs[0]).contextValue, 'sql.routine.procedure');
+  });
+
+  test('without a session: one line; a QAP 3 server: the version line', async () => {
+    sessions.update({ name: 'QSHQ400', state: 'disconnected' });
+    assert.deepEqual(labels(await tree.getChildren()), ['Connect to see schemas']);
+    sessions.update({ name: 'QSHQ400', state: 'connected', system: { ...SYSTEM, qap: 3 } });
+    assert.deepEqual(labels(await tree.getChildren()), ['QAP version 4 not available on this server']);
+  });
+
+  test('Copy CALL reads the parameters from SYSPARMS and closes the cursor; View data and Generate SELECT', async () => {
+    const node: SqlNode = { kind: 'routine', connection: 'QSHQ400', routine: { schema: 'HLINV', name: 'RETIRE_ASSET', specific: 'RETIRE00001', kind: 'procedure', text: '' } };
+    const text = (await actions.copyCall(node)) as string;
+    assert.equal(text, 'CALL HLINV.RETIRE_ASSET(? /* ASSET_ID */, ? /* REASON */)');
+    assert.equal(await vscode.env.clipboard.readText(), text);
+    assert.match(String(host.sent.find((s) => s.method === 'sql.run')?.params.sql), /SPECIFIC_NAME = 'RETIRE00001'/);
+    assert.deepEqual(host.sent.find((s) => s.method === 'sql.close')?.params, { name: 'QSHQ400', cursor: 9 });
+    const table: SqlNode = { kind: 'table', connection: 'QSHQ400', table: { schema: 'HLINV', name: 'ASSETS', kind: 'table', text: '' } };
+    const run = (await actions.viewData(table)) as { sql: string };
+    assert.equal(run.sql, 'SELECT * FROM HLINV.ASSETS FETCH FIRST 500 ROWS ONLY');
+    const sel = (await actions.generateSelect(table)) as string;
+    assert.equal(sel, 'SELECT ASSET_ID,\n       SITE\n  FROM HLINV.ASSETS');
+    const doc = vscode.window.activeTextEditor?.document;
+    assert.equal(doc?.languageId, 'qs400-sql');
+    assert.equal(doc?.getText(), `${sel};\n`);
   });
 });

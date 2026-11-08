@@ -237,13 +237,18 @@ mod tests {
                 "session.status",
                 "sql.cancel",
                 "sql.close",
+                "sql.columns",
                 "sql.commit",
                 "sql.export",
                 "sql.fetch",
+                "sql.indexes",
                 "sql.options.get",
                 "sql.options.set",
                 "sql.rollback",
+                "sql.routines",
                 "sql.run",
+                "sql.schemas",
+                "sql.tables",
             ]
         );
     }
