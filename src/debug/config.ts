@@ -78,6 +78,23 @@ export function jobName(s: string): string | undefined {
   return NAME.test(user.toUpperCase()) && NAME.test(name.toUpperCase()) ? `${number}/${user.toUpperCase()}/${name.toUpperCase()}` : undefined;
 }
 
+/** The message ID of a program compiled `DBGVIEW(*NONE)`, which `AddProgram` refuses. */
+export const NO_DEBUG_DATA = 'CPF9C15';
+
+/**
+ * A compile command with `DBGVIEW(*SOURCE)` forced: the keyword's value
+ * replaced wherever it is, in any case and spacing, or the keyword added
+ * at the end.
+ */
+export function withDebugView(command: string): string {
+  // DBGVIEW's value is one word (*NONE, *ALL, *STMT, *SOURCE, *LIST, *COPY).
+  const kw = /\bDBGVIEW\s*\(\s*[^()]*\)/gi;
+  if (kw.test(command)) {
+    return command.replace(kw, 'DBGVIEW(*SOURCE)');
+  }
+  return `${command.trimEnd()} DBGVIEW(*SOURCE)`;
+}
+
 /** What the provider can fill in from the window. */
 export interface DebugDefaults {
   /** The active connection. */

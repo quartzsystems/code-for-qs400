@@ -11,6 +11,7 @@ import { DebugCredentials, HostDebugAdapter } from './adapter';
 import { DEBUG_TYPE, DebugDefaults, Qs400DebugConfiguration, completeConfiguration, initialConfigurations } from './config';
 import { DEBUG_SOURCE, DebugSourceDeps, resolveDebugSource } from './source';
 import { STATEMENTS_SCHEME, StatementsProvider } from './statements';
+import { noDebugDataOf } from './commands';
 
 /** The key of the sign-on a resolved configuration waits on; the password itself is never in it. */
 const CREDENTIALS_KEY = '__qs400Credentials';
@@ -27,6 +28,8 @@ export interface DebuggingDeps {
   programOf: (uri: vscode.Uri) => Promise<string | undefined>;
   /** `LIB/PGM` selected in the Objects view. */
   selectedProgram: () => string | undefined;
+  /** A start refused with `CPF9C15`: the recompile offer. */
+  noDebugData?: (config: vscode.DebugConfiguration, message: string) => void;
 }
 
 /**
@@ -168,7 +171,12 @@ export class Debugging implements vscode.Disposable, vscode.DebugConfigurationPr
   }
 
   /** What the adapter sent, as the tracker sees it. */
-  onAdapterMessage(_session: vscode.DebugSession, m: unknown): void {
+  onAdapterMessage(session: vscode.DebugSession, m: unknown): void {
+    const refused = noDebugDataOf(m);
+    if (refused !== undefined) {
+      this.deps.noDebugData?.(session.configuration, refused);
+      return;
+    }
     const msg = m as { type?: string; command?: string; success?: boolean; body?: { stackFrames?: Array<{ source?: { path?: string }; line?: number }> } };
     if (msg.type === 'response' && msg.command === 'stackTrace' && msg.success) {
       for (const f of msg.body?.stackFrames ?? []) {

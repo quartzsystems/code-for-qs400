@@ -177,6 +177,17 @@ suite('Run: running an action', () => {
     throw new Error(`unexpected ${method}`);
   };
 
+  test('the debugger’s recompile: the default compile found, its resolved command rewritten', async () => {
+    const r = await runnerOn(compileAnswer);
+    parts = r.parts;
+    const name = await r.runner.compileFor(MEMBER_NODE);
+    assert.equal(name, 'Compile (CRTBNDRPG)');
+    await r.runner.run(MEMBER_NODE, name, (c) => c.replace('DBGVIEW(*SOURCE)', 'DBGVIEW(*ALL)'));
+    const run = r.host.sent.find((s) => s.method === 'action.run');
+    assert.equal(run?.params.command, 'CRTBNDRPG PGM(CWELLMAN/ASSETS42) SRCFILE(HLINV/QTMPSRC) SRCMBR(ASSETS42) DBGVIEW(*ALL) OPTION(*EVENTF)');
+    assert.equal(run?.params.kind, 'compile');
+  });
+
   test('a compile: the current library read, the command resolved, sent as kind compile; the block written', async () => {
     const r = await runnerOn(compileAnswer);
     parts = r.parts;

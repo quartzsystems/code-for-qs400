@@ -365,10 +365,28 @@ export class ActionRunner implements vscode.Disposable {
   }
 
   /**
-   * Runs an action: `arg` names the target, `actionName` the action (the
-   * pick is shown when it is absent). Undefined when nothing was run.
+   * The compile that applies to what `arg` names: the action last run on
+   * its kind when that is a compile, else the first compile in merge
+   * order. Undefined when none applies.
    */
-  async run(arg?: RunArg, actionName?: string): Promise<RunResult | undefined> {
+  async compileFor(arg: RunArg): Promise<string | undefined> {
+    const uri = arg instanceof vscode.Uri ? arg : undefined;
+    const got = uri?.scheme === 'file' && this.local ? await this.local(uri) : undefined;
+    const t = typeof got === 'object' ? got.target : this.target(arg);
+    if (!t) {
+      return undefined;
+    }
+    await this.actions.ready;
+    return this.applicable(t).find((a) => a.runAs !== 'batch' && kindOf(a.command) === 'compile')?.name;
+  }
+
+  /**
+   * Runs an action: `arg` names the target, `actionName` the action (the
+   * pick is shown when it is absent). `rewrite` changes the command once
+   * its variables are resolved (the debugger's `DBGVIEW(*SOURCE)`).
+   * Undefined when nothing was run.
+   */
+  async run(arg?: RunArg, actionName?: string, rewrite?: (command: string) => string): Promise<RunResult | undefined> {
     // A local file of a project runs against what it deploys to.
     const uri = arg instanceof vscode.Uri ? arg : arg === undefined ? vscode.window.activeTextEditor?.document.uri : undefined;
     const got = uri?.scheme === 'file' && this.local ? await this.local(uri) : undefined;
@@ -448,7 +466,8 @@ export class ActionRunner implements vscode.Disposable {
     const batch = action.runAs === 'batch';
     // SBMJOB's JOB is the target's name when that is a valid name, else the job description's (*JOBD).
     const jobName = libraryName(targetValue(t, ctx, 'NAME') ?? '') ?? '*JOBD';
-    const command = batch ? batchCommand(resolved.command, jobName) : resolved.command;
+    const own = rewrite ? rewrite(resolved.command) : resolved.command;
+    const command = batch ? batchCommand(own, jobName) : own;
     const params: ActionRunParams = { name, command, kind: batch ? 'command' : kindOf(command), run: `a${++this.runs}-${Date.now()}` };
 
     // A compile's listing is the one numbered after the job's files before the run.

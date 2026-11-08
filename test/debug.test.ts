@@ -11,7 +11,8 @@ import { callCommand, clParameter, completeConfiguration, initialConfigurations,
 import { type DebugSourceDeps, resolveDebugSource } from '../src/debug/source';
 import { StatementsProvider, statementLine } from '../src/debug/statements';
 import { programOfEntry } from '../src/debug/programs';
-import { parsePrograms } from '../src/debug/commands';
+import { DebugCommands, noDebugDataOf, parsePrograms, restartable } from '../src/debug/commands';
+import { withDebugView } from '../src/debug/config';
 import { debugStatusText } from '../src/debug/statusBar';
 import type { ObjectProperty } from '../src/host/protocol';
 
@@ -245,6 +246,144 @@ suite('Debug: attach and the status bar', () => {
     const pkg = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON as { contributes: { menus: Record<string, Array<{ command: string; when?: string }>> } };
     const m = pkg.contributes.menus['view/item/context'].find((x) => x.command === 'code-for-qs400.debug.attach');
     assert.equal(m?.when, 'view == code-for-qs400.jobs && viewItem == jobs.job');
+  });
+});
+
+/** `DebugCommands` over a fake system: what it ran, compiled, asked and started. */
+function commandsRig(opts: { programChanged?: number; memberChanged?: number; compiled?: string; answer?: string } = {}) {
+  const runs: Array<{ uri: string; action: string; command?: string }> = [];
+  const started: vscode.DebugConfiguration[] = [];
+  const asked: string[] = [];
+  const deployed: string[] = [];
+  const sessions = {
+    status: () => ({ state: 'connected' }),
+    onDidChange: () => ({ dispose() {} }),
+    call: async (_n: string, method: string) => {
+      if (method === 'object.list') {
+        return opts.programChanged === undefined ? [] : [{ library: 'HLINVDEV', object: 'ASSETS', type: '*PGM', changed: opts.programChanged }];
+      }
+      if (method === 'member.list') {
+        return [{ member: 'ASSETS', type: 'RPGLE', changed: opts.memberChanged ?? 0 }];
+      }
+      if (method === 'libl.get') {
+        return { current: 'HLINV', system: [], user: [] };
+      }
+      throw new Error(method);
+    },
+  };
+  const store = { get: (n: string) => ({ name: n.toUpperCase(), host: 'h', user: 'CWELLMAN' }) };
+  const commands = new DebugCommands({
+    store: store as never,
+    sessions: sessions as never,
+    projects: { projectFor: () => undefined } as never,
+    source: sourceDeps({ 'HLINV/ASSETS *PGM': ASSETS_PGM }).deps,
+    local: async (uri) => ({
+      target: { environment: 'member', connection: 'QSHQ400', library: 'HLINVDEV', file: 'QRPGLESRC', member: 'ASSETS', type: 'RPGLE' },
+      library: 'HLINVDEV',
+      uri,
+      deploy: async () => {
+        deployed.push(uri.fsPath);
+        return true;
+      },
+    }),
+    compileFor: async () => opts.compiled ?? 'Compile (CRTBNDRPG)',
+    run: async (uri, action, rewrite) => {
+      const command = rewrite?.('CRTBNDRPG PGM(HLINV/ASSETS) SRCFILE(HLINV/QRPGLESRC) DBGVIEW(*NONE) OPTION(*EVENTF)');
+      runs.push({ uri: uri.toString(), action, command });
+      return { outcome: { status: opts.compiled === 'fails' ? 'Error' : 'Ok' } } as never;
+    },
+    startDebugging: async (c) => {
+      started.push(c);
+      return true;
+    },
+    ask: async (_k, message, button) => {
+      asked.push(message);
+      return opts.answer ?? button;
+    },
+  });
+  return { commands, runs, started, asked, deployed };
+}
+
+suite('Debug: commands and the recompile', () => {
+  test('DBGVIEW(*SOURCE) forced into a compile command', () => {
+    assert.equal(withDebugView('CRTBNDRPG PGM(HLINV/ASSETS) DBGVIEW(*NONE) OPTION(*EVENTF)'), 'CRTBNDRPG PGM(HLINV/ASSETS) DBGVIEW(*SOURCE) OPTION(*EVENTF)');
+    assert.equal(withDebugView('crtbndcl pgm(a/b) dbgview( *all )'), 'crtbndcl pgm(a/b) DBGVIEW(*SOURCE)');
+    assert.equal(withDebugView('CRTBNDRPG PGM(HLINV/ASSETS) DBGVIEW(*SOURCE)'), 'CRTBNDRPG PGM(HLINV/ASSETS) DBGVIEW(*SOURCE)');
+    assert.equal(withDebugView('CRTBNDRPG PGM(HLINV/ASSETS)  '), 'CRTBNDRPG PGM(HLINV/ASSETS) DBGVIEW(*SOURCE)');
+  });
+
+  test('the CPF9C15 launch response, and the configuration to start again', () => {
+    const refused = { type: 'response', command: 'launch', success: false, message: 'CPF9C15: no debug data', body: { error: { variables: { messageId: 'CPF9C15' } } } };
+    assert.equal(noDebugDataOf(refused), 'CPF9C15: no debug data');
+    assert.equal(noDebugDataOf({ ...refused, command: 'attach' }), undefined);
+    assert.equal(noDebugDataOf({ ...refused, body: { error: { variables: { messageId: 'TCP1A72' } } } }), undefined);
+    const again = restartable({ type: 'qs400', request: 'launch', name: 'Call', connection: 'Q', program: 'HLINV/ASSETS', command: 'CALL', recompileOffer: true, __qs400Credentials: '1' });
+    assert.deepEqual(again, { type: 'qs400', request: 'launch', name: 'Call', connection: 'Q', program: 'HLINV/ASSETS' });
+  });
+
+  test('Recompile runs the source member’s default compile with DBGVIEW(*SOURCE), then Start again', async () => {
+    const { commands, runs, started, asked } = commandsRig();
+    const config = { type: 'qs400', request: 'launch', name: 'Call', connection: 'QSHQ400', program: 'HLINV/ASSETS', command: 'CALL PGM(HLINV/ASSETS)', recompileOffer: true };
+    assert.equal(await commands.noDebugData(config, 'CPF9C15: Program ASSETS in library HLINV has no debug data.'), true);
+    assert.equal(asked[0], 'QS/400 debug: CPF9C15: Program ASSETS in library HLINV has no debug data.');
+    assert.equal(runs.length, 1);
+    // The member, writable, not the read-only URI the debugger opens.
+    assert.equal(vscode.Uri.parse(runs[0].uri).query, '');
+    assert.equal(vscode.Uri.parse(runs[0].uri).path, '/HLINV/QRPGLESRC/ASSETS.rpgle');
+    assert.equal(runs[0].action, 'Compile (CRTBNDRPG)');
+    assert.equal(runs[0].command, 'CRTBNDRPG PGM(HLINV/ASSETS) SRCFILE(HLINV/QRPGLESRC) DBGVIEW(*SOURCE) OPTION(*EVENTF)');
+    assert.deepEqual(started, [{ type: 'qs400', request: 'launch', name: 'Call', connection: 'QSHQ400', program: 'HLINV/ASSETS' }]);
+  });
+
+  test('a recompile that fails, or a dismissed offer, starts nothing', async () => {
+    const failing = commandsRig({ compiled: 'fails' });
+    const config = { type: 'qs400', request: 'launch', name: 'Call', connection: 'QSHQ400', program: 'HLINV/ASSETS' };
+    assert.equal(await failing.commands.noDebugData(config, 'CPF9C15: x'), false);
+    assert.equal(failing.started.length, 0);
+    assert.equal(failing.asked.length, 1, 'no Start again after a failed compile');
+    const dismissed = commandsRig({ answer: 'no' });
+    assert.equal(await dismissed.commands.noDebugData(config, 'CPF9C15: x'), false);
+    assert.equal(dismissed.runs.length, 0);
+  });
+
+  test('Debug (Call) and (Service entry) on a program in the Objects view', async () => {
+    const { commands, started } = commandsRig();
+    const node = { kind: 'object', connection: 'qshq400', entry: { library: 'HLINV', object: 'ASSETS', type: '*PGM' } };
+    await commands.debug(node, 'call');
+    await commands.debug(node, 'serviceEntry');
+    assert.deepEqual(started, [
+      { type: 'qs400', request: 'launch', name: 'Call HLINV/ASSETS', connection: 'QSHQ400', program: 'HLINV/ASSETS', parameters: [] },
+      { type: 'qs400', request: 'launch', name: 'Service entry HLINV/ASSETS', connection: 'QSHQ400', mode: 'serviceEntry', program: 'HLINV/ASSETS', user: '*CURRENT' },
+    ]);
+  });
+
+  test('a member’s program is in the current library', async () => {
+    const { commands, started } = commandsRig();
+    await commands.debug(vscode.Uri.parse('qs400mbr://QSHQ400/HLINV/QRPGLESRC/ASSETS.rpgle'), 'call');
+    assert.equal(started[0].program, 'HLINV/ASSETS');
+  });
+
+  test('a project file: deployed, compiled when its program is older than the member, then debugged', async () => {
+    const file = vscode.Uri.file('/work/hlinv/QRPGLESRC/ASSETS.rpgle');
+    const older = commandsRig({ programChanged: 1_000, memberChanged: 2_000 });
+    await older.commands.debug(file, 'call');
+    assert.deepEqual(older.deployed, [file.fsPath]);
+    assert.equal(older.runs.length, 1, 'compiled');
+    assert.equal(older.runs[0].command, undefined, 'the default compile as it is');
+    assert.equal(older.started[0].program, 'HLINVDEV/ASSETS');
+
+    const newer = commandsRig({ programChanged: 3_000, memberChanged: 2_000 });
+    await newer.commands.debug(file, 'call');
+    assert.equal(newer.runs.length, 0, 'not compiled');
+    assert.equal(newer.started.length, 1);
+
+    const missing = commandsRig({ memberChanged: 2_000 });
+    await missing.commands.debug(file, 'call');
+    assert.equal(missing.runs.length, 1, 'no program yet: compiled');
+
+    const failing = commandsRig({ memberChanged: 2_000, compiled: 'fails' });
+    await failing.commands.debug(file, 'call');
+    assert.equal(failing.started.length, 0, 'a failed compile debugs nothing');
   });
 });
 

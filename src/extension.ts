@@ -51,7 +51,7 @@ import { ResultPanel } from './sql/results';
 import { SqlRunner } from './sql/run';
 import { SqlSessions } from './sql/session';
 import { Debugging } from './debug/debugging';
-import { attachToJob } from './debug/commands';
+import { DebugCommands, attachToJob } from './debug/commands';
 import { DebugStatusBar } from './debug/statusBar';
 import { programOfDocument, programOfEntry } from './debug/programs';
 import { memberUri } from './members/uri';
@@ -96,6 +96,7 @@ export interface ExtensionApi {
   readonly deployer: Deployer;
   readonly projectView: ProjectView;
   readonly debugging: Debugging;
+  readonly debugCommands: DebugCommands;
   readonly objectsView: vscode.TreeView<ObjectsNode>;
 }
 
@@ -195,9 +196,32 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const viewer = new SpoolViewer(store, sessions, spool);
   const messages = new MessagesProvider(store, sessions, context.workspaceState, host);
   const messagesView = vscode.window.createTreeView('code-for-qs400.messages', { treeDataProvider: messages, showCollapseAll: true });
+  const debugSource = {
+    properties: (connection: string, library: string, object: string, type: string) =>
+      sessions.call(connection, 'object.properties', { name: connection, library, object, type }),
+    localMember: async (connection: string, library: string, file: string, member: string) => {
+      const deployed = deployer.localFor(connection, { kind: 'member', library, file, member });
+      if (deployed) {
+        return deployed;
+      }
+      const found = await workspaceIncludes.find(memberUri(connection, library, file, member, '').toString(), { library, file, member }, connection);
+      return found ? vscode.Uri.parse(found.uri) : undefined;
+    },
+    localPath: async (connection: string, path: string) => deployer.localFor(connection, { kind: 'path', path }),
+  };
+  const debugCommands = new DebugCommands({
+    store,
+    sessions,
+    projects,
+    source: debugSource,
+    local: (uri) => localActions.resolve(uri),
+    compileFor: (uri) => runner.compileFor(uri),
+    run: (uri, action, rewrite) => runner.run(uri, action, rewrite),
+  });
   const debugging = new Debugging({
     store,
     sessions,
+    noDebugData: (config, message) => void debugCommands.noDebugData(config, message),
     binary: () => host.resolveBinary(),
     log: (line) => output.warn(line),
     programOf: async (uri) => (await programOfDocument(uri, sessions, projects))?.program,
@@ -205,18 +229,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const n = objectsView.selection[0];
       return n?.kind === 'object' ? programOfEntry(n.entry) : undefined;
     },
-    source: {
-      properties: (connection, library, object, type) => sessions.call(connection, 'object.properties', { name: connection, library, object, type }),
-      localMember: async (connection, library, file, member) => {
-        const deployed = deployer.localFor(connection, { kind: 'member', library, file, member });
-        if (deployed) {
-          return deployed;
-        }
-        const found = await workspaceIncludes.find(memberUri(connection, library, file, member, '').toString(), { library, file, member }, connection);
-        return found ? vscode.Uri.parse(found.uri) : undefined;
-      },
-      localPath: async (connection, path) => deployer.localFor(connection, { kind: 'path', path }),
-    },
+    source: debugSource,
   });
 
   context.subscriptions.push(
@@ -292,6 +305,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     debugging,
     ...debugging.register(),
     new DebugStatusBar(),
+    ...debugCommands.register(),
     vscode.commands.registerCommand('code-for-qs400.debug.attach', (n?: JobNode) =>
       n?.kind === 'job' ? attachToJob(n.connection, n.entry.job, context.workspaceState) : undefined,
     ),
@@ -313,7 +327,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer, projectView, debugging, objectsView };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer, projectView, debugging, debugCommands, objectsView };
 }
 
 export function deactivate(): void {
