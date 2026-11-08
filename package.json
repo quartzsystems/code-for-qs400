@@ -2254,6 +2254,73 @@
         "language": "qs400-cl"
       }
     ],
+    "walkthroughs": [
+      {
+        "id": "code-for-qs400.start",
+        "title": "Get started with Code for QS/400",
+        "description": "Sign on to a QS/400, open a member, compile it, run SQL and debug a program.",
+        "steps": [
+          {
+            "id": "connect",
+            "title": "Add a connection",
+            "description": "Save a QS/400 system and user profile, then sign on over QAP.\n[Add Connection](command:code-for-qs400.connection.add)",
+            "media": {
+              "markdown": "media/walkthrough/connect.md"
+            },
+            "completionEvents": [
+              "onCommand:code-for-qs400.connection.add",
+              "onCommand:code-for-qs400.connection.connect"
+            ]
+          },
+          {
+            "id": "browse",
+            "title": "Browse a library and open a member",
+            "description": "The Objects view lists the library list's libraries, their objects and the members of each source file. Click a member to open it.\n[Show Objects](command:code-for-qs400.objects.focus)",
+            "media": {
+              "markdown": "media/walkthrough/browse.md"
+            },
+            "completionEvents": [
+              "onView:code-for-qs400.objects"
+            ]
+          },
+          {
+            "id": "compile",
+            "title": "Compile and read the Problems panel",
+            "description": "Run Compile (CRTBNDRPG) on the open member; the compiler's messages land in the Problems panel on their lines.\n[Run Action…](command:code-for-qs400.action.run)\n[Show Problems](command:workbench.actions.view.problems)",
+            "media": {
+              "markdown": "media/walkthrough/compile.md"
+            },
+            "completionEvents": [
+              "onCommand:code-for-qs400.action.run"
+            ]
+          },
+          {
+            "id": "sql",
+            "title": "Run SQL",
+            "description": "Open an SQL editor on the active connection and run a statement with Ctrl+Enter.\n[New SQL Editor](command:code-for-qs400.sql.newEditor)",
+            "media": {
+              "markdown": "media/walkthrough/sql.md"
+            },
+            "completionEvents": [
+              "onCommand:code-for-qs400.sql.run"
+            ]
+          },
+          {
+            "id": "debug",
+            "title": "Start debugging",
+            "description": "Set a breakpoint in a member compiled with DBGVIEW(*SOURCE) and call its program under the debugger.\n[Debug (Call)](command:code-for-qs400.debug.call)",
+            "media": {
+              "markdown": "media/walkthrough/debug.md"
+            },
+            "completionEvents": [
+              "onCommand:code-for-qs400.debug.call",
+              "onCommand:code-for-qs400.debug.serviceEntry",
+              "onContext:inDebugMode"
+            ]
+          }
+        ]
+      }
+    ],
     "debuggers": [
       {
         "type": "qs400",

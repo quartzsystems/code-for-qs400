@@ -4,6 +4,7 @@
 !package.json
 !dist/extension.js
 !media/*.svg
+!media/walkthrough/*.md
 !schemas/*.json
 !defaults/*.json
 !syntaxes/*.json

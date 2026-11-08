@@ -44,6 +44,26 @@ suite('Code for QS/400', () => {
     assert.ok(commands.includes('code-for-qs400.host.restart'));
   });
 
+  test('the walkthrough names commands that exist and media that ship', async () => {
+    await api();
+    const ext = vscode.extensions.getExtension(EXTENSION_ID)!;
+    const walkthroughs = ext.packageJSON.contributes.walkthroughs as {
+      steps: { id: string; description: string; media: { markdown: string } }[];
+    }[];
+    assert.equal(walkthroughs.length, 1);
+    const steps = walkthroughs[0].steps;
+    assert.deepEqual(steps.map((s) => s.id), ['connect', 'browse', 'compile', 'sql', 'debug']);
+    const commands = new Set(await vscode.commands.getCommands(false));
+    for (const step of steps) {
+      const links = [...step.description.matchAll(/\(command:([\w.-]+)\)/g)].map((m) => m[1]);
+      assert.ok(links.length > 0, `${step.id} has a button`);
+      for (const id of links) {
+        assert.ok(commands.has(id), `${step.id}: command ${id} exists`);
+      }
+      await vscode.workspace.fs.stat(vscode.Uri.joinPath(ext.extensionUri, step.media.markdown));
+    }
+  });
+
   test('About shows the version from the host', async () => {
     const line = await vscode.commands.executeCommand<string>('code-for-qs400.about');
     assert.equal(line, ABOUT);
