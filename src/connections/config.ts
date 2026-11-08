@@ -40,6 +40,8 @@ export interface ConnectionConfig {
   libraryList?: LibraryListConfig;
   /** Object filters, shown under Filters in the Objects view. */
   filters?: FilterConfig[];
+  /** IFS view roots, in order; the first is Home. Left out: `/home/<user>` and `/`. */
+  ifsRoots?: string[];
 }
 
 export interface ParsedConnections {
@@ -79,6 +81,27 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 function text(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+}
+
+/**
+ * The `ifsRoots` of a connection: absolute paths, each once. An entry that
+ * is not one is skipped and reported; a value that is not an array is
+ * dropped (the default roots apply).
+ */
+function parseRoots(raw: unknown, label: string, problems: string[]): string[] | undefined {
+  if (!Array.isArray(raw)) {
+    problems.push(`${label}: ifsRoots is not an array; the default roots are used`);
+    return undefined;
+  }
+  const roots: string[] = [];
+  for (const r of raw) {
+    if (typeof r !== 'string' || !r.trim().startsWith('/')) {
+      problems.push(`${label}: ${JSON.stringify(r)} is not an absolute IFS path`);
+    } else if (!roots.includes(r.trim())) {
+      roots.push(r.trim());
+    }
+  }
+  return roots;
 }
 
 /** Reads the setting's value. Bad entries are skipped and reported, never thrown. */
@@ -167,6 +190,12 @@ export function parseConnections(raw: unknown): ParsedConnections {
     if (filters.length > 0) {
       c.filters = filters;
     }
+    if (entry.ifsRoots !== undefined) {
+      const roots = parseRoots(entry.ifsRoots, label, problems);
+      if (roots) {
+        c.ifsRoots = roots;
+      }
+    }
     connections.push(c);
   });
   return { connections, problems };
@@ -194,6 +223,9 @@ export function toSetting(c: ConnectionConfig): Record<string, unknown> {
   }
   if (c.filters?.length) {
     out.filters = c.filters.map(filterSetting);
+  }
+  if (c.ifsRoots) {
+    out.ifsRoots = [...c.ifsRoots];
   }
   return out;
 }

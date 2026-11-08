@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
+import { registerIfsViewCommands } from './commands/ifs';
 import { registerMemberCommands } from './commands/members';
 import { registerObjectCommands } from './commands/objects';
 import { LibraryListController } from './connections/libraryList';
@@ -14,6 +15,7 @@ import { HostClient, HostState } from './host/client';
 import { MemberFsProvider } from './members/provider';
 import { MEMBER_SCHEME } from './members/uri';
 import { ConnectionsProvider } from './views/connections';
+import { IfsNode, IfsProvider } from './views/ifs';
 import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
 
@@ -26,6 +28,8 @@ export interface ExtensionApi {
   readonly libraryList: LibraryListController;
   readonly objects: ObjectsProvider;
   readonly members: MemberFsProvider;
+  readonly ifs: IfsProvider;
+  readonly ifsView: vscode.TreeView<IfsNode>;
   readonly statusBar: SessionStatusBar;
 }
 
@@ -48,6 +52,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const statusBar = new SessionStatusBar(store, sessions);
   const objects = new ObjectsProvider(store, sessions, libraryList);
   const members = new MemberFsProvider(sessions, store, output);
+  const ifs = new IfsProvider(store, sessions, context.workspaceState);
+  const ifsView = vscode.window.createTreeView('code-for-qs400.ifs', { treeDataProvider: ifs, showCollapseAll: true });
 
   context.subscriptions.push(
     output,
@@ -60,6 +66,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     statusBar,
     objects,
     members,
+    ifs,
+    ifsView,
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
@@ -69,6 +77,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...libraryList.registerCommands(),
     ...registerObjectCommands(objects, store, sessions),
     ...registerMemberCommands(members, objects, sessions),
+    ...registerIfsViewCommands({ provider: ifs, view: ifsView, store, sessions }),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();
@@ -80,7 +89,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView };
 }
 
 export function deactivate(): void {

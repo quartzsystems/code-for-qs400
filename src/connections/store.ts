@@ -148,6 +148,15 @@ export class ConnectionStore implements vscode.Disposable {
     await this.replace(c.name, { ...c, filters });
   }
 
+  /** Saves the connection's IFS view roots, in order. */
+  async setIfsRoots(name: string, ifsRoots: string[]): Promise<void> {
+    const c = this.get(name);
+    if (!c) {
+      return;
+    }
+    await this.replace(c.name, { ...c, ifsRoots });
+  }
+
   password(name: string): Thenable<string | undefined> {
     return this.secrets.get(secretKey(name));
   }

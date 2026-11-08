@@ -96,6 +96,9 @@ export async function promptConnection(
   if (existing?.filters) {
     c.filters = existing.filters;
   }
+  if (existing?.ifsRoots) {
+    c.ifsRoots = existing.ifsRoots;
+  }
   return c;
 }
 

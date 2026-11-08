@@ -22,7 +22,8 @@
     "onView:code-for-qs400.connections",
     "onCommand:code-for-qs400.about",
     "onCommand:code-for-qs400.host.restart",
-    "onView:code-for-qs400.objects"
+    "onView:code-for-qs400.objects",
+    "onView:code-for-qs400.ifs"
   ],
   "contributes": {
     "viewsContainers": {
@@ -43,6 +44,10 @@
         {
           "id": "code-for-qs400.objects",
           "name": "Objects"
+        },
+        {
+          "id": "code-for-qs400.ifs",
+          "name": "IFS"
         }
       ]
     },
@@ -218,6 +223,48 @@
         "title": "Compare with…",
         "category": "Code for QS/400",
         "icon": "$(diff)"
+      },
+      {
+        "command": "code-for-qs400.ifs.refresh",
+        "title": "Refresh",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.ifs.goTo",
+        "title": "Go to IFS Path…",
+        "category": "Code for QS/400",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "code-for-qs400.ifs.addRoot",
+        "title": "Add IFS Root",
+        "category": "Code for QS/400",
+        "icon": "$(add)"
+      },
+      {
+        "command": "code-for-qs400.ifs.removeRoot",
+        "title": "Remove IFS Root",
+        "category": "Code for QS/400",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "code-for-qs400.ifs.setHome",
+        "title": "Set as IFS Home",
+        "category": "Code for QS/400",
+        "icon": "$(home)"
+      },
+      {
+        "command": "code-for-qs400.ifs.showHidden",
+        "title": "Show Hidden IFS Entries",
+        "category": "Code for QS/400",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "code-for-qs400.ifs.hideHidden",
+        "title": "Hide Hidden IFS Entries",
+        "category": "Code for QS/400",
+        "icon": "$(eye-closed)"
       }
     ],
     "configuration": {
@@ -337,6 +384,14 @@
                     }
                   }
                 }
+              },
+              "ifsRoots": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^/"
+                },
+                "markdownDescription": "Top-level folders of the **IFS** view, in order; the first is Home. Left out: `/home/<user>` and `/`. Edit them with **Add IFS Root**, **Remove IFS Root** and **Set as IFS Home**."
               }
             }
           }
@@ -371,6 +426,31 @@
           "command": "code-for-qs400.filter.add",
           "when": "view == code-for-qs400.objects",
           "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.goTo",
+          "when": "view == code-for-qs400.ifs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.showHidden",
+          "when": "view == code-for-qs400.ifs && !code-for-qs400.ifs.showHidden",
+          "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.ifs.hideHidden",
+          "when": "view == code-for-qs400.ifs && code-for-qs400.ifs.showHidden",
+          "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.ifs.refresh",
+          "when": "view == code-for-qs400.ifs",
+          "group": "navigation@3"
+        },
+        {
+          "command": "code-for-qs400.ifs.addRoot",
+          "when": "view == code-for-qs400.ifs",
+          "group": "1_roots@1"
         }
       ],
       "view/item/context": [
@@ -543,6 +623,36 @@
           "command": "code-for-qs400.member.delete",
           "when": "view == code-for-qs400.objects && viewItem == objects.member",
           "group": "3_remove@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.refresh",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory|symlink)/",
+          "group": "inline@9"
+        },
+        {
+          "command": "code-for-qs400.ifs.addRoot",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.root.*\\.transient$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.addRoot",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(directory|root.*\\.transient$)/",
+          "group": "7_roots@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.setHome",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(directory|root(?!\\.home))/",
+          "group": "7_roots@2"
+        },
+        {
+          "command": "code-for-qs400.ifs.removeRoot",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.root/",
+          "group": "7_roots@3"
+        },
+        {
+          "command": "code-for-qs400.ifs.refresh",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory|symlink|file|other)/",
+          "group": "9_refresh@1"
         }
       ],
       "commandPalette": [
@@ -608,6 +718,10 @@
         },
         {
           "command": "code-for-qs400.member.compare",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.removeRoot",
           "when": "false"
         }
       ],
