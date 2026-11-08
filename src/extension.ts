@@ -3,6 +3,7 @@
 // root directory of this project.
 
 import * as vscode from 'vscode';
+import { CompileDiagnostics } from './actions/diagnostics';
 import { ActionRunner } from './actions/run';
 import { ActionStore } from './actions/store';
 import { about } from './commands/about';
@@ -41,6 +42,7 @@ export interface ExtensionApi {
   readonly statusBar: SessionStatusBar;
   readonly actions: ActionStore;
   readonly runner: ActionRunner;
+  readonly diagnostics: CompileDiagnostics;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -74,6 +76,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const transfers = new Transfers(host, sessions, ifs, ifsFs);
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
   const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
+  const diagnostics = new CompileDiagnostics();
 
   context.subscriptions.push(
     output,
@@ -104,6 +107,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerIfsOpenCommands({ provider: ifs, view: ifsView, store, sessions }),
     ...registerIfsFileCommands({ provider: ifs, view: ifsView, store, sessions }, ifsFs),
     ...runner.register(),
+    ...diagnostics.register(),
+    runner.onDidRun((r) => diagnostics.apply(r)),
     ...registerTransferCommands({ provider: ifs, view: ifsView, store, sessions }, transfers, (f) => (ifsDrop.uploadDropped = f)),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
@@ -116,7 +121,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics };
 }
 
 export function deactivate(): void {

@@ -345,6 +345,12 @@
         "title": "Run Action…",
         "category": "Code for QS/400",
         "icon": "$(play)"
+      },
+      {
+        "command": "code-for-qs400.diagnostics.clear",
+        "title": "Clear Compile Diagnostics",
+        "category": "Code for QS/400",
+        "icon": "$(clear-all)"
       }
     ],
     "configuration": {
