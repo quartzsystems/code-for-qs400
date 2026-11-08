@@ -12,14 +12,17 @@
 //! is waiting on. A `CALL` under `Own` is waited for on a thread of its
 //! own, since its reply comes only when the program ends.
 
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use qap_client::proto::ops::debug::{DebugModule, DebugTarget, Frame, StopReason, Stopped};
+use qap_client::proto::ops::debug::{
+    DebugModule, DebugTarget, Frame, LineBreakpoint, ResumeHow, StopReason, Stopped, View,
+};
 use qap_client::proto::types::{JobId, ObjectName};
 use qap_client::{CommandOutcome, DebugEvent, Error, Status};
 use serde::Deserialize;
@@ -83,8 +86,26 @@ pub fn serve<R: BufRead + Send + 'static>(
     Ok(())
 }
 
-/// Reads frames and queues what is not an answer to the adapter itself.
-fn read_loop<R: BufRead>(mut input: R, tx: &mpsc::Sender<Incoming>, _session: &Session) {
+/// The client's answer to the adapter's `qs400/debugSource` event, sent
+/// as a request of the same name: `{ id, path, name }`, `path` null when
+/// the extension knows no source for the module.
+pub const DEBUG_SOURCE: &str = "qs400/debugSource";
+
+/// What a breakpoint on a module without a `*SOURCE` view is told.
+pub const NO_SOURCE_VIEW: &str = "This module has no source view: compile it with DBGVIEW(*SOURCE) to set breakpoints in its source.";
+
+/// What a breakpoint in a source no program under debug was built from is
+/// told.
+pub const NOT_UNDER_DEBUG: &str =
+    "No program under debug was compiled from this source: add its program to \"programs\".";
+
+/// What `pause` answers: the service has nothing that stops a running job.
+pub const NO_PAUSE: &str =
+    "The QS/400 debugger cannot pause a running job: set a breakpoint where it should stop.";
+
+/// Reads frames, answers `qs400/debugSource` here (the worker may be
+/// waiting for it), and queues the rest.
+fn read_loop<R: BufRead>(mut input: R, tx: &mpsc::Sender<Incoming>, session: &Session) {
     loop {
         let body = match host_rpc::framing::read_frame(&mut input) {
             Ok(Some(b)) => b,
@@ -102,6 +123,11 @@ fn read_loop<R: BufRead>(mut input: R, tx: &mpsc::Sender<Incoming>, _session: &S
             }
         };
         if msg.kind != "request" {
+            continue;
+        }
+        if msg.command == DEBUG_SOURCE {
+            session.answered(&msg.arguments);
+            session.out.ok(&msg, Value::Null);
             continue;
         }
         if tx.send(msg).is_err() {
@@ -125,18 +151,77 @@ enum Mode {
     Call { command: String },
 }
 
-/// A program under debug, as `AddProgram` answered.
-#[derive(Debug, Clone)]
-#[allow(dead_code)] // read by setBreakpoints
-struct Program {
-    name: ObjectName,
-    modules: Vec<DebugModule>,
+/// What the `CALL`'s thread tells `close`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CallNews {
+    /// The cancel is sent.
+    Cancelled,
+    /// The reply came.
+    Ended,
+}
+
+/// Where a module's frames stand and its breakpoints are set from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Src {
+    program: ObjectName,
+    module: String,
+    source: Source,
+    /// The synthetic document: statement numbers as lines.
+    synthetic: bool,
+}
+
+/// `LIB/PROGRAM/MODULE`, upper case: a module's key.
+fn module_key(program: &ObjectName, module: &str) -> String {
+    format!(
+        "{}/{}/{}",
+        program.library.trim(),
+        program.name.trim(),
+        module.trim()
+    )
+    .to_ascii_uppercase()
+}
+
+/// A source path as compared: a URI's query and fragment dropped, its
+/// escapes decoded, backslashes as slashes, without case (members' names
+/// have none, and Windows paths none that counts).
+pub fn path_key(path: &str) -> String {
+    let p = path.trim();
+    let p = if has_scheme(p) {
+        p.split(['?', '#']).next().unwrap_or(p)
+    } else {
+        p
+    };
+    let bytes = p.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Ok(b) = u8::from_str_radix(&p[i + 1..i + 3], 16)
+        {
+            out.push(b);
+            i += 3;
+            continue;
+        }
+        out.push(if bytes[i] == b'\\' { b'/' } else { bytes[i] });
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_lowercase()
+}
+
+/// A URI, not a path: a scheme of two or more characters (`c:` is a drive).
+fn has_scheme(p: &str) -> bool {
+    p.split_once(':').is_some_and(|(s, _)| {
+        s.len() > 1
+            && s.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+    })
 }
 
 #[derive(Default)]
 struct State {
     mode: Mode,
-    programs: Vec<Program>,
     /// The debugged jobs; thread ID `n` is entry `n - 1`.
     threads: Vec<Option<JobId>>,
     /// The thread stopped, while one is.
@@ -150,7 +235,9 @@ struct State {
     /// The running `CALL`'s cancel flag.
     call: Option<Arc<AtomicBool>>,
     /// Told when the `CALL`'s thread is done.
-    call_done: Option<Receiver<()>>,
+    call_done: Option<Receiver<CallNews>>,
+    /// Each module's source, by [`module_key`]; asked once.
+    sources: HashMap<String, Src>,
 }
 
 impl State {
@@ -184,10 +271,12 @@ fn thread_name(job: Option<&JobId>) -> String {
 /// What the worker and the event and `CALL` threads share.
 struct Session {
     out: Arc<Out>,
-    #[allow(dead_code)]
     options: Options,
     backend: Mutex<Option<Box<dyn DebugBackend>>>,
     state: Mutex<State>,
+    /// `qs400/debugSource` asked and not yet answered, by ID.
+    asks: Mutex<HashMap<u64, mpsc::Sender<Value>>>,
+    next_ask: AtomicU64,
 }
 
 impl Session {
@@ -197,7 +286,78 @@ impl Session {
             options,
             backend: Mutex::new(None),
             state: Mutex::new(State::default()),
+            asks: Mutex::new(HashMap::new()),
+            next_ask: AtomicU64::new(1),
         }
+    }
+
+    /// The extension answered a `qs400/debugSource`.
+    fn answered(&self, args: &Value) {
+        let Some(id) = args.get("id").and_then(Value::as_u64) else {
+            return;
+        };
+        if let Some(tx) = lock(&self.asks).remove(&id) {
+            let _ = tx.send(args.clone());
+        }
+    }
+
+    /// The source of `program`'s `module`: asked of the extension once
+    /// (`qs400/debugSource`) when the module has a source view; the
+    /// synthetic document otherwise, or when no answer names one in time.
+    fn source_of(&self, program: &ObjectName, module: &str, has_source: bool) -> Src {
+        let key = module_key(program, module);
+        if let Some(s) = lock(&self.state).sources.get(&key) {
+            return s.clone();
+        }
+        let answer = if has_source {
+            self.ask(program, module)
+        } else {
+            None
+        };
+        let (source, synthetic_) = match answer {
+            Some((path, name)) => (
+                Source {
+                    name,
+                    path,
+                    origin: None,
+                    presentation_hint: None,
+                },
+                false,
+            ),
+            None => (synthetic(program, module), true),
+        };
+        let src = Src {
+            program: program.clone(),
+            module: module.trim().to_owned(),
+            source,
+            synthetic: synthetic_,
+        };
+        lock(&self.state).sources.insert(key, src.clone());
+        src
+    }
+
+    /// `qs400/debugSource { id, program, module }` as an event, and the
+    /// path and name its answer gives.
+    fn ask(&self, program: &ObjectName, module: &str) -> Option<(String, String)> {
+        let id = self.next_ask.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = mpsc::channel();
+        lock(&self.asks).insert(id, tx);
+        self.out.event(
+            DEBUG_SOURCE,
+            json!({ "id": id, "program": object_text(program), "module": module.trim() }),
+        );
+        let answer = rx.recv_timeout(self.options.ask_timeout).ok();
+        lock(&self.asks).remove(&id);
+        let a = answer?;
+        let path = a.get("path").and_then(Value::as_str)?.trim().to_owned();
+        if path.is_empty() {
+            return None;
+        }
+        let name = a
+            .get("name")
+            .and_then(Value::as_str)
+            .map_or_else(|| module.trim().to_owned(), str::to_owned);
+        Some((path, name))
     }
 
     fn with_backend<T>(
@@ -316,10 +476,12 @@ impl Session {
         }
     }
 
-    /// Ends the session: the `CALL` cancelled when `terminate`, `End`,
-    /// sign-off. Nothing is reported; nothing more will be.
+    /// Ends the session. With `terminate`, a running `CALL` is cancelled
+    /// first: `End` before it would let a stopped job run on to its end.
+    /// Then `End`, the `CALL`'s reply (a moment), sign-off. Nothing is
+    /// reported; nothing more will be.
     fn close(&self, terminate: bool) {
-        let (flag, done) = {
+        let (flag, news) = {
             let mut st = lock(&self.state);
             st.closing = true;
             (st.call.take(), st.call_done.take())
@@ -327,12 +489,20 @@ impl Session {
         let Some(mut b) = lock(&self.backend).take() else {
             return;
         };
-        if terminate && let Some(f) = &flag {
+        let mut ended = false;
+        if terminate && let (Some(f), Some(news)) = (&flag, &news) {
             f.store(true, Ordering::Release);
+            ended = news.recv_timeout(CALL_GRACE) == Ok(CallNews::Ended);
         }
         let _ = b.end();
-        if let Some(done) = done {
-            let _ = done.recv_timeout(CALL_GRACE);
+        if let Some(news) = news
+            && !ended
+        {
+            while let Ok(n) = news.recv_timeout(CALL_GRACE) {
+                if n == CallNews::Ended {
+                    break;
+                }
+            }
         }
         b.sign_off();
     }
@@ -401,6 +571,18 @@ impl Adapter {
             .unwrap_or(Value::Null)),
             "launch" => self.launch(req),
             "configurationDone" => self.configuration_done(),
+            "setBreakpoints" => self.set_breakpoints(&req.arguments),
+            "continue" => self.resume(ResumeHow::Go),
+            "next" => self.resume(ResumeHow::StepOver),
+            "stepIn" => self.resume(ResumeHow::StepInto),
+            "stepOut" => self.resume(ResumeHow::StepOut),
+            "pause" => Err(Failure::new(NO_PAUSE)),
+            "terminate" => {
+                self.session.close(true);
+                self.out().ok(req, Value::Null);
+                self.session.terminated();
+                return Flow::Continue;
+            }
             "threads" => Ok(self.threads()),
             "stackTrace" => self.stack_trace(&req.arguments),
             "disconnect" => {
@@ -498,10 +680,7 @@ impl Adapter {
                 }
                 f
             })?;
-        lock(&self.session.state).programs.push(Program {
-            name: program.clone(),
-            modules,
-        });
+        self.sources_of(program, &modules);
         for p in more {
             let name = match object_name(p) {
                 Ok(n) => n,
@@ -519,9 +698,7 @@ impl Adapter {
                     r => r,
                 });
             match added {
-                Ok(modules) => lock(&self.session.state)
-                    .programs
-                    .push(Program { name, modules }),
+                Ok(modules) => self.sources_of(&name, &modules),
                 Err(f) => self.out().console(&format!(
                     "{} not under debug: {}",
                     object_text(&name),
@@ -530,6 +707,114 @@ impl Adapter {
             }
         }
         Ok(())
+    }
+
+    /// Each module's source, asked now, so that `setBreakpoints` finds the
+    /// module each source it is given was compiled into.
+    fn sources_of(&self, program: &ObjectName, modules: &[DebugModule]) {
+        for m in modules {
+            self.session
+                .source_of(program, &m.name, m.views.contains(&View::Source));
+        }
+    }
+
+    /// `SetBreakpoints` of the module the source is, every line at once,
+    /// with its condition. A line the server moved comes back at its new
+    /// line, which moves the breakpoint in the editor. A refusal changes
+    /// nothing on the server, so every breakpoint is unverified with its
+    /// text.
+    fn set_breakpoints(&mut self, args: &Value) -> Result<Value, Failure> {
+        let path = args
+            .pointer("/source/path")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let source = args.get("source").cloned().unwrap_or(Value::Null);
+        let asked: Vec<LineBreakpoint> = args
+            .get("breakpoints")
+            .and_then(Value::as_array)
+            .map(|bs| {
+                bs.iter()
+                    .map(|b| LineBreakpoint {
+                        line: b
+                            .get("line")
+                            .and_then(Value::as_u64)
+                            .and_then(|n| u32::try_from(n).ok())
+                            .unwrap_or(0),
+                        condition: b
+                            .get("condition")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|c| !c.is_empty())
+                            .map(str::to_owned),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let unverified = |message: &str| {
+            let bs: Vec<Value> = asked
+                .iter()
+                .map(|b| {
+                    json!({
+                        "id": next_breakpoint(),
+                        "verified": false,
+                        "line": b.line,
+                        "message": message,
+                        "source": source,
+                    })
+                })
+                .collect();
+            Ok(json!({ "breakpoints": bs }))
+        };
+        let key = path_key(path);
+        let found = lock(&self.session.state)
+            .sources
+            .values()
+            .find(|s| path_key(&s.source.path) == key)
+            .cloned();
+        let src = match found {
+            Some(s) if !s.synthetic => s,
+            Some(_) => return unverified(NO_SOURCE_VIEW),
+            None if key.starts_with(&format!("{SYNTHETIC_SCHEME}:")) => {
+                return unverified(NO_SOURCE_VIEW);
+            }
+            None => return unverified(NOT_UNDER_DEBUG),
+        };
+        match self
+            .session
+            .with_backend(|b| b.set_breakpoints(&src.program, &src.module, &asked))
+        {
+            Ok(set) => {
+                let bs: Vec<Value> = asked
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        json!({
+                            "id": next_breakpoint(),
+                            "verified": true,
+                            "line": set.get(i).map_or(b.line, |s| s.line),
+                            "source": source,
+                        })
+                    })
+                    .collect();
+                Ok(json!({ "breakpoints": bs }))
+            }
+            Err(f) => unverified(&f.message),
+        }
+    }
+
+    /// `Resume`: the stop's frames are gone.
+    fn resume(&mut self, how: ResumeHow) -> Result<Value, Failure> {
+        self.session.with_backend(|b| b.resume(how))?;
+        {
+            let mut st = lock(&self.session.state);
+            st.stopped = None;
+            st.frames.clear();
+        }
+        Ok(if how == ResumeHow::Go {
+            json!({ "allThreadsContinued": true })
+        } else {
+            Value::Null
+        })
     }
 
     /// The session is configured: a `CALL` runs now.
@@ -551,13 +836,14 @@ impl Adapter {
                     if !cancelled && flag.load(Ordering::Acquire) {
                         running.cancel();
                         cancelled = true;
+                        let _ = done_tx.send(CallNews::Cancelled);
                     }
                     if let Some(r) = running.wait_for(CANCEL_EVERY) {
                         break r;
                     }
                 };
                 session.call_ended(&command, outcome);
-                let _ = done_tx.send(());
+                let _ = done_tx.send(CallNews::Ended);
             });
         }
         Ok(Value::Null)
@@ -620,13 +906,26 @@ impl Adapter {
         }
     }
 
-    /// Where a frame stands: on the synthetic document at its statement.
+    /// Where a frame stands: on its module's source at its line, when the
+    /// line is of the source view and known; else on the synthetic
+    /// document at its statement; nowhere without either.
     fn place(&self, f: &Frame) -> (Option<Source>, u32) {
+        if f.view == View::Source && f.line > 0 {
+            let src = self.session.source_of(&f.program, &f.module, true);
+            if !src.synthetic {
+                return (Some(src.source), f.line);
+            }
+        }
         if f.stmt == 0 {
             return (None, 0);
         }
         (Some(synthetic(&f.program, &f.module)), f.stmt)
     }
+}
+
+fn next_breakpoint() -> i64 {
+    static NEXT: AtomicI64 = AtomicI64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 /// The synthetic, read-only document of a module's statements.

@@ -90,6 +90,32 @@ pub fn frame(
     }
 }
 
+/// `Stopped` of the connection job in `ASSETS` at `stmt`.
+pub fn stop(reason: qap_client::proto::ops::debug::StopReason, stmt: u32) -> DebugEvent {
+    stop_job(job("123456", "QUSER", "QAPCNN"), reason, stmt)
+}
+
+/// `Stopped` of `job` in `ASSETS` at `stmt`.
+pub fn stop_job(
+    job: JobId,
+    reason: qap_client::proto::ops::debug::StopReason,
+    stmt: u32,
+) -> DebugEvent {
+    DebugEvent::Stopped(qap_client::proto::ops::debug::Stopped {
+        job,
+        reason,
+        frame: frame(
+            "HLINV",
+            "ASSETS",
+            "ASSETS",
+            "main",
+            stmt,
+            stmt,
+            View::Source,
+        ),
+    })
+}
+
 pub fn var(name: &str, ty: &str, value: &str, expandable: bool) -> Variable {
     Variable {
         name: name.into(),
@@ -370,7 +396,14 @@ pub struct Client {
     pub done: Option<thread::JoinHandle<()>>,
     /// What the credentials passed to `connect` were.
     pub signed_on: Arc<Mutex<Vec<String>>>,
+    /// How `qs400/debugSource` is answered, by `LIB/PGM/MODULE`.
+    sources: HashMap<String, Option<String>>,
+    /// Every `qs400/debugSource` asked, by `LIB/PGM/MODULE`.
+    pub asked: Vec<String>,
 }
+
+/// Where the extension says `HLINV/ASSETS`'s module `ASSETS` came from.
+pub const ASSETS_MEMBER: &str = "qs400mbr://QSHQ400/HLINV/QRPGLESRC/ASSETS.rpgle?readonly";
 
 /// What `connect` answers instead of the mock.
 pub type Refuse = Option<Failure>;
@@ -423,6 +456,11 @@ impl Client {
             log: Vec::new(),
             done: Some(done),
             signed_on,
+            sources: HashMap::from([(
+                "HLINV/ASSETS/ASSETS".to_owned(),
+                Some(ASSETS_MEMBER.to_owned()),
+            )]),
+            asked: Vec::new(),
         }
     }
 
@@ -447,7 +485,32 @@ impl Client {
         let left = deadline.saturating_duration_since(Instant::now());
         let m = self.rx.recv_timeout(left).ok()?;
         self.log.push(m.clone());
+        // The extension's half of `qs400/debugSource`.
+        if m["type"] == "event" && m["event"] == "qs400/debugSource" {
+            let key = format!(
+                "{}/{}",
+                m["body"]["program"].as_str().unwrap_or(""),
+                m["body"]["module"].as_str().unwrap_or("")
+            );
+            self.asked.push(key.clone());
+            if let Some(path) = self.sources.get(&key).cloned() {
+                let id = m["body"]["id"].clone();
+                self.send("qs400/debugSource", json!({ "id": id, "path": path }));
+            }
+        }
         Some(m)
+    }
+
+    /// Answers `qs400/debugSource` for `LIB/PGM/MODULE` with `path` (null:
+    /// no source known); unlisted modules get no answer.
+    pub fn source(&mut self, module: &str, path: Option<&str>) {
+        self.sources
+            .insert(module.to_owned(), path.map(str::to_owned));
+    }
+
+    /// `qs400/debugSource` for `LIB/PGM/MODULE` gets no answer at all.
+    pub fn unanswered(&mut self, module: &str) {
+        self.sources.remove(module);
     }
 
     /// The first message read (or still to come) that `pick` takes.
