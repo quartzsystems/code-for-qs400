@@ -13,6 +13,7 @@ export interface DebugCredentials {
   user: string;
   password: string;
   caFile?: string;
+  certificates?: string[];
   libraryList?: { current?: string; user: string[] };
 }
 

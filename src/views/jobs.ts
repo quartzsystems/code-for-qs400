@@ -55,6 +55,7 @@ export function jobTreeItem(n: JobNode): vscode.TreeItem {
     case 'message': {
       const i = new vscode.TreeItem(n.text, vscode.TreeItemCollapsibleState.None);
       i.contextValue = 'jobs.message';
+      i.iconPath = new vscode.ThemeIcon('info');
       return i;
     }
     case 'filter': {

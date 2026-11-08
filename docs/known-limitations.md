@@ -20,10 +20,9 @@ compiler front-ends offer at this release.
 
 ## Connections
 
-- **No "trust this certificate" button.** A system with a self-signed
-  certificate or a private CA needs the certificate in the connection's CA
-  file. Turning verification off (`tls.verify: false`) is refused, as in
-  QS/400 Access.
+- **Verification cannot be turned off.** A certificate that does not
+  verify can be trusted for one connection (**Trust for this
+  connection**), as in QS/400 Access; `tls.verify: false` is refused.
 
 ## Objects and members
 
@@ -76,7 +75,7 @@ editor shows them as they are and hides nothing.
   under it.
 - **Rename** changes the current document only, and a name declared in a
   copy member cannot be renamed.
-- **Column guides, not rulers, for fixed-form RPG.** VS Code has rulers per
+- **Column guides, not rulers, for fixed-form RPG and DDS.** VS Code has rulers per
   language, not per document, so the guides are drawn on the text and
   show only as far as each line reaches.
 - **Comment toggling** is off for DDS, and in RPG inserts `//`, never a

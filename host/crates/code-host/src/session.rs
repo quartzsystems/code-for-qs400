@@ -186,6 +186,10 @@ pub struct TlsParams {
     /// roots, or the server's own certificate as it stands.
     #[serde(default)]
     pub ca_file: Option<String>,
+    /// PEM texts trusted for this connection alone: what "Trust for this
+    /// connection" saved, as QS/400 Access keeps them in a system's CA list.
+    #[serde(default)]
+    pub certificates: Vec<String>,
 }
 
 /// Where a connection goes.
@@ -723,8 +727,10 @@ impl Backend for QapBackend {
     }
 }
 
-/// Trust for `tls`: the platform's store, plus `caFile` when given. The
-/// same rule as QS/400 Access: nothing unverified is ever accepted.
+/// Trust for `tls`: the platform's store, plus `caFile` when given and the
+/// connection's own `certificates`. The same rule as QS/400 Access: nothing
+/// unverified is ever accepted; a certificate in the list is trusted as it
+/// stands.
 pub fn trust_for(tls: &TlsParams) -> Result<Trust, RpcError> {
     if tls.verify == Some(false) {
         return Err(RpcError::invalid_params(
@@ -732,17 +738,19 @@ pub fn trust_for(tls: &TlsParams) -> Result<Trust, RpcError> {
              trust a self-signed one with tls.caFile",
         ));
     }
+    let mut trust = Trust::from_pem(tls.certificates.iter().map(String::as_str));
     let Some(path) = tls.ca_file.as_deref().filter(|p| !p.trim().is_empty()) else {
-        return Ok(Trust::default());
+        return Ok(trust);
     };
     let pem = std::fs::read_to_string(path)
         .map_err(|e| RpcError::invalid_params(format!("tls.caFile {path}: {e}")))?;
-    let trust = Trust::from_pem([pem.as_str()]);
-    if trust.certificates.is_empty() {
+    let from_file = Trust::from_pem([pem.as_str()]);
+    if from_file.certificates.is_empty() {
         return Err(RpcError::invalid_params(format!(
             "tls.caFile {path}: no certificate in it"
         )));
     }
+    trust.certificates.extend(from_file.certificates);
     Ok(trust)
 }
 
@@ -771,10 +779,23 @@ pub fn rpc_error(e: &Error) -> RpcError {
         err.data = Some(server_data(status, e));
     } else if let Error::Connect(qsa_net::ConnectError::Tls(qsa_net::TlsError::Untrusted {
         reason,
-        ..
+        certificate,
+        info,
     })) = e
     {
-        err.data = Some(json!({ "kind": "untrusted", "reason": reason }));
+        // The server's certificate goes with the error so the editor can
+        // show it and offer to trust it, as QS/400 Access's dialog does.
+        err.data = Some(json!({
+            "kind": "untrusted",
+            "reason": reason,
+            "certificate": qsa_net::tls::to_pem(certificate),
+            "subject": info.subject,
+            "issuer": info.issuer,
+            "notBefore": info.not_before,
+            "notAfter": info.not_after,
+            "sha256": info.sha256,
+            "serial": info.serial,
+        }));
     }
     err
 }

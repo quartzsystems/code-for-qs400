@@ -79,35 +79,43 @@
       "qs400": [
         {
           "id": "code-for-qs400.project",
-          "name": "Project"
+          "name": "Project",
+          "initialSize": 3
         },
         {
           "id": "code-for-qs400.connections",
-          "name": "Connections"
+          "name": "Connections",
+          "initialSize": 2
         },
         {
           "id": "code-for-qs400.objects",
-          "name": "Objects"
+          "name": "Objects",
+          "initialSize": 4
         },
         {
           "id": "code-for-qs400.ifs",
-          "name": "IFS"
+          "name": "IFS",
+          "initialSize": 3
         },
         {
           "id": "code-for-qs400.sql",
-          "name": "SQL"
+          "name": "SQL",
+          "visibility": "collapsed"
         },
         {
           "id": "code-for-qs400.jobs",
-          "name": "Jobs"
+          "name": "Jobs",
+          "visibility": "collapsed"
         },
         {
           "id": "code-for-qs400.spool",
-          "name": "Spooled files"
+          "name": "Spooled files",
+          "visibility": "collapsed"
         },
         {
           "id": "code-for-qs400.messages",
-          "name": "Messages"
+          "name": "Messages",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -697,6 +705,12 @@
         "icon": "$(close)"
       },
       {
+        "command": "code-for-qs400.project.init",
+        "title": "Initialize Project…",
+        "category": "Code for QS/400",
+        "icon": "$(new-file)"
+      },
+      {
         "command": "code-for-qs400.pull.library",
         "title": "Pull Library…",
         "category": "Code for QS/400",
@@ -850,6 +864,13 @@
                   "caFile": {
                     "type": "string",
                     "description": "PEM file with certificates to trust beyond the system store: a CA, or the server certificate itself."
+                  },
+                  "certificates": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "markdownDescription": "PEM certificates trusted for this connection alone. **Trust for this connection** adds the server's certificate here when it does not verify, as QS/400 Access adds it to a system's CA list. Remove an entry to stop trusting it."
                   }
                 }
               },
@@ -1042,7 +1063,7 @@
       },
       {
         "view": "code-for-qs400.project",
-        "contents": "No workspace folder has a qs400project.json.\n[Pull Library…](command:code-for-qs400.pull.library)\nA pull writes the library's source files into the folder and makes its project file."
+        "contents": "No qs400project.json in this workspace.\n[Initialize Project…](command:code-for-qs400.project.init)\n[Pull Library…](command:code-for-qs400.pull.library)"
       }
     ],
     "menus": {
@@ -2087,6 +2108,11 @@
       ],
       "explorer/context": [
         {
+          "command": "code-for-qs400.project.init",
+          "when": "resourceScheme == file && explorerResourceIsRoot",
+          "group": "7_qs400@0"
+        },
+        {
           "command": "code-for-qs400.deploy.file",
           "when": "resourceScheme == file && !explorerResourceIsFolder && code-for-qs400.hasProject",
           "group": "7_qs400@1"
@@ -2171,23 +2197,6 @@
         "editor.wordWrap": "off"
       },
       "[qs400-dds]": {
-        "editor.rulers": [
-          5,
-          6,
-          7,
-          16,
-          17,
-          18,
-          28,
-          29,
-          34,
-          35,
-          37,
-          38,
-          41,
-          44,
-          80
-        ],
         "editor.wordWrap": "off"
       },
       "[qs400-spool]": {

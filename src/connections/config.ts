@@ -20,6 +20,8 @@ export interface TlsConfig {
   verify?: boolean;
   /** PEM file to trust beyond the platform's certificate store. */
   caFile?: string;
+  /** PEM texts trusted for this connection alone, added by "Trust for this connection". */
+  certificates?: string[];
 }
 
 /** What to apply to the session job on connect. */
@@ -188,6 +190,19 @@ export function parseConnections(raw: unknown): ParsedConnections {
       if (caFile) {
         tls.caFile = caFile;
       }
+      if (entry.tls.certificates !== undefined) {
+        if (Array.isArray(entry.tls.certificates)) {
+          const pems = entry.tls.certificates.filter((p): p is string => typeof p === 'string' && p.includes('-----BEGIN CERTIFICATE-----'));
+          if (pems.length < entry.tls.certificates.length) {
+            problems.push(`${label}: an entry of tls.certificates is not a PEM certificate; it is ignored`);
+          }
+          if (pems.length > 0) {
+            tls.certificates = pems;
+          }
+        } else {
+          problems.push(`${label}: tls.certificates is not an array; it is ignored`);
+        }
+      }
       if (Object.keys(tls).length > 0) {
         c.tls = tls;
       }
@@ -254,8 +269,18 @@ export function toSetting(c: ConnectionConfig): Record<string, unknown> {
     out.port = c.port;
   }
   out.user = c.user;
-  if (c.tls && (c.tls.verify !== undefined || c.tls.caFile)) {
-    out.tls = { ...c.tls };
+  if (c.tls && (c.tls.verify !== undefined || c.tls.caFile || c.tls.certificates?.length)) {
+    const tls: Record<string, unknown> = {};
+    if (c.tls.verify !== undefined) {
+      tls.verify = c.tls.verify;
+    }
+    if (c.tls.caFile) {
+      tls.caFile = c.tls.caFile;
+    }
+    if (c.tls.certificates?.length) {
+      tls.certificates = [...c.tls.certificates];
+    }
+    out.tls = tls;
   }
   if (c.libraryList && (c.libraryList.current || c.libraryList.user?.length)) {
     const libl: Record<string, unknown> = {};
@@ -293,6 +318,9 @@ export function connectParams(c: ConnectionConfig, password?: string): ConnectPa
   }
   if (c.tls) {
     p.tls = { ...c.tls };
+    if (c.tls.certificates) {
+      p.tls.certificates = [...c.tls.certificates];
+    }
   }
   return p;
 }

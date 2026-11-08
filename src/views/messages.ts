@@ -80,6 +80,7 @@ export function messageTreeItem(n: MessageNode): vscode.TreeItem {
     case 'info': {
       const i = new vscode.TreeItem(n.text, vscode.TreeItemCollapsibleState.None);
       i.contextValue = 'messages.info';
+      i.iconPath = new vscode.ThemeIcon('info');
       return i;
     }
     case 'queue': {

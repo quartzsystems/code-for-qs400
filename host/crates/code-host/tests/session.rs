@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use code_host::registry_with;
 use code_host::session::{
     Backend, CommandBackend, DevelopBackend, Endpoint, Factory, IfsBackend, JobDto, Sessions,
-    SystemDto, codes, qap_factory,
+    SystemDto, TlsParams, codes, qap_factory, trust_for,
 };
 use host_rpc::framing::read_frame;
 use host_rpc::{Context, Outbound, Registry, RpcError};
@@ -682,6 +682,57 @@ fn tls_verification_cannot_be_turned_off() {
     assert_eq!(e.code, host_rpc::codes::INVALID_PARAMS);
     assert!(h.changes().is_empty());
     assert!(h.calls().is_empty());
+}
+
+const SELF_SIGNED: &str = include_str!("data/selfsigned.pem");
+
+#[test]
+fn an_untrusted_certificate_comes_back_with_the_error() {
+    let der = qsa_net::tls::certs_from_pem(SELF_SIGNED)[0].to_vec();
+    let info = qsa_net::x509::describe(&der);
+    let e = Error::Connect(qsa_net::ConnectError::Tls(qsa_net::TlsError::Untrusted {
+        reason: "invalid peer certificate: UnknownIssuer".into(),
+        certificate: der.clone(),
+        info: Box::new(info.clone()),
+    }));
+    let err = code_host::session::rpc_error(&e);
+    assert_eq!(err.code, codes::TRANSPORT);
+    let data = err.data.unwrap();
+    assert_eq!(data["kind"], "untrusted");
+    assert_eq!(data["reason"], "invalid peer certificate: UnknownIssuer");
+    assert_eq!(data["subject"], info.subject.as_str());
+    assert_eq!(data["issuer"], info.issuer.as_str());
+    assert_eq!(data["sha256"], info.sha256.as_str());
+    // The PEM sent back is the certificate the server presented.
+    let back = qsa_net::tls::certs_from_pem(data["certificate"].as_str().unwrap());
+    assert_eq!(back.len(), 1);
+    assert_eq!(back[0].to_vec(), der);
+}
+
+#[test]
+fn trust_takes_the_connections_certificates_and_the_ca_file() {
+    let tls = TlsParams {
+        certificates: vec![SELF_SIGNED.into()],
+        ..TlsParams::default()
+    };
+    assert_eq!(trust_for(&tls).unwrap().certificates.len(), 1);
+    let file = std::env::temp_dir().join(format!("qs400-ca-{}.pem", std::process::id()));
+    std::fs::write(&file, SELF_SIGNED).unwrap();
+    let both = TlsParams {
+        ca_file: Some(file.to_string_lossy().into_owned()),
+        certificates: vec![SELF_SIGNED.into()],
+        ..TlsParams::default()
+    };
+    let n = trust_for(&both).map(|t| t.certificates.len());
+    std::fs::remove_file(&file).ok();
+    assert_eq!(n.unwrap(), 2);
+    // Verification still cannot be turned off, whatever is trusted.
+    let off = TlsParams {
+        verify: Some(false),
+        certificates: vec![SELF_SIGNED.into()],
+        ..TlsParams::default()
+    };
+    assert!(trust_for(&off).is_err());
 }
 
 #[test]

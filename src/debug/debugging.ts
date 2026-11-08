@@ -129,6 +129,9 @@ export class Debugging implements vscode.Disposable, vscode.DebugConfigurationPr
     if (c.tls?.caFile) {
       creds.caFile = c.tls.caFile;
     }
+    if (c.tls?.certificates?.length) {
+      creds.certificates = [...c.tls.certificates];
+    }
     const state = this.deps.sessions.status(c.name).state;
     if (state === 'connected' || state === 'stale') {
       try {

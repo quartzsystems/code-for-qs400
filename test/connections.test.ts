@@ -12,7 +12,7 @@ import {
   secretKey,
   toSetting,
 } from '../src/connections/config';
-import { errorText } from '../src/connections/prompts';
+import { errorText, untrustedCertificate } from '../src/connections/prompts';
 import { HostRpcError } from '../src/host/client';
 import { SessionErrorCodes } from '../src/host/protocol';
 
@@ -91,6 +91,28 @@ suite('Connections: settings', () => {
       connectParams({ name: 'X', host: 'h', port: 9, user: 'U', tls: { caFile: 'ca.pem' } }, 's3cret'),
       { name: 'X', host: 'h', port: 9, user: 'U', password: 's3cret', tls: { caFile: 'ca.pem' } },
     );
+  });
+
+  test('trusted certificates round-trip and go to session.connect', () => {
+    const pem = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+    const c = { name: 'X', host: 'h', user: 'U', tls: { certificates: [pem] } };
+    assert.deepEqual(parseConnections([toSetting(c)]), { connections: [c], problems: [] });
+    assert.deepEqual(connectParams(c).tls, { certificates: [pem] });
+    const { connections, problems } = parseConnections([
+      { name: 'Y', host: 'h', user: 'U', tls: { certificates: [pem, 'not a certificate', 5] } },
+      { name: 'Z', host: 'h', user: 'U', tls: { certificates: pem } },
+    ]);
+    assert.deepEqual(connections[0].tls, { certificates: [pem] });
+    assert.equal(connections[1].tls, undefined);
+    assert.equal(problems.length, 2, problems.join('\n'));
+  });
+
+  test('an untrusted certificate is offered only when the host sent it', () => {
+    const data = { kind: 'untrusted', reason: 'invalid peer certificate: UnknownIssuer', certificate: 'PEM', sha256: 'AB' };
+    assert.deepEqual(untrustedCertificate(new HostRpcError(SessionErrorCodes.Transport, 'x', data)), data);
+    assert.equal(untrustedCertificate(new HostRpcError(SessionErrorCodes.Transport, 'x', { kind: 'untrusted', reason: 'r' })), undefined);
+    assert.equal(untrustedCertificate(new HostRpcError(SessionErrorCodes.Server, 'x', data)), undefined);
+    assert.equal(untrustedCertificate(new Error('x')), undefined);
   });
 
   test('library and profile names', () => {

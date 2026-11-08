@@ -42,6 +42,7 @@ import { LocalActions } from './projects/local';
 import { WorkspaceIncludes } from './projects/includes';
 import { ProjectView, registerProjectViewCommands } from './views/project';
 import { sameName } from './connections/config';
+import { DdsGuides } from './languages/ddsGuides';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
 import { SQL_STATEMENTS, type SqlStatementRange } from './languages/protocol';
@@ -77,6 +78,7 @@ export interface ExtensionApi {
   readonly jobLog: JobLogProvider;
   readonly languages: LanguageServers;
   readonly rpg: FixedFormRpg;
+  readonly dds: DdsGuides;
   readonly sql: SqlSessions;
   readonly sqlRunner: SqlRunner;
   readonly results: ResultPanel;
@@ -180,7 +182,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   languages.start();
   const rpg = new FixedFormRpg(() => languages.request<SpecForm[]>('qs400-rpgle', 'qs400/specForms'));
   rpg.start();
-  const sql = new SqlSessions(host, store, sessions);
+  const dds = new DdsGuides();
+  dds.start();
+  const sql =new SqlSessions(host, store, sessions);
   const sqlRunner = new SqlRunner(host, store, sessions, sql, (doc) =>
     languages.request<SqlStatementRange[] | null>('qs400-sql', SQL_STATEMENTS, { textDocument: { uri: doc.uri.toString() } }),
   );
@@ -279,6 +283,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     languagesOutput,
     languages,
     rpg,
+    dds,
     sql,
     sqlRunner,
     results,
@@ -327,7 +332,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer, projectView, debugging, debugCommands, objectsView };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, dds, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer, projectView, debugging, debugCommands, objectsView };
 }
 
 export function deactivate(): void {

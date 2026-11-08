@@ -70,6 +70,7 @@ export function sqlTreeItem(n: SqlNode): vscode.TreeItem {
     case 'message': {
       const i = new vscode.TreeItem(n.text, N);
       i.contextValue = 'sql.message';
+      i.iconPath = new vscode.ThemeIcon('info');
       return i;
     }
     case 'schema': {

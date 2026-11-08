@@ -33,6 +33,17 @@ Members are written as plain text with a newline after each line, with no
 sequence numbers and no dates: those belong to the system. Run `git init`
 and commit.
 
+## Start from source you already have
+
+Run **Code for QS/400: Initialize Project…** (in the Project view, or
+right-click a workspace folder in the Explorer). Pick the connection, then
+**Library** or **IFS directory**, then the target: a library (offered the
+folder's name) or an IFS path (offered `/home/<user>/<folder>`). It writes
+`qs400project.json` and the `.qs400/` line in `.gitignore`, opens the
+project file, and pulls nothing. A folder whose top-level directories are
+named like source files (`QRPGLESRC`, `qddssrc`) is offered **Library**
+first. A folder that already has a `qs400project.json` gets it opened.
+
 **Pull Source File** (on a source file in the Objects view), **Pull
 Member** (on members) and **Pull into Project** (on a file or folder in
 the IFS view) pull less. A local file you changed since the last deploy or

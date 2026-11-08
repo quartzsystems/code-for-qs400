@@ -119,6 +119,7 @@ pub fn connector() -> Connect {
         let trust = trust_for(&TlsParams {
             verify: None,
             ca_file: c.ca_file.clone(),
+            certificates: c.certificates.clone(),
         })
         .map_err(|e| Failure::new(e.message))?;
         let port = c.port.unwrap_or(qap_client::proto::DEFAULT_PORT);

@@ -412,8 +412,13 @@ Pages → Deploy from a branch**, `main`, folder `/docs`. Pages renders
    verification, so `tls.verify: false` is refused with `-32602`, and the
    setting's description says so. `tls.caFile` is read into
    `qsa_net::Trust` as Access reads its CA list's files. An untrusted
-   certificate is a `-32011` error with `data: { kind: "untrusted", reason }`;
-   there is no "trust this certificate" flow yet.
+   certificate is a `-32011` error with `data: { kind: "untrusted", reason,
+   certificate, subject, issuer, notBefore, notAfter, sha256, serial }`,
+   the certificate as PEM. The extension shows it as Access's dialog does
+   and, on **Trust for this connection**, adds the PEM to the connection's
+   `tls.certificates`, which `trust_for` reads with `caFile` (as Access
+   reads a system's CA list) and the debug adapter gets in `certificates`.
+   A certificate already in the list that still fails is not offered again.
 6. **The host reports QAP v6**, the newest version `qap-client` offers in
    `Hello` (`qap_client::proto::VERSION`), which settles Phase 0 decision
    11. About shows `QAP v6`; each session's `system.qap` is the version its
@@ -953,8 +958,10 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     field of each line's own specification, in `editorRuler.foreground`,
     on the visible lines, where the line reaches. The table is
     `rpgspecs::forms()` through the RPG server's `qs400/specForms`. DDS,
-    always fixed, gets the `[qs400-dds]` default of `editor.rulers` at its
-    specification's columns. The column in the status bar uses the same
+    always fixed, gets the same guides at its specification's columns
+    (`DDS_GUIDE_COLUMNS` in `src/languages/ddsGuides.ts`), not
+    `editor.rulers`, which runs past the last line to the bottom of the
+    editor. The column in the status bar uses the same
     table.
 11. **Comment toggling.** VS Code inserts a line comment at a line's first
     character that is not blank. DDS therefore has no `lineComment` (an

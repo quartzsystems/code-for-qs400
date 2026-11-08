@@ -4,9 +4,17 @@
 
 import * as vscode from 'vscode';
 import { HostClient, HostRpcError } from '../host/client';
-import { MethodName, ParamsOf, ResultOf, SessionErrorCodes, SessionStatus } from '../host/protocol';
+import { MethodName, ParamsOf, ResultOf, SessionErrorCodes, SessionStatus, UntrustedCertificateData } from '../host/protocol';
 import { ConnectionConfig, connectParams, sameName } from './config';
-import { PasswordAnswer, promptNewPassword, promptPassword, serverMessage, showError } from './prompts';
+import {
+  PasswordAnswer,
+  askTrustCertificate,
+  promptNewPassword,
+  promptPassword,
+  serverMessage,
+  showError,
+  untrustedCertificate,
+} from './prompts';
 import { ConnectionStore } from './store';
 
 /** Workspace state key of the active connection's name. */
@@ -130,6 +138,11 @@ export class SessionManager implements vscode.Disposable {
       }
       return await this.afterSignOn(c, s);
     } catch (err) {
+      const cert = untrustedCertificate(err);
+      if (cert) {
+        const trusted = await this.trustCertificate(c, cert, err);
+        return trusted ? this.signOn(trusted, answer, usedSaved) : undefined;
+      }
       const m = serverMessage(err);
       if (m?.status === 'PasswordExpired') {
         const picked = await showError(err, c.name, CHANGE_PASSWORD);
@@ -143,6 +156,34 @@ export class SessionManager implements vscode.Disposable {
       void showError(err, c.name);
       return undefined;
     }
+  }
+
+  /**
+   * After an untrusted certificate: the dialog, and on "Trust for this
+   * connection" the certificate saved in the connection's
+   * `tls.certificates`. The connection as saved, or undefined when the
+   * error was shown instead. A certificate already trusted that still does
+   * not verify (a host name it does not carry) is not offered again.
+   */
+  private async trustCertificate(c: ConnectionConfig, cert: UntrustedCertificateData, err: unknown): Promise<ConnectionConfig | undefined> {
+    const pem = cert.certificate as string;
+    const have = c.tls?.certificates ?? [];
+    if (have.some((p) => p.trim() === pem.trim())) {
+      void showError(err, c.name);
+      return undefined;
+    }
+    if (!(await askTrustCertificate(c, cert))) {
+      return undefined;
+    }
+    const next: ConnectionConfig = { ...c, tls: { ...c.tls, certificates: [...have, pem] } };
+    try {
+      await this.store.replace(c.name, next);
+    } catch (e) {
+      void showError(e, c.name);
+      return undefined;
+    }
+    this.output.info(`${c.name}: trusted the certificate of ${c.host}, SHA-256 ${cert.sha256 ?? '?'}`);
+    return next;
   }
 
   /** After `PasswordExpired`: a new password, `session.changePassword`. */

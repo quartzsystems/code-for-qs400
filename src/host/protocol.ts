@@ -66,6 +66,26 @@ export interface SessionStatus {
 export interface TlsParams {
   verify?: boolean;
   caFile?: string;
+  /** PEM texts trusted for this connection alone. */
+  certificates?: string[];
+}
+
+/**
+ * `data` of a `Transport` error when the server's certificate did not
+ * verify: the certificate as PEM and what QS/400 Access's dialog shows of it.
+ */
+export interface UntrustedCertificateData {
+  kind: 'untrusted';
+  /** rustls's reason, e.g. `invalid peer certificate: UnknownIssuer`. */
+  reason: string;
+  certificate?: string;
+  subject?: string;
+  issuer?: string;
+  notBefore?: string;
+  notAfter?: string;
+  /** SHA-256 of the DER, colon-separated hex pairs. */
+  sha256?: string;
+  serial?: string;
 }
 
 /**

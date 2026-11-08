@@ -85,6 +85,9 @@ pub struct Credentials {
     /// PEM file of certificates to trust beyond the platform's store.
     #[serde(default)]
     pub ca_file: Option<String>,
+    /// PEM texts trusted for this connection alone.
+    #[serde(default)]
+    pub certificates: Vec<String>,
     /// The editor session's library list, applied to the adapter's job.
     #[serde(default)]
     pub library_list: Option<LibraryList>,

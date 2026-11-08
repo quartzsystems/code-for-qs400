@@ -4,7 +4,7 @@
 
 import * as vscode from 'vscode';
 import { HostRpcError } from '../host/client';
-import { ServerMessageData, SessionErrorCodes } from '../host/protocol';
+import { ServerMessageData, SessionErrorCodes, UntrustedCertificateData } from '../host/protocol';
 import { ConnectionConfig, profileName, sameName } from './config';
 
 /**
@@ -170,6 +170,42 @@ export function serverMessage(err: unknown): ServerMessageData | undefined {
   }
   const d = err.data as ServerMessageData | undefined;
   return d && typeof d.status === 'string' ? d : undefined;
+}
+
+/** The server's certificate of a host error, when it did not verify and the host sent it. */
+export function untrustedCertificate(err: unknown): UntrustedCertificateData | undefined {
+  if (!(err instanceof HostRpcError) || err.code !== SessionErrorCodes.Transport) {
+    return undefined;
+  }
+  const d = err.data as UntrustedCertificateData | undefined;
+  return d?.kind === 'untrusted' && typeof d.certificate === 'string' && d.certificate !== '' ? d : undefined;
+}
+
+export const TRUST_CERTIFICATE = 'Trust for this connection';
+
+/**
+ * QS/400 Access's untrusted-certificate dialog: the certificate the system
+ * presented, and the choice to trust it for this connection alone. There is
+ * no way to skip verification. True when the user chose to trust it.
+ */
+export async function askTrustCertificate(c: ConnectionConfig, d: UntrustedCertificateData): Promise<boolean> {
+  const detail = [
+    `Reason: ${d.reason}`,
+    '',
+    `Subject: ${d.subject ?? '(unreadable)'}`,
+    `Issuer: ${d.issuer ?? '(unreadable)'}`,
+    `Valid from: ${d.notBefore ?? '(unreadable)'}`,
+    `Valid to: ${d.notAfter ?? '(unreadable)'}`,
+    `SHA-256: ${d.sha256 ?? '(unreadable)'}`,
+    '',
+    "Compare the fingerprint with the one shown on the system. Trusting adds the certificate to this connection's tls.certificates only.",
+  ].join('\n');
+  const picked = await vscode.window.showWarningMessage(
+    `The certificate of ${c.host} (${c.name}) is not trusted.`,
+    { modal: true, detail },
+    TRUST_CERTIFICATE,
+  );
+  return picked === TRUST_CERTIFICATE;
 }
 
 /**

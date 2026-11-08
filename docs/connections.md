@@ -17,7 +17,17 @@ Run **Code for QS/400: Add Connection** from the Command Palette, or click
 4. **User**: the user profile to sign on as, for example `CWELLMAN`.
 5. **CA file**: a PEM file with certificates to trust beyond your
    computer's certificate store. Leave it empty unless the server uses a
-   self-signed certificate or a private CA.
+   self-signed certificate or a private CA. You can also leave it empty
+   and trust the certificate when you first connect (below).
+
+If the server's certificate does not verify (for example
+`UnknownIssuer`: a self-signed certificate or a private CA), connecting
+shows the certificate, with its subject, issuer, validity and SHA-256
+fingerprint, as QS/400 Access does. Compare the fingerprint with the one
+shown on the system. **Trust for this connection** adds the certificate to
+the connection's `tls.certificates` and signs on again. Verification is
+never turned off: only that certificate is trusted, and only for that
+connection.
 
 **Edit Connection** goes through the same boxes. **Remove Connection** asks
 first, then deletes the connection and its saved password.
@@ -44,6 +54,7 @@ and you can edit them there as well:
 | `port` | QAP port. Leave it out for the default. |
 | `user` | User profile. |
 | `tls.caFile` | PEM file of certificates to trust: a CA, or the server's own certificate. |
+| `tls.certificates` | PEM certificates trusted for this connection alone; **Trust for this connection** adds to it. Remove an entry to stop trusting it. |
 | `tls.verify` | Must be `true` or left out. The server's certificate is always checked, as in QS/400 Access; to trust a self-signed one, name it in `caFile`. |
 | `libraryList` | The library list to apply when a session starts. The Library list node edits it. |
 

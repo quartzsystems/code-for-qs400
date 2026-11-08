@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import { DeployScope, Deployer, UsableProject } from './deploy';
+import { initPrompts, initializeProject } from './init';
 import { ProjectDeps, Puller } from './pull';
 import { relativeTo } from './store';
 
@@ -21,6 +22,9 @@ function str(v: unknown): string | undefined {
  */
 export function registerPullCommands(deps: ProjectDeps, puller: Puller): vscode.Disposable[] {
   return [
+    vscode.commands.registerCommand('code-for-qs400.project.init', (uri?: vscode.Uri) =>
+      initializeProject(deps, initPrompts, uri instanceof vscode.Uri ? uri : undefined),
+    ),
     vscode.commands.registerCommand('code-for-qs400.pull.library', (n?: Node) =>
       puller.pullLibrary(n?.kind === 'library' ? { connection: str(n.connection), library: str(n.library) } : undefined),
     ),
@@ -92,7 +96,7 @@ export async function projectOf(deps: ProjectDeps, arg: ProjectArg): Promise<{ p
     return { project: all[0] };
   }
   if (all.length === 0) {
-    deps.ui.info('No workspace folder has a qs400project.json. Pull a library into a folder to make one.');
+    deps.ui.info('No workspace folder has a qs400project.json. Run Initialize Project… or pull a library into a folder to make one.');
     return undefined;
   }
   const picked = await vscode.window.showQuickPick(

@@ -58,8 +58,12 @@ shows the field under the cursor, for example `D · Ds 24–25 · col 24`. A
 A guide shows only where the line reaches: VS Code has no rulers per
 document, only per language, so the guides are drawn on the text.
 
-DDS members get rulers at the specification's columns (the
-`[qs400-dds]` default of `editor.rulers`; change it in your settings).
+DDS members get the same kind of guides at the specification's columns
+(6, 7, 8, 17, 18, 19, 29, 30, 35, 36, 38, 39, 42, 45 and 81), so they stop
+at the last line of the source instead of running to the bottom of the
+editor as `editor.rulers` would.
+The status bar shows the DDS field under the cursor, for example
+`A · Name 19–28 · col 21`.
 
 Comment toggling (Ctrl+/) inserts `//` in RPG, `--` in SQL and `/* */`
 in CL and command definitions. It is off for DDS and cannot write a
