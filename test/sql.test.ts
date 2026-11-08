@@ -13,7 +13,8 @@ import { SQL_STATEMENTS, SqlStatementRange } from '../src/languages/protocol';
 import { commitLabel, outcomeText, rowCount, statusText, typeLabel } from '../src/sql/format';
 import { Exporter, exportName } from '../src/sql/export';
 import { ResultPanel } from '../src/sql/results';
-import { SqlRunner } from '../src/sql/run';
+import { HISTORY_CAP, HistoryEntry, SqlHistory, added, entryDescription, entryOf } from '../src/sql/history';
+import { SqlRun, SqlRunner } from '../src/sql/run';
 import { SqlSessions } from '../src/sql/session';
 import { Span, splitStatements, statementAt } from '../src/sql/statements';
 import { callText, insertText, parametersQuery, qualified, quoteName, selectText, viewDataText } from '../src/sql/generate';
@@ -503,5 +504,71 @@ suite('SQL: the SQL view', () => {
     const doc = vscode.window.activeTextEditor?.document;
     assert.equal(doc?.languageId, 'qs400-sql');
     assert.equal(doc?.getText(), `${sel};\n`);
+  });
+});
+
+suite('SQL: history', () => {
+  const run = (i: number, over: Partial<SqlRun> = {}): SqlRun => ({
+    id: `s${i}`,
+    connection: 'QSHQ400',
+    sql: `SELECT ${i} FROM T`,
+    started: Date.UTC(2026, 10, 8, 12, 0, i),
+    elapsed: 5,
+    result: { kind: 'query', rows: [[i]], end: true, cursor: i, messages: [], uncommitted: false },
+    ...over,
+  });
+
+  test('an entry per run, newest first, never more than 50, never the rows', () => {
+    let list: HistoryEntry[] = [];
+    for (let i = 0; i < 60; i++) {
+      list = added(list, entryOf(run(i)));
+    }
+    assert.equal(list.length, HISTORY_CAP);
+    assert.equal(HISTORY_CAP, 50);
+    assert.equal(list[0].sql, 'SELECT 59 FROM T');
+    assert.equal(list[49].sql, 'SELECT 10 FROM T');
+    assert.deepEqual(Object.keys(list[0]).sort(), ['count', 'kind', 'more', 'outcome', 'sql', 'time']);
+    const upd = entryOf(run(1, { result: { kind: 'update', updated: 3, messages: [], uncommitted: true } }));
+    assert.deepEqual(upd, { sql: 'SELECT 1 FROM T', time: Date.UTC(2026, 10, 8, 12, 0, 1), kind: 'update', outcome: 'ok', count: 3 });
+    const err = entryOf(run(2, { result: undefined, error: { message: 'x', data: { messageId: 'SQL0104' } } }));
+    assert.equal(err.outcome, 'error');
+    assert.equal(entryDescription(err).split(' · ')[1], 'SQL0104');
+    assert.equal(entryDescription(entryOf(run(3, { result: { kind: 'query', rows: new Array(500).fill([1]), end: false, messages: [], uncommitted: false } }))).split(' · ')[1], '500+ rows');
+    assert.equal(entryDescription(upd).split(' · ')[1], '3 rows updated');
+  });
+
+  test('three runs kept per connection with their times and counts; the first runs again', async () => {
+    const output = vscode.window.createOutputChannel('sql history test', { log: true });
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', [{ name: 'QSHQ400', host: 'qshq400.example', user: 'CWELLMAN' }], true);
+    const host = new FakeHost((method, params) =>
+      method === 'sql.run'
+        ? { kind: 'query', columns: [], rows: [[String(params.sql)]], end: true, cursor: 1, messages: [], uncommitted: false }
+        : { commit: 'none', naming: 'sql', uncommitted: false },
+    );
+    const secrets = { get: async () => undefined, store: async () => {}, delete: async () => {} };
+    const store = new ConnectionStore(secrets as unknown as vscode.SecretStorage, output);
+    const memento = new Memento();
+    const sessions = new SessionManager(host as unknown as HostClient, store, memento, output);
+    sessions.update({ name: 'QSHQ400', state: 'connected', user: 'CWELLMAN' });
+    const sql = new SqlSessions(host as unknown as HostClient, store, sessions);
+    const runner = new SqlRunner(host as unknown as HostClient, store, sessions, sql, async () => null);
+    const history = new SqlHistory(memento, runner, sql, sessions);
+    try {
+      for (const s of ['SELECT 1 FROM T', 'SELECT 2 FROM T', 'SELECT 3 FROM T']) {
+        await runner.run('QSHQ400', s);
+      }
+      await new Promise((r) => setTimeout(r, 10));
+      const e = history.entries('qshq400');
+      assert.deepEqual(e.map((x) => x.sql), ['SELECT 3 FROM T', 'SELECT 2 FROM T', 'SELECT 1 FROM T']);
+      assert.ok(e.every((x) => x.count === 1 && typeof x.time === 'number'));
+      const again = await history.rerun('QSHQ400', e[2]);
+      assert.equal(again.sql, 'SELECT 1 FROM T');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(history.entries('QSHQ400').length, 4);
+      assert.equal(history.entries('OTHER').length, 0);
+    } finally {
+      [history, runner, sql, sessions, store, output, host].forEach((d) => d.dispose());
+      await vscode.workspace.getConfiguration('code-for-qs400').update('connections', undefined, true);
+    }
   });
 });

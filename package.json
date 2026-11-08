@@ -457,6 +457,12 @@
         "title": "Copy CALL",
         "category": "Code for QS/400",
         "icon": "$(copy)"
+      },
+      {
+        "command": "code-for-qs400.sql.history",
+        "title": "SQL History",
+        "category": "Code for QS/400",
+        "icon": "$(history)"
       }
     ],
     "configuration": {
@@ -743,6 +749,11 @@
           "command": "code-for-qs400.sql.refresh",
           "when": "view == code-for-qs400.sql",
           "group": "navigation@3"
+        },
+        {
+          "command": "code-for-qs400.sql.history",
+          "when": "view == code-for-qs400.sql",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -1230,6 +1241,11 @@
           "command": "code-for-qs400.sql.run",
           "when": "editorLangId =~ /^(qs400-)?sql$/",
           "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.sql.history",
+          "when": "editorLangId =~ /^(qs400-)?sql$/",
+          "group": "navigation@2"
         }
       ]
     },

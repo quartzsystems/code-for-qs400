@@ -32,6 +32,7 @@ import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
 import { SQL_STATEMENTS, type SqlStatementRange } from './languages/protocol';
 import { Exporter } from './sql/export';
+import { SqlHistory } from './sql/history';
 import { ResultPanel } from './sql/results';
 import { SqlRunner } from './sql/run';
 import { SqlSessions } from './sql/session';
@@ -62,6 +63,7 @@ export interface ExtensionApi {
   readonly exporter: Exporter;
   readonly sqlTree: SqlProvider;
   readonly sqlView: vscode.TreeView<SqlNode>;
+  readonly history: SqlHistory;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -117,6 +119,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   );
   const results = new ResultPanel(sessions, sqlRunner, sql);
   const exporter = new Exporter(host, sessions, results);
+  const history = new SqlHistory(context.workspaceState, sqlRunner, sql, sessions);
   const sqlTree = new SqlProvider(store, sessions, context.workspaceState);
   const sqlView = vscode.window.createTreeView('code-for-qs400.sql', { treeDataProvider: sqlTree, showCollapseAll: true });
 
@@ -160,6 +163,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     results,
     sqlTree,
     sqlView,
+    history,
+    ...history.register(),
     ...registerSqlViewCommands(sqlTree, sql, sqlRunner, sessions),
     ...sql.register(),
     ...sqlRunner.register(),
@@ -181,7 +186,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history };
 }
 
 export function deactivate(): void {
