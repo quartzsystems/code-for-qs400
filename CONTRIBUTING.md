@@ -1463,3 +1463,119 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
    differences as step 1, without the system.
 7. Report each difference to `quartz-systems-400` with its member, line
    and ID.
+
+## Phase 6 exit test
+
+> Query `HLINV.ASSETS`, export CSV, open a view's columns from the
+> explorer.
+
+**Not run yet, 2026-11-08: no QAP server was reachable from the
+development machine.** `QSHQ400` does not resolve (bare, under
+`ad.quartz.systems` or `quartz.systems`), checked at the start of the
+phase (02:11) and again at its end (02:51); 10.42.70.150 answers ping and
+refuses port 2320, as at the end of Phase 5. So no statement has run
+against a real system: there is no CSV row count against `COUNT(*)`, no
+`DSPFFD` or `DSPDBR` comparison, and none of the message IDs below is
+one seen from a real system.
+
+| Step | Result |
+| --- | --- |
+| `SELECT * FROM HLINV.ASSETS`: types, rows, footer | not run |
+| Export CSV rows against `SELECT COUNT(*)` | not run |
+| A view's columns against `DSPFFD`; `HLINV.ASSETS`'s indexes against `DSPDBR` | not run |
+| `UPDATE HLINV.ASSETS SET NOTES = NOTES WHERE 1 = 0`: `0 rows updated` | not run |
+| A syntax error: the server's ID in the tab and the Problems panel, `lsp-sql` first | not run |
+| `*CHG`: `INSERT`, Rollback, gone; `INSERT`, Commit, kept | not run |
+| History: three runs, the first again | not run |
+
+Message IDs to expect, from QS/400's `docs/QAP.md` at `7f82a43f` ("Version
+4 Sql, as built") and its message files, not from a run: `SQL0104` for the
+syntax error (SQLSTATE `42601`), `SQL0752` for a commit level change while
+uncommitted, `SQL7008` (`55019`) if `HLINV` is not journaled when the
+`*CHG` step inserts, `SQL0551` for a table the profile may not read,
+`SQL0952` for a cancel. The editor's own diagnostic for the syntax error
+before the run is the front end's `SQL0104`, as `lsp-sql`'s test sees it
+at `5e2bbee9`.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The host's `sql.*` against canned replies (`tests/sql.rs`, 27 tests):
+  `Prepare`, `Execute` and the first `Fetch` of 500 for a query, the
+  cursor and statement kept until the end and then closed and released in
+  that order; a query that ends on its first fetch closing at once; Load
+  more to the end and nothing sent past it; `sql.close` of an open result;
+  an `UPDATE`'s count with its statement released at once and no fetch; a
+  DDL statement with no count; `SQL0104` with SQLSTATE `42601` and SQLCODE
+  `-104` passed through with its second-level text; `SQL0803` at
+  `Execute` with its failing row, the statement released; a run cancelled
+  while it executed coming back with its count and `SQL0952`; options kept
+  before the connection attaches and sent when it does, `uncommitted`
+  after an `INSERT` under `*CHG`, `SQL0752` leaving the options as they
+  were, Rollback and Commit clearing it; a lost connection sending
+  `sql.lost` and its old cursors refused; disconnect closing the SQL
+  connection and the next run attaching anew; version 3 refused before
+  anything is sent; an export of 1,203 rows (500 held, two pages fetched)
+  with progress, a second export refused, an export of a result already
+  at its end, a cancelled export removing its file; schemas paged 1,203
+  in 500s; tables, columns, routines and indexes, `SQL0551` on columns,
+  and version 6 refusing routines and indexes.
+- `sql::values` at its edges: ±(2⁵³ − 1) as numbers and ±2⁵³, `i64::MIN`
+  and `i64::MAX` as text; negative and `DECFLOAT` decimals as sent; dates
+  from 0001-01-01 to 9999-12-31 and before 1970; times with and without
+  milliseconds and 24:00:00; timestamps at scale 0, 3, 6 and 12 from the
+  picoseconds; hex, Booleans, `NULL`. `sql::csv`: quotes, commas, CR and
+  LF quoted, `""` apart from an empty `NULL`, CRLF, no byte order mark.
+- `lsp-sql`'s `qs400/sqlStatements` over strings and comments holding
+  `;`, a doubled quote, a statement that does not parse and one with no
+  `;`.
+- The extension against the real host's SQL language server: every
+  fixture split the same way by the server and by `statements.ts`; and
+  against fake hosts: Run Statement on the statement under the cursor, a
+  selection, and the whole document stopping at `SQL0104` with one
+  Problems entry on the statement's first line, cleared by the next run;
+  the result panel's typed headers, `500 of more`, Load more to `1007
+  rows`, 20 tabs kept with the oldest cursor closed, closing a tab and the
+  panel closing cursors, `0 rows updated`, the error view, a lost
+  connection stopping Load more; Export CSV and a cancelled export; the
+  SQL view's schemas by pattern, groups, a view's columns with their
+  tooltips, indexes, routines, the QAP 3 line; Copy CALL from `SYSPARMS`,
+  View data and Generate SELECT; the history's cap of 50, its entries and
+  Run Again.
+- The results page in a DOM (jsdom, outside the repository): the tab
+  strip, typed headers, 20 rows drawn for an empty viewport, `-` for
+  `NULL`, hex with its copy button, Load more and Copy posted, appended
+  rows and the error view.
+- `cargo fmt --check`, `cargo clippy --all-targets -D warnings` and the
+  whole workspace's tests; `npm run lint` and the full extension suite
+  (197 passing, the live suites pending); the `win32-x64` VSIX packaged.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER` and `QS400_TEST_PASSWORD` and
+   run `npm test`. The Phase 6 live suite runs the query, the count, the
+   export and its row check, lists `HLINV`'s views with a view's columns
+   and `HLINV.ASSETS`'s indexes, runs the `UPDATE`, the syntax error, the
+   commit and rollback pair on `HLINV.QS4SQL6` (which it makes and
+   drops), and the history steps, and logs every message ID it sees.
+   Record its `live:` lines here.
+2. By hand: **New SQL Editor**, type `SELECT * FROM HLINV.ASSETS` and press
+   `Ctrl+Enter`. The result tab shows each column's SQL type, the rows,
+   and `n rows` or `500 of more` with **Load more**. **Export CSV**; open
+   the file: its record count is `SELECT COUNT(*) FROM HLINV.ASSETS`,
+   decimals as the grid shows them, dates `YYYY-MM-DD`, `NULL` empty.
+3. In the SQL view, expand `HLINV` → Views → `ASSETS_BY_SITE` (or any
+   view there) → Columns. Compare names, types, lengths, nullable and
+   text with `DSPFFD`. Expand `HLINV` → Tables → `ASSETS` → Indexes and
+   compare with `DSPDBR HLINV/ASSETS`.
+4. Run `UPDATE HLINV.ASSETS SET NOTES = NOTES WHERE 1 = 0`: `0 rows
+   updated`, no grid.
+5. Type `SELECT * FORM HLINV.ASSETS`: the editor flags the line; run it:
+   the server's ID and text in the result tab and in the Problems panel on
+   that line.
+6. From the status bar item, set the commit level to `*CHG`; `INSERT`
+   into a scratch table; **Rollback**: the row is gone. `INSERT` again;
+   **Commit**: it stays.
+7. Run three statements; **SQL History**: all three with their times and
+   counts; **Run Again** on the first.
+8. Record the result, the CSV row count against `COUNT(*)`, the `DSPFFD`
+   and `DSPDBR` observations and every message ID seen here.
