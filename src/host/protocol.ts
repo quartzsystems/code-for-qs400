@@ -516,6 +516,105 @@ export interface JobsEndParams extends JobParams {
   delay?: number;
 }
 
+/** An object by library and name. */
+export interface ObjectRef {
+  library: string;
+  name: string;
+}
+
+/** A spooled file: its job, its name and its number in the job. */
+export interface SpooledFileId {
+  job: SessionJob;
+  file: string;
+  number: number;
+}
+
+/** A spooled file's status: the spec's `SpoolStatus`. QS/400 never sends `writing`. */
+export type SpoolStatus = 'ready' | 'held' | 'open' | 'closed' | 'writing' | 'printing' | 'message' | 'pending' | 'saved';
+
+/** A spooled file as lists show it. */
+export interface SpooledFile {
+  id: SpooledFileId;
+  status: SpoolStatus;
+  outq: ObjectRef;
+  /** Its owner. */
+  user: string;
+  userData: string;
+  formType: string;
+  deviceType: 'scs' | 'afp' | 'ascii' | 'line';
+  pages: number;
+  copies: number;
+  size: number;
+  created: number;
+}
+
+export interface OutputQueue {
+  outq: ObjectRef;
+  text: string;
+  files: number;
+  /** Empty when none. */
+  writer: string;
+  held: boolean;
+}
+
+export interface SpoolFilesParams {
+  name: string;
+  /** `*CURRENT` (absent), `*ALL` or a profile. */
+  user?: string;
+  outq?: ObjectRef;
+  status?: SpoolStatus;
+  formType?: string;
+  userData?: string;
+  /** Only this job's files (the host filters: `ListSpooledFiles` has no job). */
+  job?: SessionJob;
+}
+
+export interface SpoolIdParams {
+  name: string;
+  id: SpooledFileId;
+}
+
+/** Result of `spool.readText`. */
+export interface SpoolText {
+  /** Pages in the whole file. */
+  pages: number;
+  firstPage: number;
+  lastPage: number;
+  /** One line per printed line, a form feed between pages. */
+  text: string;
+}
+
+export interface SpoolDownloadParams extends SpoolIdParams {
+  format: 'text' | 'pdf' | 'scs';
+  to: string;
+  download?: string;
+}
+
+/** A spool watch's target. */
+export type SpoolTarget = { outq: ObjectRef } | { profile: string };
+
+/** `spool.changed`: a watched target's file changed; `rewatched` after a resume, without an `id`. */
+export interface SpoolChanged {
+  name: string;
+  target: SpoolTarget;
+  change: 'added' | 'changed' | 'removed' | 'rewatched';
+  id?: SpooledFileId;
+  file?: SpooledFile;
+}
+
+/** `spool.progress`, at most every 250 ms per download. */
+export interface SpoolProgress {
+  download: string;
+  pages: number;
+  total: number;
+}
+
+/** Error codes of `spool.*` (host/crates/code-host/src/spool.rs). */
+export const SpoolErrorCodes = {
+  /** A download was cancelled. `data` is `{ download, pages }`. */
+  Cancelled: -32040,
+} as const;
+
 /** Requests the extension sends, by method name. */
 /** `sql.*`'s commit level: the spec's `CommitLevel` (`*NONE`, `*CHG`, `*CS`, `*ALL`, `*RR`). */
 export type SqlCommit = 'none' | 'readUncommitted' | 'readCommitted' | 'repeatableRead' | 'serializable';
@@ -724,6 +823,21 @@ export interface HostMethods {
   'jobs.hold': { params: JobParams; result: null };
   'jobs.release': { params: JobParams; result: null };
   'jobs.end': { params: JobsEndParams; result: null };
+  'spool.files': { params: SpoolFilesParams; result: SpooledFile[] };
+  'spool.queues': { params: { name: string; library: string }; result: OutputQueue[] };
+  /** One read on a thread of its own: no request timeout. */
+  'spool.readText': { params: SpoolIdParams & { firstPage?: number; lastPage?: number }; result: SpoolText };
+  /** Answered when the download ends: no request timeout. */
+  'spool.download': { params: SpoolDownloadParams; result: { pages: number; size: number } };
+  'spool.cancel': { params: { name: string; download: string }; result: null };
+  'spool.hold': { params: SpoolIdParams & { immediately: boolean }; result: null };
+  'spool.release': { params: SpoolIdParams; result: null };
+  'spool.delete': { params: SpoolIdParams; result: null };
+  'spool.move': { params: SpoolIdParams & { outq: ObjectRef; first: boolean }; result: null };
+  'spool.watch': { params: { name: string; target: SpoolTarget }; result: null };
+  'spool.unwatch': { params: { name: string; target: SpoolTarget }; result: null };
+  /** Waits for one of the job's files, up to `timeoutMs` (10 minutes): no request timeout. */
+  'spool.awaitFile': { params: { name: string; job: SessionJob; file?: string; timeoutMs?: number }; result: SpooledFile | null };
   'sql.options.get': { params: NameParams; result: SqlOptions };
   'sql.options.set': { params: SqlOptionsSetParams; result: SqlOptions };
   /** Waits in the connection job's lane until the statement ends: no request timeout. */
@@ -753,6 +867,8 @@ export interface HostNotifications {
   'ifs.transferEnded': IfsTransferEnded;
   'sql.lost': SqlLost;
   'sql.progress': SqlProgress;
+  'spool.changed': SpoolChanged;
+  'spool.progress': SpoolProgress;
 }
 
 export type MethodName = keyof HostMethods;

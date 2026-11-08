@@ -98,6 +98,9 @@ export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>([
   'sql.rollback',
   'sql.options.set',
   'sql.export',
+  'spool.readText',
+  'spool.download',
+  'spool.awaitFile',
 ]);
 const SHUTDOWN_GRACE_MS = 2_000;
 
@@ -124,6 +127,8 @@ export class HostClient implements vscode.Disposable {
   private readonly transferEmitter = new vscode.EventEmitter<HostNotifications['ifs.transferEnded']>();
   private readonly sqlLostEmitter = new vscode.EventEmitter<HostNotifications['sql.lost']>();
   private readonly sqlProgressEmitter = new vscode.EventEmitter<HostNotifications['sql.progress']>();
+  private readonly spoolChangedEmitter = new vscode.EventEmitter<HostNotifications['spool.changed']>();
+  private readonly spoolProgressEmitter = new vscode.EventEmitter<HostNotifications['spool.progress']>();
 
   /** Fires on every state change. */
   readonly onDidChangeState = this.stateEmitter.event;
@@ -139,6 +144,10 @@ export class HostClient implements vscode.Disposable {
   readonly onDidLoseSql = this.sqlLostEmitter.event;
   /** Fires for each `sql.progress` notification. */
   readonly onDidExportProgress = this.sqlProgressEmitter.event;
+  /** `spool.changed`: a watched spool target changed. */
+  readonly onDidChangeSpool = this.spoolChangedEmitter.event;
+  /** `spool.progress` of a download. */
+  readonly onDidSpoolProgress = this.spoolProgressEmitter.event;
 
   constructor(
     private readonly extensionPath: string,
@@ -237,6 +246,8 @@ export class HostClient implements vscode.Disposable {
     this.transferEmitter.dispose();
     this.sqlLostEmitter.dispose();
     this.sqlProgressEmitter.dispose();
+    this.spoolChangedEmitter.dispose();
+    this.spoolProgressEmitter.dispose();
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -351,6 +362,14 @@ export class HostClient implements vscode.Disposable {
     }
     if (method === 'sql.progress') {
       this.sqlProgressEmitter.fire(params as HostNotifications['sql.progress']);
+      return;
+    }
+    if (method === 'spool.changed') {
+      this.spoolChangedEmitter.fire(params as HostNotifications['spool.changed']);
+      return;
+    }
+    if (method === 'spool.progress') {
+      this.spoolProgressEmitter.fire(params as HostNotifications['spool.progress']);
       return;
     }
     this.output.debug(`unhandled notification ${method}`);

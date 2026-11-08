@@ -28,6 +28,7 @@ import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
 import { SqlNode, SqlProvider, registerSqlViewCommands } from './views/sql';
 import { JobNode, JobsProvider, registerJobsViewCommands } from './views/jobs';
+import { SpoolNode, SpoolProvider, registerSpoolViewCommands } from './views/spool';
 import { LanguageServers } from './languages/client';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -67,6 +68,8 @@ export interface ExtensionApi {
   readonly history: SqlHistory;
   readonly jobs: JobsProvider;
   readonly jobsView: vscode.TreeView<JobNode>;
+  readonly spool: SpoolProvider;
+  readonly spoolView: vscode.TreeView<SpoolNode>;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -127,6 +130,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const sqlView = vscode.window.createTreeView('code-for-qs400.sql', { treeDataProvider: sqlTree, showCollapseAll: true });
   const jobs = new JobsProvider(store, sessions, context.workspaceState);
   const jobsView = vscode.window.createTreeView('code-for-qs400.jobs', { treeDataProvider: jobs, showCollapseAll: true });
+  const spool = new SpoolProvider(store, sessions, context.workspaceState, host);
+  const spoolView = vscode.window.createTreeView('code-for-qs400.spool', { treeDataProvider: spool, showCollapseAll: true });
 
   context.subscriptions.push(
     output,
@@ -177,6 +182,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     jobsView,
     jobs.attach(jobsView),
     ...registerJobsViewCommands(jobs, sessions, jobLog),
+    spool,
+    spoolView,
+    spool.attach(spoolView),
+    ...registerSpoolViewCommands(spool, spoolView, sessions, host),
     // A session signed on again: includes it could not read may be there now.
     sessions.onDidChange((st) => {
       if (st?.state === 'connected') {
@@ -195,7 +204,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView };
 }
 
 export function deactivate(): void {

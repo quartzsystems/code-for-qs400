@@ -26,6 +26,7 @@
     "onView:code-for-qs400.ifs",
     "onView:code-for-qs400.sql",
     "onView:code-for-qs400.jobs",
+    "onView:code-for-qs400.spool",
     "onFileSystem:qs400ifs",
     "workspaceContains:.vscode/actions.json",
     "onLanguage:qs400-rpgle",
@@ -65,6 +66,10 @@
         {
           "id": "code-for-qs400.jobs",
           "name": "Jobs"
+        },
+        {
+          "id": "code-for-qs400.spool",
+          "name": "Spooled files"
         }
       ]
     },
@@ -515,6 +520,71 @@
         "command": "code-for-qs400.jobs.reveal",
         "title": "Show Job in Jobs View",
         "category": "Code for QS/400"
+      },
+      {
+        "command": "code-for-qs400.jobs.spooledFiles",
+        "title": "Spooled Files",
+        "category": "Code for QS/400",
+        "icon": "$(files)"
+      },
+      {
+        "command": "code-for-qs400.spool.refresh",
+        "title": "Refresh Spooled Files",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.spool.queueLibrary",
+        "title": "Output Queue Library…",
+        "category": "Code for QS/400",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "code-for-qs400.spool.saveText",
+        "title": "Save as Text…",
+        "category": "Code for QS/400",
+        "icon": "$(save)"
+      },
+      {
+        "command": "code-for-qs400.spool.savePdf",
+        "title": "Save as PDF…",
+        "category": "Code for QS/400",
+        "icon": "$(file-pdf)"
+      },
+      {
+        "command": "code-for-qs400.spool.hold",
+        "title": "Hold Spooled File…",
+        "category": "Code for QS/400",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "code-for-qs400.spool.release",
+        "title": "Release Spooled File",
+        "category": "Code for QS/400",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "code-for-qs400.spool.delete",
+        "title": "Delete Spooled File",
+        "category": "Code for QS/400",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "code-for-qs400.spool.move",
+        "title": "Move to Output Queue…",
+        "category": "Code for QS/400",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "code-for-qs400.spool.showJob",
+        "title": "Show Spooled Files of Job",
+        "category": "Code for QS/400"
+      },
+      {
+        "command": "code-for-qs400.spool.clearJob",
+        "title": "Close Job Node",
+        "category": "Code for QS/400",
+        "icon": "$(close)"
       }
     ],
     "configuration": {
@@ -820,6 +890,16 @@
         {
           "command": "code-for-qs400.jobs.refresh",
           "when": "view == code-for-qs400.jobs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.spool.queueLibrary",
+          "when": "view == code-for-qs400.spool",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.spool.refresh",
+          "when": "view == code-for-qs400.spool",
           "group": "navigation@2"
         }
       ],
@@ -1173,6 +1253,56 @@
           "command": "code-for-qs400.jobs.refresh",
           "when": "view == code-for-qs400.jobs && viewItem == jobs.filter",
           "group": "9_refresh@1"
+        },
+        {
+          "command": "code-for-qs400.jobs.spooledFiles",
+          "when": "view == code-for-qs400.jobs && viewItem =~ /^jobs\\.job/",
+          "group": "3_spool@1"
+        },
+        {
+          "command": "code-for-qs400.spool.saveText",
+          "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.file\\./",
+          "group": "2_save@1"
+        },
+        {
+          "command": "code-for-qs400.spool.savePdf",
+          "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.file\\./",
+          "group": "2_save@2"
+        },
+        {
+          "command": "code-for-qs400.spool.hold",
+          "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.file\\./ && viewItem != spool.file.held",
+          "group": "3_control@1"
+        },
+        {
+          "command": "code-for-qs400.spool.release",
+          "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.file\\./",
+          "group": "3_control@2"
+        },
+        {
+          "command": "code-for-qs400.spool.move",
+          "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.file\\./",
+          "group": "3_control@3"
+        },
+        {
+          "command": "code-for-qs400.spool.delete",
+          "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.file\\./",
+          "group": "4_delete@1"
+        },
+        {
+          "command": "code-for-qs400.spool.queueLibrary",
+          "when": "view == code-for-qs400.spool && viewItem == spool.queues",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.spool.clearJob",
+          "when": "view == code-for-qs400.spool && viewItem == spool.job",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.spool.refresh",
+          "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.(mine|queues|queue|job)$/",
+          "group": "9_refresh@1"
         }
       ],
       "commandPalette": [
@@ -1342,6 +1472,42 @@
         },
         {
           "command": "code-for-qs400.jobs.reveal",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.jobs.spooledFiles",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.saveText",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.savePdf",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.hold",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.release",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.delete",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.move",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.showJob",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.spool.clearJob",
           "when": "false"
         }
       ],

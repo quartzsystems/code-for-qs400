@@ -393,6 +393,10 @@ export function registerJobsViewCommands(provider: JobsProvider, sessions: Sessi
         return text;
       }),
     ),
+    vscode.commands.registerCommand(
+      'code-for-qs400.jobs.spooledFiles',
+      onJob((n) => Promise.resolve(vscode.commands.executeCommand('code-for-qs400.spool.showJob', n.connection, n.entry.job))),
+    ),
     vscode.commands.registerCommand('code-for-qs400.jobs.reveal', (connection: string, job: SessionJob) => provider.reveal(connection, job)),
   ];
 }
