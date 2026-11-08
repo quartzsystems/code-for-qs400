@@ -2264,3 +2264,153 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
    Project view marks the file Conflict.
 7. `git stash`; **Deploy Git-Changed**: the output says `Nothing to deploy`.
 8. Record the result, the timestamps and every message ID seen here.
+
+## Phase 9 exit test
+
+> Breakpoint in an `HLINV` program hit from an interactive 5250 job;
+> variables shown; step over and continue.
+
+**Not run yet, 2026-11-08: the system could not be signed on to.**
+`QSHQ400` does not resolve (bare, under `ad.quartz.systems` or
+`quartz.systems`), checked at the start of the phase and again at 11:11 at
+its end. 10.42.70.150 does not answer ping and accepts a TCP connection on
+port 2320, as at the end of Phase 8; new this phase, a TLS handshake there
+(no sign-on) completes as TLS 1.3 with a self-signed certificate,
+`C=US, O=Quartz Systems, CN=qs400`, so a QS/400 server listens there and a
+connection to it needs that certificate in `tls.caFile`. No `QS400_TEST_*`
+variables were set and no password was at hand, and nothing signed on with
+a guessed one (it would count against `QMAXSIGN`). QS/400 Access for
+Desktop was not run. So no program has been debugged on a real system,
+and no message ID, line or latency below is observed.
+
+| Step | Result |
+| --- | --- |
+| Compile `HLINV/ASSETS` (`DBGVIEW(*SOURCE)`); breakpoint in the main procedure; **Call**: hit, the editor at the line, Call Stack `ASSETS › ASSETS › main · stmt n`, Variables, a data structure's subfields, hover | not run |
+| **Step Over** one statement; **Continue** to the end; the end in the Debug Console | not run |
+| **Service entry** on `HLINV/ASSETS`; `CALL HLINV/ASSETS` at a 5250 session as `CWELLMAN`: keyboard locked, stop with `reason: entry`, the 5250 job in the Call Stack and status bar | not run (manual) |
+| **Set Value** of a field, **Continue**, the display shows it | not run; **Set Value** is hidden (decision 11) |
+| Conditional breakpoint `ASSETCOUNT > 3` through a loop: stops only when it holds | not run |
+| **Call** on a program compiled `DBGVIEW(*NONE)`: `CPF9C15`, **Recompile with DBGVIEW(*SOURCE)**, **Start again** | not run |
+| A second session while one is active: `TCP1A72` | not run; does not happen as designed (decision 13) |
+
+What the prompt asks to report, from the spec, the server's source at
+`7f82a43f` and the host's code, not from a run:
+
+- **`Eval` and an assignment**: not taken. QS/400's `eval_in` looks the
+  whole expression up as a variable's name, so `NAME = value` is
+  `CPF7E12`; the probe finds that and **Set Value** stays hidden. The
+  exit test's Set Value step cannot pass against `7f82a43f`; changing a
+  field needs an assignment in QS/400's `Eval` first.
+- **Stop-to-editor latency for a service entry hit**: not measured. What
+  to expect: the 5250 job's dynamic call checks the entry list (read
+  again at most once a second, `devtools/dbg/entry.rs`), the owner's next
+  look sees the attachment, and the server's watches' thread sends
+  `Stopped` at its next look (`Config::watch_poll`, 250 ms). `qap-client`
+  hands the event from the connection's thread straight to the session's
+  receiver; the adapter's event thread forwards it at once, and VS Code
+  then asks for the threads and the stack (two round trips) before the
+  editor moves. So about a quarter of a second to a second and a half
+  from the `CALL` at the display, most of it the entry list's refresh.
+  The live suite logs `live: stopped … N ms after configurationDone` for
+  the **Call** case.
+- **Frames with `line` 0**: none met, since nothing ran. A `Source` frame
+  with `line` 0 stands on the synthetic `qs400dbg:/LIB/PROGRAM/MODULE`
+  document at its statement number, and one with neither has no source;
+  both are tested against the mock (`stepping.rs`), and the document's
+  lines and growth in the extension suite.
+- **`ProgramEnd`**: this build of the server does not send it (decision
+  12); a **Call** session ends with `CALL PGM(HLINV/ASSETS) ended: Ok` in
+  the Debug Console.
+
+Message IDs to expect, from `docs/QAP.md` at `7f82a43f`, not from a run:
+`CPF9C15` for `DBGVIEW(*NONE)`, `TCP1A72` for a second `Start` on a
+connection, `CPF3503` to attach to a job already serviced, `CPF3501` to
+attach to the connection's own job, `CPF3520` for no such job, `CPF3502`
+and `TCP1A74` for another user's jobs without `*SERVICE`, `CPD9CCB` for a
+line no statement starts on or after, `CPF9C59` for a condition that does
+not read, `CPD9CCC` when no job is stopped, `CPF7E12` for a name that is
+not a variable, `TCP1A75` when the debugged job ends, `TCP1A76` at
+sign-off.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The adapter (`host/crates/dap/tests`, 31 tests) against a canned
+  `DebugBackend`: `initialize`'s capabilities; **Call** as `Start Own`,
+  `AddProgram` (`*PGM`, then `*SRVPGM` on `NotFound`), the editor
+  session's library list first, the `CALL` only at `configurationDone`,
+  its messages and outcome then `terminated`; `CPF9C15` ending the session
+  with the server's text and its ID, quiet with the recompile offer;
+  `TCP1A72` with nothing else sent; a server below version 9 refused before
+  anything is sent; `Stopped` as `stopped` with each reason, `Exception`'s
+  text, `ProgramEnd` as `terminated`, `DebugEnded` and a closed connection
+  as `terminated`; the stack on the member the extension named, on the
+  synthetic document for `line` 0 and for a module with no known source,
+  and paged; breakpoints on the module a source was compiled into, the
+  writable member matching the read-only URI, a moved line, a condition,
+  an empty list, `CPF9C59` leaving every one unverified, a module with no
+  source view and a source of no program refused with nothing sent;
+  continue and the three steps as `Resume`, `pause` refused, `CPD9CCC`
+  passed through; terminate cancelling the `CALL` before `End`; `Locals`,
+  a structure's parts with their full names, the probe both ways (hidden;
+  shown with a `capabilities` event and `Set Value` as `Eval` of the
+  assignment), watch, hover (a failure not shown), the Debug Console's
+  `EVAL`, `:x` and `:c`, references gone after a resume; `Stopped` and
+  `DebugEnded` sent in order while a `Stack` waited, before its reply;
+  attach as `Start Job` with its thread named, `CPF3520`, `CPF3502`,
+  `CPF3503` and `CPF3501` as sent; service entry with `SetServiceEntry`
+  after the breakpoints, no thread until the entry's stop binds the 5250
+  job, one thread for its later stops, `RemoveServiceEntry` before `End`.
+- The real `qs400-code-host dap` process: `initialize`, a launch that
+  cannot connect refused, `disconnect`, exit 0 (`tests/process.rs`); and
+  from the extension through the inline adapter, with the sign-on put into
+  `launch` without the configuration holding it.
+- The extension (`test/debug.test.ts`, 24 tests, and `run.test.ts`):
+  `CALL` quoting (numbers, quotes doubled, empty strings, a number CL
+  cannot write refused); the provider's defaults and its refusals; the
+  snippets; `qs400/debugSource` resolution in order (project file, member
+  read-only, a several-module program's own `*MODULE`, stream file, local
+  stream file, nothing); the synthetic document; the status bar's text;
+  Attach to Job…'s programs and menu; `DBGVIEW(*SOURCE)` forced; the
+  `CPF9C15` response picked out; the recompile on the writable member
+  with Start again, and nothing after a failed compile or a dismissed
+  offer; Debug (Call) and (Service entry) from the Objects view, a member
+  and a project file deployed and compiled only when its program is
+  older or missing.
+- `cargo fmt --check`, `cargo clippy --all-targets -D warnings` and the
+  whole workspace's tests (310 passing); `npm run lint` and the full
+  extension suite (295 passing, the live suites pending), on the release
+  host built into `bin/`.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER`, `QS400_TEST_PASSWORD` (and
+   `QS400_TEST_CA_FILE` with the system's certificate, which is
+   self-signed) and run `npm test`. The Phase 9 live suite compiles
+   `ASSETS` with `DBGVIEW(*SOURCE)` and `NODEBUG` with `DBGVIEW(*NONE)` into
+   `HLINVDEV`, runs the **Call** scenario through the real adapter
+   (breakpoint, stack, variables, a structure, hover, step over, continue,
+   the end), the `CPF9C15` refusal and a second session, and deletes
+   `HLINVDEV`. Record its `live:` lines: the stop latency, the frames, the
+   variables, the setVariable line and the Debug Console.
+2. By hand: compile `HLINV/QRPGLESRC/ASSETS` with **Compile (CRTBNDRPG)**,
+   open it, set a breakpoint on an executable line of the main procedure,
+   **Debug (Call)** from the editor title. Check the editor shows the
+   line, the Call Stack `ASSETS › ASSETS › main · stmt n`, Variables, a
+   data structure's subfields, a hover; **Step Over**; **Continue** to the
+   end, and the Debug Console's last line.
+3. **Debug (Service entry)** on `HLINV/ASSETS`. In QS/400 Access for
+   Desktop sign on as `CWELLMAN`, `CALL HLINV/ASSETS`: the display waits
+   with its keyboard locked; VS Code stops with `entry`, the Call Stack
+   and the status bar name the 5250 job. Note the time from Enter at the
+   display to the editor moving. Check that **Set Value** is not offered;
+   **Continue**: the display goes on.
+4. Edit the breakpoint's condition to `ASSETCOUNT > 3` (a field of the
+   loop) and **Continue** through it: it stops only when it holds.
+5. **Debug (Call)** on a program compiled `DBGVIEW(*NONE)`: the
+   notification has the server's `CPF9C15` text and **Recompile with
+   DBGVIEW(*SOURCE)**; the compile in the output channel has
+   `DBGVIEW(*SOURCE)`; **Start again** stops at the breakpoint.
+6. Start a second **Call** while one is stopped: record what happens (by
+   decision 13 it starts on its own connection).
+7. Record the result, the latency, any frame with `line` 0, and every
+   message ID seen here.
