@@ -1203,3 +1203,117 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
    ID's hover shows its second-level text.
 8. Record the result, the diagnostic IDs and their line placement, and
    every message ID seen here.
+
+## Phase 5 exit test
+
+> Diagnostics in the editor match the compiler listing line for line on
+> the `HLINV` fixture sources.
+
+**Not run yet, 2026-11-08: no QAP server was reachable from the
+development machine.** `QSHQ400` does not resolve (bare, under
+`ad.quartz.systems` or `quartz.systems`), checked at the start of the
+phase and again at 02:00 at its end; 10.42.70.150 answers ping and refuses
+port 2320, as at the end of Phase 4. So no member was compiled, no
+compile was recorded in `host/fixtures/parity/`, and none of the steps
+below has been seen against a real system.
+
+Parity per source file:
+
+| Source file | Result |
+| --- | --- |
+| `HLINV/QRPGLESRC` | not run |
+| `HLINV/QCLSRC` | not run |
+| `HLINV/QDDSSRC` | not run |
+| `HLINV/QSQLSRC` | not run |
+
+Differences to expect when it runs, from the front-ends' source at
+`5e2bbee9` (decisions 3 and 4), not from a comparison:
+
+- **compiler only**, RPG: every message of the RPG compiler proper
+  (`RNF7030`, `RNF7031`, `RNF7066`, `RNF5318`...), which `rpgfront`'s
+  `front` does not report. The exit test's step 3 (`RNF7030` as you
+  type) fails for the same reason.
+- **compiler only**, DDS: any message on a DSPF or ICFF member, which is
+  not analyzed.
+- **editor only**, CL: `CPD0744 file LIB/FILE was not found` on each
+  `DCLF`, where the compile has the file.
+- **editor only**, DDS: the messages of a `PFILE`, `JFILE`, `REF` or
+  `REFFLD` the front end cannot find, where the compile has the file.
+
+For an indication, the front-ends were run on the copy of HLINV that
+QS/400's conformance tests use (`tools/conformance/hlinv/src` in a local
+`quartz-systems-400` checkout at `5e2bbee9`). That copy is an inventory
+application without an `ASSETS` member, so it is not the `HLINV` on
+`QSHQ400`. On it the editor reports: nothing on the six RPG members, on
+`QCLSRC(INVBUILD)` (no `DCLF`), on the two PFs or on `QSQLSRC(INVSEED)`;
+`DDS1001`, `DDS1022` twice and `DDS3002` on each LF, whose `PFILE` it
+cannot read; `DDS5002` five times on `REORDRPTP` and eight on `STKRPTP`
+(the PRTFs whose type `Y` QS/400's `known.txt` records as refused by the
+real system too); and nothing on the four DSPFs, which are not analyzed.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The five servers through the protocol (`lsp-<lang>/tests`), over an
+  in-memory connection with a mock client: diagnostics with their IDs,
+  ranges and second-level text, the outline, definition, hover,
+  completion, rename and folding on one source per language; `/COPY`
+  fetched once and cached for every document, not found cached, a save
+  fetching again, nothing published before every fetch was answered, an
+  include's message summarized on its directive and moved to the include
+  when it opens; the 300 ms debounce (four changes, one publish, after the
+  delay); a DSPF analyzed as nothing.
+- Positions: UTF-16 against characters (`é`, an emoji, fixed-form
+  columns), the Problems panel's placement rules, and the severity table
+  read from the one JSON file by both sides.
+- The real `qs400-code-host lsp rpgle` process: `initialize`, a published
+  `RNF5014`, `shutdown`, `exit` with 0.
+- The extension against the real host binary: diagnostics as you type
+  (`RNF5014` on a new line, gone when it is deleted), each of the five
+  servers publishing from local files, `qs400/fetchInclude` round-tripping
+  through a real language client into a summary, Go to Definition into
+  the copy member's read-only URI at the declaration, the outline, and
+  the `fetchInclude` handler for a member, `*LIBL`, a stream file and not
+  found.
+- Fixed-form RPG: the server's `rpgspecs` table, each specification
+  picked per line, guides only where a line reaches, the status bar's
+  `D · Ds 24–25 · col 24`, none for `**FREE`.
+- The grammar snapshots for RPG (fixed, `**FREE`, both kinds of embedded
+  SQL), CL, PF, LF, DSPF, PRTF, SQL and CMD.
+- The offline parity harness: its comparison, its table and a record run
+  through the front end with an include; with no record it says so and
+  passes.
+- `cargo fmt --check`, `cargo clippy --all-targets -D warnings` and the
+  whole workspace's tests; the five language crates also built for
+  `x86_64-unknown-linux-musl`. `npm run lint` and the full extension
+  suite (176 passing, the live suites pending), and the language suites
+  again on the minified bundle of the packaged `win32-x64` VSIX, which
+  carries the five grammars and configurations.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER`, `QS400_TEST_PASSWORD` (and
+   `QS400_TEST_CURLIB` if not `CWELLMAN`; the compiles' objects stay
+   there), with `QS400_PARITY_RECORD=1`, and run `npm test`. The Phase 5
+   live suite compares every member of the four source files and prints
+   a `live:` line per member and a table of every difference; it also
+   runs steps 2 to 4 and 6 below. Record the `live: parity` line and the
+   table here, per source file, differences included, and commit the
+   records it wrote to `host/fixtures/parity/` (the members' text stays
+   out, by `.gitignore`).
+2. Open `HLINV/QRPGLESRC/ASSETS.rpgle` and go to definition on a field
+   declared in a `/COPY` member: the copy member opens read-only at the
+   declaration.
+3. Type an undefined name on a new line: `RNF7030` appears within half a
+   second, with the second-level text on hover, and goes when the line is
+   deleted. At `5e2bbee9` it does not appear (see above); record what
+   does.
+4. In a fixed-form RPG member the guides sit at the specification
+   boundaries and the status bar shows the column's field; in a `**FREE`
+   member there are none.
+5. Outline: the member's subprocedures, files, data structures and
+   fields. Rename a local variable: every reference in the document
+   changes, nothing outside it.
+6. `cargo test -p code-host --test parity` with the records: the same
+   differences as step 1, without the system.
+7. Report each difference to `quartz-systems-400` with its member, line
+   and ID.
