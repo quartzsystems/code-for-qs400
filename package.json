@@ -23,7 +23,8 @@
     "onCommand:code-for-qs400.about",
     "onCommand:code-for-qs400.host.restart",
     "onView:code-for-qs400.objects",
-    "onView:code-for-qs400.ifs"
+    "onView:code-for-qs400.ifs",
+    "onFileSystem:qs400ifs"
   ],
   "contributes": {
     "viewsContainers": {
@@ -265,6 +266,12 @@
         "title": "Hide Hidden IFS Entries",
         "category": "Code for QS/400",
         "icon": "$(eye-closed)"
+      },
+      {
+        "command": "code-for-qs400.ifs.open",
+        "title": "Open",
+        "category": "Code for QS/400",
+        "icon": "$(go-to-file)"
       }
     ],
     "configuration": {
@@ -653,6 +660,11 @@
           "command": "code-for-qs400.ifs.refresh",
           "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory|symlink|file|other)/",
           "group": "9_refresh@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.open",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(file|symlink)$/",
+          "group": "1_open@1"
         }
       ],
       "commandPalette": [
@@ -722,6 +734,10 @@
         },
         {
           "command": "code-for-qs400.ifs.removeRoot",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.open",
           "when": "false"
         }
       ],

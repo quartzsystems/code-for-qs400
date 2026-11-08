@@ -7,6 +7,7 @@ import { showError } from '../connections/prompts';
 import { SessionManager } from '../connections/sessions';
 import { ConnectionStore } from '../connections/store';
 import { typedPath } from '../ifs/paths';
+import { ifsUri } from '../ifs/uri';
 import { IfsNode, IfsProvider, isDirectoryNode, nodePath } from '../views/ifs';
 
 /** What the IFS commands share. */
@@ -123,5 +124,36 @@ export function registerIfsViewCommands(c: IfsCommandContext): vscode.Disposable
       }
       return vscode.commands.executeCommand('code-for-qs400.ifs.openPath', name, path);
     }),
+  ];
+}
+
+/** Opens a path as an editor tab: VS Code picks the editor (text, or its image preview). */
+export async function openIfsPath(connection: string, path: string): Promise<unknown> {
+  return vscode.commands.executeCommand('vscode.open', ifsUri(connection, path));
+}
+
+/** Open, on a file node or a link; a link to a directory expands instead. */
+export function registerIfsOpenCommands(c: IfsCommandContext): vscode.Disposable[] {
+  const { provider, view, sessions } = c;
+  return [
+    ifsCommand('code-for-qs400.ifs.open', async (n) => {
+      if (n?.kind !== 'entry') {
+        return undefined;
+      }
+      if (n.entry.kind === 'symlink') {
+        const { path } = await sessions.call(n.connection, 'ifs.resolve', { name: n.connection, path: n.path });
+        const target = await sessions.call(n.connection, 'ifs.info', { name: n.connection, path });
+        if (target.kind === 'directory') {
+          provider.linkTargets.set(`${n.connection}|${n.path}`, 'directory');
+          return view.reveal(n, { expand: true, select: true });
+        }
+      } else if (n.entry.kind === 'directory') {
+        return view.reveal(n, { expand: true, select: true });
+      }
+      return openIfsPath(n.connection, n.path);
+    }),
+    vscode.commands.registerCommand('code-for-qs400.ifs.openPath', (connection: string, path: string) =>
+      openIfsPath(connection, path),
+    ),
   ];
 }

@@ -5,13 +5,15 @@
 import * as vscode from 'vscode';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
-import { registerIfsViewCommands } from './commands/ifs';
+import { registerIfsOpenCommands, registerIfsViewCommands } from './commands/ifs';
 import { registerMemberCommands } from './commands/members';
 import { registerObjectCommands } from './commands/objects';
 import { LibraryListController } from './connections/libraryList';
 import { SessionManager } from './connections/sessions';
 import { ConnectionStore } from './connections/store';
 import { HostClient, HostState } from './host/client';
+import { IfsFsProvider } from './ifs/provider';
+import { IFS_SCHEME } from './ifs/uri';
 import { MemberFsProvider } from './members/provider';
 import { MEMBER_SCHEME } from './members/uri';
 import { ConnectionsProvider } from './views/connections';
@@ -30,6 +32,7 @@ export interface ExtensionApi {
   readonly members: MemberFsProvider;
   readonly ifs: IfsProvider;
   readonly ifsView: vscode.TreeView<IfsNode>;
+  readonly ifsFs: IfsFsProvider;
   readonly statusBar: SessionStatusBar;
 }
 
@@ -54,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const members = new MemberFsProvider(sessions, store, output);
   const ifs = new IfsProvider(store, sessions, context.workspaceState);
   const ifsView = vscode.window.createTreeView('code-for-qs400.ifs', { treeDataProvider: ifs, showCollapseAll: true });
+  const ifsFs = new IfsFsProvider(sessions, store, output);
 
   context.subscriptions.push(
     output,
@@ -68,16 +72,19 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     members,
     ifs,
     ifsView,
+    ifsFs,
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
     vscode.workspace.registerFileSystemProvider(MEMBER_SCHEME, members, { isCaseSensitive: false }),
+    vscode.workspace.registerFileSystemProvider(IFS_SCHEME, ifsFs, { isCaseSensitive: true }),
     vscode.commands.registerCommand('code-for-qs400.about', () => about(host)),
     ...registerConnectionCommands(store, sessions),
     ...libraryList.registerCommands(),
     ...registerObjectCommands(objects, store, sessions),
     ...registerMemberCommands(members, objects, sessions),
     ...registerIfsViewCommands({ provider: ifs, view: ifsView, store, sessions }),
+    ...registerIfsOpenCommands({ provider: ifs, view: ifsView, store, sessions }),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();
@@ -89,7 +96,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs };
 }
 
 export function deactivate(): void {
