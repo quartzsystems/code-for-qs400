@@ -1,0 +1,156 @@
+# Copyright (C), 2026 Quartz Systems. Some rights reserved. This work is
+# licensed under the terms of the MIT license which can be found in the
+# root directory of this project.
+
+# A tag VxRyMz (V1R0M0 is 1.0.0) runs the whole CI workflow, then makes the
+# GitHub release: both VSIX files, SHA256SUMS and the CHANGELOG section.
+# The extension is installed from those files; nothing goes to an
+# extension gallery.
+#
+# Run from the Actions tab with dry_run (the default) to build and test
+# everything and publish nothing: the VSIX files, SHA256SUMS and the
+# release notes stay as workflow artifacts.
+
+name: Release
+
+on:
+  push:
+    tags: ['V*R*M*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and test, upload the files as workflow artifacts, publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: version check
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The tag, the manifest, the host and the CHANGELOG agree
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          release="$(echo "$version" | sed -E 's/^([0-9]+)\.([0-9]+)\.([0-9]+)$/V\1R\2M\3/')"
+          if [ "$release" = "$version" ]; then
+            echo "::error::package.json version $version is not major.minor.patch"; exit 1
+          fi
+          host="$(sed -nE 's/^version = "(.*)"$/\1/p' host/Cargo.toml | head -1)"
+          product="$(sed -nE 's/^pub const PRODUCT_VERSION: &str = "(.*)";$/\1/p' host/crates/code-host/src/lib.rs)"
+          heading="$(grep -m1 '^## ' CHANGELOG.md)"
+          echo "package.json $version ($release), host $host, host release $product, CHANGELOG: $heading"
+          [ "$host" = "$version" ] || { echo "::error::host/Cargo.toml says $host, package.json $version"; exit 1; }
+          [ "$product" = "$release" ] || { echo "::error::the host reports $product, package.json is $release"; exit 1; }
+          case "$heading" in
+            "## $version — $release"*) ;;
+            *) echo "::error::CHANGELOG's first section is not $version — $release"; exit 1 ;;
+          esac
+          publish=false
+          if [ "$REF_TYPE" = tag ]; then
+            [ "$REF_NAME" = "$release" ] || { echo "::error::tag $REF_NAME, package.json $release"; exit 1; }
+            if [ "$EVENT" = push ] || [ "$DRY_RUN" = false ]; then
+              publish=true
+            fi
+          elif [ "$DRY_RUN" = false ]; then
+            echo "::error::only a tag $release can publish; run without dry_run from the tag"; exit 1
+          fi
+          {
+            echo "release=$release"
+            echo "version=$version"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          echo "$release ($version), publish: $publish" >> "$GITHUB_STEP_SUMMARY"
+
+  ci:
+    name: CI
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  release:
+    name: ${{ needs.version.outputs.publish == 'true' && 'GitHub release' || 'release files (dry run)' }}
+    needs: [version, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE: ${{ needs.version.outputs.release }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: code-for-qs400-*.vsix
+          path: dist-release
+          merge-multiple: true
+
+      - name: SHA256SUMS and the release notes
+        run: |
+          cd dist-release
+          ls -l
+          if [ ! -f code-for-qs400-win32-x64.vsix ] || [ ! -f code-for-qs400-linux-x64.vsix ]; then
+            echo "::error::both VSIX files are needed"; exit 1
+          fi
+          sha256sum code-for-qs400-linux-x64.vsix code-for-qs400-win32-x64.vsix > SHA256SUMS
+          cat SHA256SUMS
+          cd ..
+          # The CHANGELOG's first section without its heading, links into
+          # the repository made absolute at this commit.
+          awk '/^## / { if (found) exit; found = 1; next } found { print }' CHANGELOG.md \
+            | sed -E "s#\]\((docs/[^)]*)\)#](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/\1)#g" \
+            > dist-release/release-notes.md
+          {
+            echo
+            echo "Install the VSIX for your platform with **Extensions: Install from VSIX…** or"
+            echo "\`code --install-extension code-for-qs400-<platform>.vsix\`, after checking it against \`SHA256SUMS\`."
+          } >> dist-release/release-notes.md
+          cat dist-release/release-notes.md
+
+      - name: 'Dry run: keep the release files as an artifact'
+        if: needs.version.outputs.publish != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ needs.version.outputs.release }}-dry-run
+          path: |
+            dist-release/SHA256SUMS
+            dist-release/release-notes.md
+          if-no-files-found: error
+
+      - name: Publish the GitHub release
+        if: needs.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE" \
+            --verify-tag \
+            --title "Code for QS/400 $RELEASE ($VERSION)" \
+            --notes-file dist-release/release-notes.md \
+            dist-release/code-for-qs400-linux-x64.vsix \
+            dist-release/code-for-qs400-win32-x64.vsix \
+            dist-release/SHA256SUMS

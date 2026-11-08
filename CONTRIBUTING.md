@@ -47,7 +47,7 @@ decided along the way.
 | `host/fixtures/parity/` | Recorded compiles for the offline parity test; the members' text is gitignored |
 | `test/` | Extension tests, run inside VS Code; `live.test.ts` and `parity.test.ts` against a real system; `grammar/` the grammar samples and their snapshots |
 | `scripts/` | `check-naming.sh`, `package.sh`, `package.ps1` |
-| `.github/workflows/ci.yml` | CI for Windows and Linux |
+| `.github/workflows/ci.yml`, `release.yml` | CI for Windows and Linux; the release from a tag `VxRyMz` |
 | `docs/` | User documentation |
 
 ## Prerequisites
@@ -230,6 +230,34 @@ copies in that one binary, checks the VSIX file list, and runs
 `vsce package --target <win32-x64|linux-x64>`. The output is
 `code-for-qs400-<target>.vsix`. There is no universal VSIX; each platform's
 file is built on that platform (CI runs both).
+
+## Release
+
+The extension is distributed as the two VSIX files of a GitHub release,
+installed by hand; it is not published to an extension gallery.
+
+1. The version agrees everywhere: `package.json` `version` (`1.0.0`),
+   `host/Cargo.toml`'s workspace `version` (`1.0.0`), `PRODUCT_VERSION` in
+   `host/crates/code-host/src/lib.rs` (`V1R0M0`), and the first section of
+   `CHANGELOG.md`, `## 1.0.0 — V1R0M0 · <date>`. The release is the
+   version as `VxRyMz`.
+2. Optionally, a dry run: **Actions → Release → Run workflow** on `main`
+   with `dry_run` ticked (the default). It runs the whole CI workflow and
+   keeps `code-for-qs400-linux-x64.vsix`, `code-for-qs400-win32-x64.vsix`
+   and `release-V1R0M0-dry-run` (`SHA256SUMS`, `release-notes.md`) as
+   workflow artifacts, publishing nothing.
+3. Tag the release commit and push the tag:
+   `git tag V1R0M0 && git push origin V1R0M0`.
+   `.github/workflows/release.yml` checks that the tag matches all four of
+   step 1, runs `ci.yml` (naming check, Rust, the extension suite on both
+   platforms, the live tests when their secrets are set, and
+   `scripts/package.sh` on each platform), then creates the GitHub
+   release `V1R0M0` with both VSIX files, `SHA256SUMS` and the CHANGELOG
+   section as its notes.
+
+The docs are the extension's homepage through GitHub Pages: **Settings →
+Pages → Deploy from a branch**, `main`, folder `/docs`. Pages renders
+`docs/README.md` as the index; there is no site generator beyond that.
 
 ## Rules
 

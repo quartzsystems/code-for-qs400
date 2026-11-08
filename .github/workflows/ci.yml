@@ -9,12 +9,17 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # release.yml runs this whole workflow, the live tests included, before it
+  # publishes; the VSIX artifacts it uploads are the ones released.
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Called from release.yml, github.workflow is "Release", so a release run
+  # and a push to main never cancel each other.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
