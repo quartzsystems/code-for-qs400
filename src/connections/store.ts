@@ -14,6 +14,7 @@ import {
   secretKey,
   toSetting,
 } from './config';
+import { FilterConfig } from '../objects/filters';
 
 /**
  * Saved connections (user settings) and their passwords (secret storage).
@@ -136,6 +137,15 @@ export class ConnectionStore implements vscode.Disposable {
       return;
     }
     await this.replace(c.name, { ...c, libraryList });
+  }
+
+  /** Saves the connection's object filters. */
+  async setFilters(name: string, filters: FilterConfig[]): Promise<void> {
+    const c = this.get(name);
+    if (!c) {
+      return;
+    }
+    await this.replace(c.name, { ...c, filters });
   }
 
   password(name: string): Thenable<string | undefined> {

@@ -180,6 +180,23 @@ export class LibraryListController implements LibraryListSource, vscode.Disposab
     }
   }
 
+  /**
+   * The session job's list, for the Objects view: the one known, else read
+   * now. `fresh` reads it again. Errors are thrown as the host sent them.
+   */
+  async list(name: string, fresh = false): Promise<LibraryList> {
+    const k = this.known.get(name);
+    if (k?.list && !fresh) {
+      return k.list;
+    }
+    const list = await this.sessions.call(name, 'libl.get', { name });
+    this.known.set(name, { list });
+    if (fresh || k?.error) {
+      this.changed.fire(name);
+    }
+    return list;
+  }
+
   /** The list an edit starts from: the server's, read now when not known. */
   private async current(name: string): Promise<LibraryList | undefined> {
     const k = this.known.get(name);

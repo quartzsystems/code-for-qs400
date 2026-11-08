@@ -21,7 +21,8 @@
   "activationEvents": [
     "onView:code-for-qs400.connections",
     "onCommand:code-for-qs400.about",
-    "onCommand:code-for-qs400.host.restart"
+    "onCommand:code-for-qs400.host.restart",
+    "onView:code-for-qs400.objects"
   ],
   "contributes": {
     "viewsContainers": {
@@ -38,6 +39,10 @@
         {
           "id": "code-for-qs400.connections",
           "name": "Connections"
+        },
+        {
+          "id": "code-for-qs400.objects",
+          "name": "Objects"
         }
       ]
     },
@@ -129,6 +134,36 @@
         "title": "Set as Current Library",
         "category": "Code for QS/400",
         "icon": "$(star-full)"
+      },
+      {
+        "command": "code-for-qs400.objects.refresh",
+        "title": "Refresh",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.object.properties",
+        "title": "Properties",
+        "category": "Code for QS/400",
+        "icon": "$(info)"
+      },
+      {
+        "command": "code-for-qs400.filter.add",
+        "title": "Add Filter",
+        "category": "Code for QS/400",
+        "icon": "$(add)"
+      },
+      {
+        "command": "code-for-qs400.filter.edit",
+        "title": "Edit Filter",
+        "category": "Code for QS/400",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "code-for-qs400.filter.remove",
+        "title": "Remove Filter",
+        "category": "Code for QS/400",
+        "icon": "$(trash)"
       }
     ],
     "configuration": {
@@ -210,6 +245,44 @@
                     "description": "User part of the library list, in order."
                   }
                 }
+              },
+              "filters": {
+                "type": "array",
+                "markdownDescription": "Object filters, shown under **Filters** in the Objects view. Edit them with **Add Filter** and **Edit Filter**.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "library"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Filter name, unique within the connection."
+                    },
+                    "library": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "A library name, or *LIBL, *CURLIB, *USRLIBL or *ALL."
+                    },
+                    "object": {
+                      "type": "string",
+                      "default": "*ALL",
+                      "description": "A name, a name ending in * (ASSET*), or *ALL."
+                    },
+                    "type": {
+                      "type": "string",
+                      "default": "*ALL",
+                      "description": "An object type such as *FILE, or *ALL."
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "description": "An attribute such as PF-SRC or RPGLE. Leave it out for any."
+                    }
+                  }
+                }
               }
             }
           }
@@ -234,6 +307,16 @@
           "command": "code-for-qs400.connection.add",
           "when": "view == code-for-qs400.connections",
           "group": "navigation"
+        },
+        {
+          "command": "code-for-qs400.objects.refresh",
+          "when": "view == code-for-qs400.objects",
+          "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.filter.add",
+          "when": "view == code-for-qs400.objects",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -321,6 +404,46 @@
           "command": "code-for-qs400.libl.remove",
           "when": "view == code-for-qs400.connections && viewItem =~ /^library\\./",
           "group": "2_remove@1"
+        },
+        {
+          "command": "code-for-qs400.objects.refresh",
+          "when": "view == code-for-qs400.objects && viewItem =~ /^(objects\\.(library|filters|filter|type)|object\\.)/",
+          "group": "inline@9"
+        },
+        {
+          "command": "code-for-qs400.filter.add",
+          "when": "view == code-for-qs400.objects && viewItem == objects.filters",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.filter.edit",
+          "when": "view == code-for-qs400.objects && viewItem == objects.filter",
+          "group": "inline@1"
+        },
+        {
+          "command": "code-for-qs400.object.properties",
+          "when": "view == code-for-qs400.objects && viewItem =~ /^object\\./",
+          "group": "1_object@1"
+        },
+        {
+          "command": "code-for-qs400.filter.add",
+          "when": "view == code-for-qs400.objects && viewItem =~ /^objects\\.filters?$/",
+          "group": "1_filter@1"
+        },
+        {
+          "command": "code-for-qs400.filter.edit",
+          "when": "view == code-for-qs400.objects && viewItem == objects.filter",
+          "group": "1_filter@2"
+        },
+        {
+          "command": "code-for-qs400.filter.remove",
+          "when": "view == code-for-qs400.objects && viewItem == objects.filter",
+          "group": "3_remove@1"
+        },
+        {
+          "command": "code-for-qs400.objects.refresh",
+          "when": "view == code-for-qs400.objects && viewItem =~ /^(objects\\.|object\\.)/",
+          "group": "9_refresh@1"
         }
       ],
       "commandPalette": [
@@ -339,8 +462,34 @@
         {
           "command": "code-for-qs400.libl.setCurrent",
           "when": "false"
+        },
+        {
+          "command": "code-for-qs400.object.properties",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.filter.edit",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.filter.remove",
+          "when": "false"
         }
       ]
+    },
+    "languages": [
+      {
+        "id": "qs400-properties",
+        "aliases": [
+          "QS/400 Object Properties"
+        ]
+      }
+    ],
+    "configurationDefaults": {
+      "[qs400-properties]": {
+        "editor.fontFamily": "'Courier New', Courier, monospace",
+        "editor.wordWrap": "off"
+      }
     }
   },
   "scripts": {

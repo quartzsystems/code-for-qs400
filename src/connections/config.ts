@@ -9,6 +9,7 @@
  */
 
 import type { ConnectParams } from '../host/protocol';
+import { FilterConfig, filterSetting, parseFilters } from '../objects/filters';
 
 export const SETTINGS_SECTION = 'code-for-qs400';
 export const CONNECTIONS_SETTING = 'connections';
@@ -37,6 +38,8 @@ export interface ConnectionConfig {
   user: string;
   tls?: TlsConfig;
   libraryList?: LibraryListConfig;
+  /** Object filters, shown under Filters in the Objects view. */
+  filters?: FilterConfig[];
 }
 
 export interface ParsedConnections {
@@ -160,6 +163,10 @@ export function parseConnections(raw: unknown): ParsedConnections {
         c.libraryList = libl;
       }
     }
+    const filters = parseFilters(entry.filters, label, problems);
+    if (filters.length > 0) {
+      c.filters = filters;
+    }
     connections.push(c);
   });
   return { connections, problems };
@@ -184,6 +191,9 @@ export function toSetting(c: ConnectionConfig): Record<string, unknown> {
       libl.user = [...c.libraryList.user];
     }
     out.libraryList = libl;
+  }
+  if (c.filters?.length) {
+    out.filters = c.filters.map(filterSetting);
   }
   return out;
 }

@@ -93,6 +93,9 @@ export async function promptConnection(
   if (existing?.libraryList) {
     c.libraryList = existing.libraryList;
   }
+  if (existing?.filters) {
+    c.filters = existing.filters;
+  }
   return c;
 }
 

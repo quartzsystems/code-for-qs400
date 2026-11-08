@@ -5,11 +5,13 @@
 import * as vscode from 'vscode';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
+import { registerObjectCommands } from './commands/objects';
 import { LibraryListController } from './connections/libraryList';
 import { SessionManager } from './connections/sessions';
 import { ConnectionStore } from './connections/store';
 import { HostClient, HostState } from './host/client';
 import { ConnectionsProvider } from './views/connections';
+import { ObjectsProvider } from './views/objects';
 import { SessionStatusBar } from './views/sessionStatusBar';
 
 /** What `activate` returns; used by the integration tests. */
@@ -19,6 +21,7 @@ export interface ExtensionApi {
   readonly sessions: SessionManager;
   readonly connections: ConnectionsProvider;
   readonly libraryList: LibraryListController;
+  readonly objects: ObjectsProvider;
   readonly statusBar: SessionStatusBar;
 }
 
@@ -39,6 +42,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const libraryList = new LibraryListController(store, sessions, output);
   const connections = new ConnectionsProvider(store, sessions, libraryList);
   const statusBar = new SessionStatusBar(store, sessions);
+  const objects = new ObjectsProvider(store, sessions, libraryList);
 
   context.subscriptions.push(
     output,
@@ -49,11 +53,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     status,
     connections,
     statusBar,
+    objects,
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
+    vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
     vscode.commands.registerCommand('code-for-qs400.about', () => about(host)),
     ...registerConnectionCommands(store, sessions),
     ...libraryList.registerCommands(),
+    ...registerObjectCommands(objects, store, sessions),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();
@@ -65,7 +72,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar };
+  return { host, store, sessions, connections, libraryList, statusBar, objects };
 }
 
 export function deactivate(): void {
