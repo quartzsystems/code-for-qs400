@@ -112,6 +112,21 @@ export class ProjectStore implements vscode.Disposable {
     return this.connections.get(p.config.connection)?.name ?? p.config.connection;
   }
 
+  /**
+   * The project of a folder: the workspace's when it is one of its
+   * folders, else read from the folder's file now (a folder a pull was
+   * pointed at, or a test's).
+   */
+  async at(folder: vscode.Uri): Promise<Project | undefined> {
+    const key = folder.fsPath.toLowerCase();
+    const have = this.list.find((p) => p.folder.uri.fsPath.toLowerCase() === key);
+    if (have) {
+      return have;
+    }
+    const ws = vscode.workspace.getWorkspaceFolder(folder);
+    return this.read(ws && ws.uri.fsPath.toLowerCase() === key ? ws : { uri: folder, name: nodePath.basename(folder.fsPath), index: -1 });
+  }
+
   private async read(folder: vscode.WorkspaceFolder): Promise<Project | undefined> {
     const file = vscode.Uri.joinPath(folder.uri, PROJECT_FILE);
     let text: string;

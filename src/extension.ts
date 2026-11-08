@@ -33,6 +33,9 @@ import { SpoolViewer } from './spool/viewer';
 import { MessageNode, MessagesProvider, registerMessagesViewCommands } from './views/messages';
 import { LanguageServers } from './languages/client';
 import { ProjectStore } from './projects/store';
+import { ProjectDeps, Puller } from './projects/pull';
+import { ProjectPrompts } from './projects/ui';
+import { registerPullCommands } from './projects/commands';
 import { sameName } from './connections/config';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -78,6 +81,7 @@ export interface ExtensionApi {
   readonly messages: MessagesProvider;
   readonly messagesView: vscode.TreeView<MessageNode>;
   readonly projects: ProjectStore;
+  readonly puller: Puller;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -112,6 +116,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
   const projects = new ProjectStore(store, output);
   const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
+  const projectDeps: ProjectDeps = {
+    store,
+    sessions,
+    projects,
+    ui: new ProjectPrompts(),
+    append: (line) => runner.output.appendLine(line),
+    showOutput: () => runner.output.show(true),
+  };
+  const puller = new Puller(projectDeps);
   const diagnostics = new CompileDiagnostics();
   const jobLog = new JobLogProvider(store, sessions, vscode.Uri.joinPath(context.extensionUri, 'media'));
   const languagesOutput = vscode.window.createOutputChannel('Code for QS/400 Languages', { log: true });
@@ -165,6 +178,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       (name) => (name ? projects.usable().filter((p) => sameName(projects.connectionOf(p), name)).map((p) => projects.actions(p)) : []),
       projects.onDidChange,
     ),
+    ...registerPullCommands(projectDeps, puller),
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
@@ -226,7 +240,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller };
 }
 
 export function deactivate(): void {

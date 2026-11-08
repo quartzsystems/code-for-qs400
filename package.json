@@ -664,6 +664,30 @@
         "title": "Remove Message Queue from View",
         "category": "Code for QS/400",
         "icon": "$(close)"
+      },
+      {
+        "command": "code-for-qs400.pull.library",
+        "title": "Pull Library…",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.pull.sourceFile",
+        "title": "Pull Source File",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.pull.member",
+        "title": "Pull Member",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.pull.path",
+        "title": "Pull into Project",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
       }
     ],
     "configuration": {
@@ -1457,6 +1481,26 @@
           "command": "code-for-qs400.messages.refresh",
           "when": "view == code-for-qs400.messages && viewItem =~ /^messages\\.queue\\./",
           "group": "9_refresh@1"
+        },
+        {
+          "command": "code-for-qs400.pull.library",
+          "when": "view == code-for-qs400.objects && viewItem == objects.library",
+          "group": "5_project@1"
+        },
+        {
+          "command": "code-for-qs400.pull.sourceFile",
+          "when": "view == code-for-qs400.objects && viewItem == object.file.srcpf",
+          "group": "5_project@1"
+        },
+        {
+          "command": "code-for-qs400.pull.member",
+          "when": "view == code-for-qs400.objects && viewItem == objects.member",
+          "group": "5_project@1"
+        },
+        {
+          "command": "code-for-qs400.pull.path",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(file|directory|root)/",
+          "group": "5_project@1"
         }
       ],
       "commandPalette": [
@@ -1698,6 +1742,18 @@
         },
         {
           "command": "code-for-qs400.messages.removeQueue",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.pull.sourceFile",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.pull.member",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.pull.path",
           "when": "false"
         }
       ],
