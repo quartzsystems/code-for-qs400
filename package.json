@@ -339,6 +339,12 @@
         "title": "Download Folder…",
         "category": "Code for QS/400",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.action.run",
+        "title": "Run Action…",
+        "category": "Code for QS/400",
+        "icon": "$(play)"
       }
     ],
     "configuration": {
@@ -877,6 +883,16 @@
           "command": "code-for-qs400.ifs.download",
           "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs.(file|symlink)$/",
           "group": "3_transfer@1"
+        },
+        {
+          "command": "code-for-qs400.action.run",
+          "when": "view == code-for-qs400.objects && (viewItem == objects.member || viewItem =~ /^object\\./)",
+          "group": "0_run@1"
+        },
+        {
+          "command": "code-for-qs400.action.run",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(file|symlink)$/",
+          "group": "0_run@1"
         }
       ],
       "commandPalette": [
@@ -998,6 +1014,18 @@
           "command": "code-for-qs400.member.renumber",
           "when": "resourceScheme == qs400mbr && !activeEditorIsReadonly",
           "group": "1_modification@9"
+        },
+        {
+          "command": "code-for-qs400.action.run",
+          "when": "resourceScheme =~ /^qs400(mbr|ifs)$/",
+          "group": "1_run@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "code-for-qs400.action.run",
+          "when": "resourceScheme =~ /^qs400(mbr|ifs)$/",
+          "group": "navigation@1"
         }
       ]
     },
@@ -1036,6 +1064,12 @@
         "id": "qs400-properties",
         "aliases": [
           "QS/400 Object Properties"
+        ]
+      },
+      {
+        "id": "code-for-qs400-output",
+        "aliases": [
+          "Code for QS/400 Output"
         ]
       }
     ],

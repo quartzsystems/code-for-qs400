@@ -3,6 +3,7 @@
 // root directory of this project.
 
 import * as vscode from 'vscode';
+import { ActionRunner } from './actions/run';
 import { ActionStore } from './actions/store';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
@@ -39,6 +40,7 @@ export interface ExtensionApi {
   readonly transfers: Transfers;
   readonly statusBar: SessionStatusBar;
   readonly actions: ActionStore;
+  readonly runner: ActionRunner;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -71,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const ifsFs = new IfsFsProvider(sessions, store, output);
   const transfers = new Transfers(host, sessions, ifs, ifsFs);
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
+  const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
 
   context.subscriptions.push(
     output,
@@ -100,6 +103,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerIfsViewCommands({ provider: ifs, view: ifsView, store, sessions }),
     ...registerIfsOpenCommands({ provider: ifs, view: ifsView, store, sessions }),
     ...registerIfsFileCommands({ provider: ifs, view: ifsView, store, sessions }, ifsFs),
+    ...runner.register(),
     ...registerTransferCommands({ provider: ifs, view: ifsView, store, sessions }, transfers, (f) => (ifsDrop.uploadDropped = f)),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
@@ -112,7 +116,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner };
 }
 
 export function deactivate(): void {

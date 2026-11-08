@@ -1,0 +1,391 @@
+// Copyright (C), 2026 Quartz Systems. Some rights reserved. This work is
+// licensed under the terms of the MIT license which can be found in the
+// root directory of this project.
+
+import * as vscode from 'vscode';
+import { libraryName, sameName } from '../connections/config';
+import { errorText, showError } from '../connections/prompts';
+import { SessionManager } from '../connections/sessions';
+import { ConnectionStore } from '../connections/store';
+import { ActionOutcome, ActionRunParams } from '../host/protocol';
+import { IFS_SCHEME, parseIfsUri } from '../ifs/uri';
+import { typeForExtension } from '../members/types';
+import { MEMBER_SCHEME, isReadonlyUri, parseMemberUri } from '../members/uri';
+import { IfsProvider } from '../views/ifs';
+import { ObjectsProvider } from '../views/objects';
+import { Action, applies, kindOf } from './model';
+import {
+  JOB_LOG_LINE,
+  OUTPUT_CHANNEL,
+  OUTPUT_LANGUAGE,
+  failureLines,
+  headerLines,
+  linkConnection,
+  outcomeLines,
+} from './output';
+import { ActionStore, connectionValues } from './store';
+import {
+  ActionTarget,
+  ResolveContext,
+  batchCommand,
+  choiceKey,
+  matchTarget,
+  needsLibrary,
+  resolveCommand,
+  targetLabel,
+  targetValue,
+  usesCurrentLibrary,
+} from './targets';
+
+/** Workspace state key of the action last run, by `choiceKey`. */
+export const LAST_ACTIONS_KEY = 'code-for-qs400.lastActions';
+
+/** The job log command the output channel's links open. */
+export const JOB_LOG_COMMAND = 'code-for-qs400.job.log';
+
+/** What a run did, for the tests and for the diagnostics. */
+export interface RunResult {
+  action: Action;
+  target: ActionTarget;
+  /** The command as sent. */
+  command: string;
+  outcome?: ActionOutcome;
+  error?: unknown;
+}
+
+/** What a run needs of the document a target is open in. */
+export interface SavableDocument {
+  readonly isDirty: boolean;
+  save(): Thenable<boolean>;
+}
+
+export interface RunnerOptions {
+  /** Refreshed after an action whose `refresh` is not `none`. */
+  objects?: ObjectsProvider;
+  ifs?: IfsProvider;
+  /** The open document of a target; `targetDocument` by default. */
+  findDocument?: (t: ActionTarget) => SavableDocument | undefined;
+  /** Where each output line goes; the output channel by default. */
+  append?: (line: string) => void;
+}
+
+/** What `action.run` is handed: a URI (editor title, palette), a tree node, or nothing (the active editor). */
+type RunArg = vscode.Uri | { kind?: string; connection?: string; [k: string]: unknown } | undefined;
+
+/** The target a URI names: a member or a stream file, its connection as saved. */
+export function uriTarget(uri: vscode.Uri, store: ConnectionStore): ActionTarget | undefined {
+  if (uri.scheme === MEMBER_SCHEME) {
+    const p = parseMemberUri(uri);
+    if (p?.kind !== 'member') {
+      return undefined;
+    }
+    const connection = store.get(p.connection)?.name ?? p.connection;
+    return { environment: 'member', connection, library: p.library, file: p.file, member: p.member, type: typeForExtension(p.ext), ext: p.ext };
+  }
+  if (uri.scheme === IFS_SCHEME) {
+    const p = parseIfsUri(uri);
+    if (!p) {
+      return undefined;
+    }
+    return { environment: 'file', connection: store.get(p.connection)?.name ?? p.connection, path: p.path };
+  }
+  return undefined;
+}
+
+/** The target of a tree node: a member, an object, or a stream file. */
+export function nodeTarget(n: Record<string, unknown>, store: ConnectionStore): ActionTarget | undefined {
+  const connection = typeof n.connection === 'string' ? (store.get(n.connection)?.name ?? n.connection) : undefined;
+  if (!connection) {
+    return undefined;
+  }
+  const entry = n.entry as Record<string, string> | undefined;
+  if (n.kind === 'member' && entry && typeof n.library === 'string' && typeof n.file === 'string') {
+    return { environment: 'member', connection, library: n.library, file: n.file, member: entry.member, type: entry.type };
+  }
+  if (n.kind === 'object' && entry) {
+    return { environment: 'object', connection, library: entry.library, object: entry.object, type: entry.type, attribute: entry.attribute };
+  }
+  if (n.kind === 'entry' && typeof n.path === 'string' && entry && entry.kind !== 'directory') {
+    return { environment: 'file', connection, path: n.path };
+  }
+  return undefined;
+}
+
+/** The open document a member or a stream file target is edited in, if any (never a read-only one). */
+export function targetDocument(t: ActionTarget): vscode.TextDocument | undefined {
+  return vscode.workspace.textDocuments.find((d) => {
+    if (t.environment === 'member' && d.uri.scheme === MEMBER_SCHEME && !isReadonlyUri(d.uri)) {
+      const p = parseMemberUri(d.uri);
+      return (
+        p?.kind === 'member' &&
+        sameName(p.connection, t.connection) &&
+        p.library === t.library.toUpperCase() &&
+        p.file === t.file.toUpperCase() &&
+        p.member === t.member.toUpperCase()
+      );
+    }
+    if (t.environment === 'file' && d.uri.scheme === IFS_SCHEME) {
+      const p = parseIfsUri(d.uri);
+      return p !== undefined && sameName(p.connection, t.connection) && p.path === t.path;
+    }
+    return false;
+  });
+}
+
+/**
+ * **Run Action…**: the actions that apply to a member, a stream file or an
+ * object, last used first; the one picked is resolved, run in the
+ * connection job (or submitted), and written to the **Code for QS/400**
+ * output channel. `onOutcome` hands each outcome to the diagnostics.
+ */
+export class ActionRunner implements vscode.Disposable {
+  private channel: vscode.OutputChannel | undefined;
+  /** The **Code for QS/400** output channel, made on first use. */
+  get output(): vscode.OutputChannel {
+    this.channel ??= vscode.window.createOutputChannel(OUTPUT_CHANNEL, OUTPUT_LANGUAGE);
+    return this.channel;
+  }
+  private runs = 0;
+  private readonly finished = new vscode.EventEmitter<RunResult>();
+  /** Fires when a run ends, with or without an outcome. */
+  readonly onDidRun = this.finished.event;
+
+  private readonly objects?: ObjectsProvider;
+  private readonly ifs?: IfsProvider;
+  private readonly findDocument: (t: ActionTarget) => SavableDocument | undefined;
+  private readonly append: (line: string) => void;
+
+  constructor(
+    private readonly store: ConnectionStore,
+    private readonly sessions: SessionManager,
+    private readonly actions: ActionStore,
+    private readonly state: vscode.Memento,
+    options: RunnerOptions = {},
+  ) {
+    this.objects = options.objects;
+    this.ifs = options.ifs;
+    this.findDocument = options.findDocument ?? targetDocument;
+    this.append = options.append ?? ((l) => this.output.appendLine(l));
+  }
+
+  /** The target of what the command was handed, or of the active editor. */
+  target(arg: RunArg): ActionTarget | undefined {
+    if (arg instanceof vscode.Uri) {
+      return uriTarget(arg, this.store);
+    }
+    if (arg && typeof arg === 'object') {
+      return nodeTarget(arg as Record<string, unknown>, this.store);
+    }
+    const uri = vscode.window.activeTextEditor?.document.uri;
+    return uri ? uriTarget(uri, this.store) : undefined;
+  }
+
+  /** The actions that apply to `t`, the one last run on its kind first. */
+  applicable(t: ActionTarget): Action[] {
+    const match = matchTarget(t);
+    const list = this.actions.actions(t.connection).filter((a) => applies(a, match));
+    const last = this.state.get<Record<string, string>>(LAST_ACTIONS_KEY, {})[choiceKey(t)];
+    const i = last ? list.findIndex((a) => sameName(a.name, last)) : -1;
+    return i > 0 ? [list[i], ...list.slice(0, i), ...list.slice(i + 1)] : list;
+  }
+
+  private async remember(t: ActionTarget, a: Action): Promise<void> {
+    const all = { ...this.state.get<Record<string, string>>(LAST_ACTIONS_KEY, {}) };
+    all[choiceKey(t)] = a.name;
+    await this.state.update(LAST_ACTIONS_KEY, all);
+  }
+
+  private async pick(t: ActionTarget, list: Action[]): Promise<Action | undefined> {
+    const items = list.map((action) => {
+      const mark = this.actions.mark(action);
+      return {
+        label: mark ? `$(warning) ${action.name}` : action.name,
+        description: action.source.kind === 'default' ? 'default' : action.source.label,
+        detail: mark ? `${mark} · ${action.command}` : action.command,
+        action,
+      };
+    });
+    const picked = await vscode.window.showQuickPick(items, {
+      title: `Run Action on ${targetLabel(t)}`,
+      placeHolder: 'Action',
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+    return picked?.action;
+  }
+
+  private write(lines: string[]): void {
+    for (const l of lines) {
+      this.append(l);
+    }
+  }
+
+  /**
+   * Runs an action: `arg` names the target, `actionName` the action (the
+   * pick is shown when it is absent). Undefined when nothing was run.
+   */
+  async run(arg?: RunArg, actionName?: string): Promise<RunResult | undefined> {
+    const t = this.target(arg);
+    if (!t) {
+      void vscode.window.showInformationMessage('Open a member or a stream file, or pick a member, a file or an object, to run an action on it.');
+      return undefined;
+    }
+    await this.actions.ready;
+    const list = this.applicable(t);
+    if (list.length === 0) {
+      void vscode.window.showInformationMessage(`No action applies to ${targetLabel(t)}. Add one in .vscode/actions.json.`);
+      return undefined;
+    }
+    const action = actionName ? list.find((a) => sameName(a.name, actionName)) : await this.pick(t, list);
+    if (!action) {
+      if (actionName) {
+        void vscode.window.showErrorMessage(`No action named ${actionName} applies to ${targetLabel(t)}.`);
+      }
+      return undefined;
+    }
+    await this.remember(t, action);
+    const name = t.connection;
+    const notRun = (message: string): undefined => {
+      this.write([...headerLines({ when: new Date(), action: action.name, target: targetLabel(t), connection: name, command: action.command }), ...failureLines(message, false)]);
+      void vscode.window.showErrorMessage(`${action.name}: ${message}`);
+      return undefined;
+    };
+
+    if (this.sessions.status(name).state === 'disconnected' && !(await this.sessions.connect(name))) {
+      return undefined;
+    }
+
+    // A document with unsaved changes is saved first; a save that fails stops the run.
+    const doc = this.findDocument(t);
+    if (doc?.isDirty && !(await doc.save())) {
+      return notRun(`${targetLabel(t)} could not be saved`);
+    }
+
+    const ctx: ResolveContext = { connection: connectionValues(this.store, this.sessions, name) };
+    try {
+      if (usesCurrentLibrary(action.command, t.environment)) {
+        ctx.curlib = (await this.sessions.call(name, 'libl.get', { name })).current ?? undefined;
+      }
+    } catch (err) {
+      return notRun(`the current library could not be read: ${errorText(err, name)}`);
+    }
+    if (needsLibrary(action.command, t, ctx)) {
+      const library = await vscode.window.showInputBox({
+        title: `${action.name}: &LIBRARY`,
+        prompt: `The job on ${name} has no current library. Library for ${targetLabel(t)}:`,
+        ignoreFocusOut: true,
+        validateInput: (v) => (libraryName(v) ? undefined : 'Enter a library name: up to 10 characters.'),
+      });
+      if (library === undefined) {
+        return undefined;
+      }
+      ctx.library = libraryName(library);
+    }
+    const resolved = resolveCommand(action.command, t, ctx);
+    if (!resolved.ok) {
+      return notRun(`${resolved.unresolved.join(', ')} ${resolved.unresolved.length === 1 ? 'has' : 'have'} no value for ${targetLabel(t)}`);
+    }
+    const batch = action.runAs === 'batch';
+    // SBMJOB's JOB is the target's name when that is a valid name, else the job description's (*JOBD).
+    const jobName = libraryName(targetValue(t, ctx, 'NAME') ?? '') ?? '*JOBD';
+    const command = batch ? batchCommand(resolved.command, jobName) : resolved.command;
+    const params: ActionRunParams = { name, command, kind: batch ? 'command' : kindOf(command), run: `a${++this.runs}-${Date.now()}` };
+
+    this.write(headerLines({ when: new Date(), action: action.name, target: targetLabel(t), connection: name, command }));
+    const result: RunResult = { action, target: t, command };
+    try {
+      result.outcome = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: action.name, cancellable: true },
+        async (progress, token) => {
+          progress.report({ message: `${targetLabel(t)} on ${name}` });
+          const cancel = token.onCancellationRequested(() => {
+            void this.sessions.call(name, 'action.cancel', { name, run: params.run as string }).catch(() => undefined);
+          });
+          try {
+            return await this.sessions.call(name, 'action.run', params);
+          } finally {
+            cancel.dispose();
+          }
+        },
+      );
+    } catch (err) {
+      result.error = err;
+      this.write(failureLines(errorText(err, name), true));
+      void showError(err, name);
+      this.finished.fire(result);
+      return result;
+    }
+    const o = result.outcome;
+    this.write(outcomeLines(o, batch));
+    this.finished.fire(result);
+    if (action.refresh !== 'none') {
+      if (t.environment === 'file') {
+        this.ifs?.refresh();
+      } else {
+        this.objects?.refresh();
+      }
+    }
+    this.announce(action, o);
+    return result;
+  }
+
+  /** How a run ended, in a notification or the status bar. */
+  private announce(action: Action, o: ActionOutcome): void {
+    const show = 'Show Output';
+    const open = (picked: string | undefined) => {
+      if (picked === show) {
+        this.output.show(true);
+      }
+    };
+    if (o.status === 'Ok') {
+      vscode.window.setStatusBarMessage(`$(check) ${action.name}: completed`, 5000);
+      return;
+    }
+    if (o.status === 'Cancelled') {
+      void vscode.window.showInformationMessage(`${action.name}: Cancelled`, show).then(open);
+      return;
+    }
+    const m = o.escape;
+    const text = m ? `${m.id}: ${m.text}` : `${action.name}: ${o.status}`;
+    const errors = o.diagnostics.filter((d) => d.severity >= 20).length;
+    const more = errors > 0 ? ` (${errors} in the Problems panel)` : '';
+    void vscode.window.showErrorMessage(`${text}${more}`, show).then(open);
+  }
+
+  /** The command, and the links in the output channel. */
+  register(): vscode.Disposable[] {
+    return [
+      this,
+      vscode.commands.registerCommand('code-for-qs400.action.run', (arg?: RunArg, actionName?: string) => this.run(arg, actionName)),
+      vscode.languages.registerDocumentLinkProvider(
+        { language: OUTPUT_LANGUAGE },
+        {
+          provideDocumentLinks: (doc) => {
+            const lines = doc.getText().split(/\r?\n/);
+            const links: vscode.DocumentLink[] = [];
+            lines.forEach((l, i) => {
+              if (l !== JOB_LOG_LINE) {
+                return;
+              }
+              const connection = linkConnection(lines, i);
+              const args = encodeURIComponent(JSON.stringify([connection ?? null]));
+              const start = JOB_LOG_LINE.indexOf('Show');
+              const link = new vscode.DocumentLink(
+                new vscode.Range(i, start, i, start + 4),
+                vscode.Uri.parse(`command:${JOB_LOG_COMMAND}?${args}`),
+              );
+              link.tooltip = connection ? `Job log of the connection job on ${connection}` : 'Job log of the connection job';
+              links.push(link);
+            });
+            return links;
+          },
+        },
+      ),
+    ];
+  }
+
+  dispose(): void {
+    this.channel?.dispose();
+    this.finished.dispose();
+  }
+}
