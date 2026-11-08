@@ -19,6 +19,7 @@ import { HostClient, HostState } from './host/client';
 import { IfsFsProvider } from './ifs/provider';
 import { IFS_SCHEME } from './ifs/uri';
 import { Transfers, registerTransferCommands } from './ifs/transfers';
+import { JobLogProvider } from './jobs/jobLog';
 import { MemberFsProvider } from './members/provider';
 import { MEMBER_SCHEME } from './members/uri';
 import { ConnectionsProvider } from './views/connections';
@@ -43,6 +44,7 @@ export interface ExtensionApi {
   readonly actions: ActionStore;
   readonly runner: ActionRunner;
   readonly diagnostics: CompileDiagnostics;
+  readonly jobLog: JobLogProvider;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -77,6 +79,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const actions = new ActionStore(context.extensionPath, store, sessions, output);
   const runner = new ActionRunner(store, sessions, actions, context.workspaceState, { objects, ifs });
   const diagnostics = new CompileDiagnostics();
+  const jobLog = new JobLogProvider(store, sessions);
 
   context.subscriptions.push(
     output,
@@ -108,6 +111,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerIfsFileCommands({ provider: ifs, view: ifsView, store, sessions }, ifsFs),
     ...runner.register(),
     ...diagnostics.register(),
+    ...jobLog.register(),
     runner.onDidRun((r) => diagnostics.apply(r)),
     ...registerTransferCommands({ provider: ifs, view: ifsView, store, sessions }, transfers, (f) => (ifsDrop.uploadDropped = f)),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
@@ -121,7 +125,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog };
 }
 
 export function deactivate(): void {

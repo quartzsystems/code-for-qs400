@@ -351,6 +351,18 @@
         "title": "Clear Compile Diagnostics",
         "category": "Code for QS/400",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "code-for-qs400.job.log",
+        "title": "Job Log",
+        "category": "Code for QS/400",
+        "icon": "$(output)"
+      },
+      {
+        "command": "code-for-qs400.job.logRefresh",
+        "title": "Refresh Job Log",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
       }
     ],
     "configuration": {
@@ -1013,6 +1025,10 @@
         {
           "command": "code-for-qs400.ifs.downloadFolder",
           "when": "false"
+        },
+        {
+          "command": "code-for-qs400.job.logRefresh",
+          "when": "resourceScheme == qs400joblog"
         }
       ],
       "editor/context": [
@@ -1031,6 +1047,11 @@
         {
           "command": "code-for-qs400.action.run",
           "when": "resourceScheme =~ /^qs400(mbr|ifs)$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.job.logRefresh",
+          "when": "resourceScheme == qs400joblog",
           "group": "navigation@1"
         }
       ]

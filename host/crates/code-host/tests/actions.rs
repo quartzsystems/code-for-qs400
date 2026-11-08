@@ -27,6 +27,8 @@ use host_rpc::{Context, Outbound, Registry, RpcError};
 use qap_client::proto::ops::command::{CheckReply, CommandReply, CommandText};
 use qap_client::proto::ops::connection::HelloReply;
 use qap_client::proto::ops::develop::CompileReply;
+use qap_client::proto::ops::jobs::{JobLog, JobLogEntries, JobLogEntry};
+use qap_client::proto::ops::messages::MessageType;
 use qap_client::proto::types::{Diagnostic, JobId, MemberName, ObjectName, Where};
 use qap_client::proto::{Envelope, Kind, Op, Service};
 use qap_client::{
@@ -56,6 +58,8 @@ struct Script {
     plans: Vec<(Op, Plan)>,
     /// Each request, in order, as a line.
     asked: Vec<String>,
+    /// The job log `JobLog` pages, when no plan answers it.
+    log: Vec<JobLogEntry>,
 }
 
 type Shared = Arc<Mutex<Script>>;
@@ -147,10 +151,32 @@ impl Canned {
                     "{op:?} {}",
                     env.body_as::<CommandText>().expect("a command").command
                 ),
+                Op::JobLog => {
+                    let r = env.body_as::<JobLog>().expect("a JobLog");
+                    format!(
+                        "JobLog {}/{}/{} {} {}",
+                        r.job.number, r.job.user, r.job.name, r.start, r.max
+                    )
+                }
                 _ => format!("{op:?}"),
             };
             s.asked.push(line);
-            s.next(op)
+            match s.next(op) {
+                None if op == Op::JobLog => {
+                    let r = env.body_as::<JobLog>().expect("a JobLog");
+                    let start = (r.start as usize).min(s.log.len());
+                    let end = (start + r.max as usize).min(s.log.len());
+                    Some(Plan::Now((
+                        Status::Ok,
+                        None,
+                        body(&JobLogEntries {
+                            total: s.log.len() as u32,
+                            entries: s.log[start..end].to_vec(),
+                        }),
+                    )))
+                }
+                p => p,
+            }
         };
         match plan {
             Some(Plan::Now(a)) => self.send(&env, a),
@@ -851,4 +877,124 @@ fn a_run_id_already_running_is_refused() {
     assert_eq!(e.code, host_rpc::codes::INVALID_PARAMS);
     h.call("action.cancel", json!({"run":"same"})).unwrap();
     assert_eq!(first.join().unwrap().unwrap()["status"], json!("Cancelled"));
+}
+
+// job.log
+
+fn entry(i: usize, m: ServerMessage, kind: MessageType) -> JobLogEntry {
+    JobLogEntry {
+        message: m,
+        kind,
+        sent: 1_762_560_000_000 + i as i64 * 1000,
+        from_program: "QAPCNN".into(),
+        to_program: "*EXT".into(),
+    }
+}
+
+#[test]
+fn job_log_of_the_connection_job_drained_whole_oldest_first() {
+    let h = Host::new();
+    let mut log: Vec<JobLogEntry> = (0..1203)
+        .map(|i| {
+            entry(
+                i,
+                message("CPC2206", 0, &format!("Message {i}."), ""),
+                MessageType::Completion,
+            )
+        })
+        .collect();
+    log[1201] = entry(1201, rns9310(), MessageType::Escape);
+    log[1202] = entry(
+        1202,
+        message("", 0, "An impromptu message.", ""),
+        MessageType::Informational,
+    );
+    h.script().log = log;
+    let out = h.call("job.log", json!({"name":"QSHQ400"})).unwrap();
+    assert_eq!(
+        h.asked(),
+        vec![
+            "JobLog 123456/QUSER/QAPCNN 0 500",
+            "JobLog 123456/QUSER/QAPCNN 500 500",
+            "JobLog 123456/QUSER/QAPCNN 1000 500",
+        ],
+        "the session's own job, in pages of 500 until the total"
+    );
+    assert_eq!(
+        out["job"],
+        json!({"number":"123456","user":"QUSER","name":"QAPCNN"})
+    );
+    let e = out["entries"].as_array().unwrap();
+    assert_eq!(e.len(), 1203);
+    assert_eq!(e[0]["text"], json!("Message 0."));
+    assert_eq!(
+        e[1201],
+        json!({
+            "sent": 1_762_560_000_000_i64 + 1_201_000,
+            "id":"RNS9310","severity":50,"kind":"escape",
+            "text":"Program ASSETS42 was not created in library CWELLMAN.",
+            "secondLevel":rns9310().help,
+            "fromProgram":"QAPCNN","toProgram":"*EXT"
+        })
+    );
+    assert!(e[1202].get("secondLevel").is_none());
+    assert_eq!(e[1202]["id"], json!(""));
+}
+
+#[test]
+fn job_log_of_a_job_named() {
+    let h = Host::new();
+    h.script().log = vec![entry(
+        0,
+        message("CPF1124", 0, "Job started.", ""),
+        MessageType::Informational,
+    )];
+    let out = h
+        .call(
+            "job.log",
+            json!({"name":"QSHQ400","job":{"number":"654321","user":"CWELLMAN","name":"ASSETS"}}),
+        )
+        .unwrap();
+    assert_eq!(h.asked(), vec!["JobLog 654321/CWELLMAN/ASSETS 0 500"]);
+    assert_eq!(out["job"]["number"], json!("654321"));
+}
+
+#[test]
+fn job_log_refused_is_the_server_message() {
+    let h = Host::new();
+    h.plan(
+        Op::JobLog,
+        Plan::Now((
+            Status::NotFound,
+            Some(message(
+                "CPF1321",
+                40,
+                "Job 654321/CWELLMAN/ASSETS not found.",
+                "Cause . . . . . :   The job has ended and has no job log.",
+            )),
+            Vec::new(),
+        )),
+    );
+    let e = h
+        .call(
+            "job.log",
+            json!({"name":"QSHQ400","job":{"number":"654321","user":"CWELLMAN","name":"ASSETS"}}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, codes::SERVER);
+    assert_eq!(e.message, "CPF1321: Job 654321/CWELLMAN/ASSETS not found.");
+    let data = e.data.unwrap();
+    assert_eq!(data["messageId"], json!("CPF1321"));
+    assert_eq!(
+        data["secondLevel"],
+        json!("Cause . . . . . :   The job has ended and has no job log.")
+    );
+}
+
+#[test]
+fn job_log_below_version_8_sends_nothing() {
+    let h = Host::at(Some(7));
+    let e = h.call("job.log", json!({"name":"QSHQ400"})).unwrap_err();
+    assert_eq!(e.code, codes::QAP_UNAVAILABLE);
+    assert!(h.asked().is_empty());
 }

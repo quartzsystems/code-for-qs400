@@ -448,6 +448,34 @@ export interface ActionOutcome {
   diagnostics: CompileDiagnostic[];
 }
 
+export interface JobLogParams {
+  /** The connection. */
+  name: string;
+  /** The job; absent for the connection's own. */
+  job?: SessionJob;
+}
+
+/** One message of a job log. */
+export interface JobLogEntry {
+  /** When it was sent, milliseconds since 1970-01-01 UTC. */
+  sent: number;
+  /** Empty for an impromptu message. */
+  id: string;
+  severity: number;
+  /** `informational`, `completion`, `diagnostic`, `escape` … */
+  kind: string;
+  text: string;
+  secondLevel?: string;
+  fromProgram: string;
+  toProgram: string;
+}
+
+/** Result of `job.log`: the whole log, oldest first. */
+export interface JobLogResult {
+  job: SessionJob;
+  entries: JobLogEntry[];
+}
+
 /** Requests the extension sends, by method name. */
 export interface HostMethods {
   'host.version': { params: undefined; result: HostVersionResult };
@@ -491,6 +519,7 @@ export interface HostMethods {
   /** Answered when the command ends, however long it runs: no request timeout. */
   'action.run': { params: ActionRunParams; result: ActionOutcome };
   'action.cancel': { params: ActionCancelParams; result: null };
+  'job.log': { params: JobLogParams; result: JobLogResult };
 }
 
 /** Notifications the host sends, by method name. */

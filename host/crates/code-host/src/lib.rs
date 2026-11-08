@@ -6,6 +6,7 @@
 
 pub mod actions;
 pub mod ifs;
+pub mod jobs;
 pub mod members;
 pub mod objects;
 pub mod session;
@@ -77,7 +78,7 @@ pub fn registry(outbound: &Outbound) -> Registry {
 }
 
 /// Every method, with `sessions` behind `session.*`, `libl.*`, `object.*`,
-/// `member.*`, `ifs.*` and `action.*`.
+/// `member.*`, `ifs.*`, `action.*` and `job.*`.
 pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     let mut r = Registry::new();
     session::register(&mut r, sessions);
@@ -85,6 +86,7 @@ pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     members::register(&mut r, sessions);
     ifs::register(&mut r, sessions);
     actions::register(&mut r, sessions);
+    jobs::register(&mut r, sessions);
     r.register("host.version", |_: NoParams, _: &Context| {
         Ok::<_, RpcError>(VersionResult {
             host: HOST_VERSION.to_owned(),
@@ -211,6 +213,7 @@ mod tests {
                 "ifs.resolve",
                 "ifs.upload",
                 "ifs.writeText",
+                "job.log",
                 "libl.get",
                 "libl.set",
                 "member.changeText",
