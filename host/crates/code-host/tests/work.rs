@@ -882,3 +882,321 @@ fn a_wait_ends_with_its_session() {
         .unwrap();
     assert_eq!(t.join().unwrap().unwrap(), json!(null));
 }
+
+// messages.*
+
+use qap_client::proto::ops::messages::{MessageType, Queue};
+
+fn own_messages(h: &Host) {
+    let mut s = h.script();
+    s.messages = vec![
+        (
+            Queue::Own,
+            queued(
+                0x1A0,
+                MessageType::Informational,
+                "Build finished.",
+                ENTERED,
+            ),
+        ),
+        (
+            Queue::Own,
+            queued(0x1A1, MessageType::Inquiry, "reply test", ENTERED + 1000),
+        ),
+        (
+            Queue::SystemOperator,
+            queued(
+                0x900,
+                MessageType::Inquiry,
+                "Printer PRT01 needs paper.",
+                ENTERED,
+            ),
+        ),
+    ];
+}
+
+#[test]
+fn list_drains_a_queue_newest_first_with_keys_as_hex() {
+    let h = Host::new();
+    own_messages(&h);
+    let out = h
+        .call(
+            "messages.list",
+            json!({"name":"QSHQ400","queue":"own","newestFirst":true}),
+        )
+        .unwrap();
+    let m = out.as_array().unwrap();
+    assert_eq!(m.len(), 2);
+    assert_eq!(
+        m[0],
+        json!({
+            "key":"000001A1","id":"","kind":"inquiry","severity":99,"text":"reply test",
+            "sent":ENTERED + 1000,"fromUser":"CWELLMAN",
+            "fromJob":{"number":"100200","user":"CWELLMAN","name":"QPADEV0001"},"needsReply":true
+        })
+    );
+    assert_eq!(m[1]["key"], json!("000001A0"));
+    assert_eq!(h.asked(), vec!["list_messages own newest_first=true 0 500"]);
+    h.call(
+        "messages.list",
+        json!({"name":"QSHQ400","queue":{"library":"QGPL","queue":"TEAMQ"}}),
+    )
+    .unwrap();
+    assert_eq!(
+        h.asked(),
+        vec!["list_messages QGPL/TEAMQ newest_first=false 0 500"]
+    );
+}
+
+#[test]
+fn list_pages_through_a_long_queue() {
+    let h = Host::new();
+    h.script().messages = (0..1203)
+        .map(|i| {
+            (
+                Queue::SystemOperator,
+                queued(i + 1, MessageType::Informational, "x", ENTERED + i as i64),
+            )
+        })
+        .collect();
+    let out = h
+        .call(
+            "messages.list",
+            json!({"name":"QSHQ400","queue":"sysopr","newestFirst":true}),
+        )
+        .unwrap();
+    assert_eq!(out.as_array().unwrap().len(), 1203);
+    assert_eq!(out[0]["key"], json!("000004B3"));
+    assert_eq!(h.asked().len(), 3);
+}
+
+#[test]
+fn reply_sends_the_key_and_the_reply_as_typed() {
+    let h = Host::new();
+    own_messages(&h);
+    h.call(
+        "messages.reply",
+        json!({"name":"QSHQ400","queue":"own","key":"000001a1","reply":"OK"}),
+    )
+    .unwrap();
+    assert_eq!(h.asked(), vec!["reply_message own 000001A1 \"OK\""]);
+    // An empty reply is the message's default, as the spec has it.
+    h.call(
+        "messages.reply",
+        json!({"name":"QSHQ400","queue":"own","key":"000001A1","reply":""}),
+    )
+    .unwrap();
+    assert_eq!(h.asked(), vec!["reply_message own 000001A1 \"\""]);
+    let e = h
+        .call(
+            "messages.reply",
+            json!({"name":"QSHQ400","queue":"own","key":"1A1","reply":"OK"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, -32602);
+    assert!(h.asked().is_empty());
+}
+
+#[test]
+fn a_reply_already_answered_is_the_servers_cpf2422() {
+    let h = Host::new();
+    h.refuse(
+        "reply_message",
+        Status::InvalidRequest,
+        message(
+            "CPF2422",
+            40,
+            "Message key not valid for reply.",
+            "Cause . . . . . :   The message is not an inquiry message waiting for a reply.",
+        ),
+    );
+    let e = h
+        .call(
+            "messages.reply",
+            json!({"name":"QSHQ400","queue":"own","key":"000001A1","reply":"OK"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, -32010);
+    assert_eq!(e.data.unwrap()["messageId"], json!("CPF2422"));
+}
+
+#[test]
+fn remove_is_all_or_none_of_the_keys() {
+    let h = Host::new();
+    own_messages(&h);
+    h.call(
+        "messages.remove",
+        json!({"name":"QSHQ400","queue":"own","keys":["000001A0","000001A1"]}),
+    )
+    .unwrap();
+    assert_eq!(h.asked(), vec!["remove_messages own 000001A0,000001A1"]);
+    for keys in [json!([]), json!(["000001A0", "zz"])] {
+        let e = h
+            .call(
+                "messages.remove",
+                json!({"name":"QSHQ400","queue":"own","keys":keys}),
+            )
+            .unwrap_err();
+        assert_eq!(e.code, -32602);
+    }
+    assert!(h.asked().is_empty());
+}
+
+#[test]
+fn send_answers_an_inquirys_key() {
+    let h = Host::new();
+    h.script().sent_key = Some(0x1A2u32.to_be_bytes());
+    let out = h
+        .call(
+            "messages.send",
+            json!({"name":"QSHQ400","to":{"profile":"CWELLMAN"},"text":"reply test","inquiry":true}),
+        )
+        .unwrap();
+    assert_eq!(out, json!({"key":"000001A2"}));
+    h.script().sent_key = None;
+    let out = h
+        .call(
+            "messages.send",
+            json!({"name":"QSHQ400","to":{"queue":"sysopr"},"text":"hello"}),
+        )
+        .unwrap();
+    assert_eq!(out, json!({}));
+    assert_eq!(
+        h.asked(),
+        vec![
+            "send_message user CWELLMAN \"reply test\" inquiry=true",
+            "send_message queue sysopr \"hello\" inquiry=false",
+        ]
+    );
+}
+
+#[test]
+fn send_to_a_profile_with_no_queue_yet_is_cpf2403() {
+    let h = Host::new();
+    h.refuse(
+        "send_message",
+        Status::NotFound,
+        message(
+            "CPF2403",
+            40,
+            "Message queue NEWUSER in QUSRSYS not found.",
+            "",
+        ),
+    );
+    let e = h
+        .call(
+            "messages.send",
+            json!({"name":"QSHQ400","to":{"profile":"NEWUSER"},"text":"hi"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.data.unwrap()["messageId"], json!("CPF2403"));
+}
+
+#[test]
+fn can_read_is_false_for_not_authorized_only() {
+    let h = Host::new();
+    assert_eq!(
+        h.call(
+            "messages.canRead",
+            json!({"name":"QSHQ400","queue":"sysopr"})
+        )
+        .unwrap(),
+        json!({"ok":true})
+    );
+    h.refuse(
+        "may_read_queue",
+        Status::NotAuthorized,
+        message("CPF9802", 40, "Not authorized to object QSYSOPR.", ""),
+    );
+    assert_eq!(
+        h.call(
+            "messages.canRead",
+            json!({"name":"QSHQ400","queue":"sysopr"})
+        )
+        .unwrap(),
+        json!({"ok":false})
+    );
+    h.refuse(
+        "may_read_queue",
+        Status::NotFound,
+        message("CPF2403", 40, "Message queue X in QGPL not found.", ""),
+    );
+    let e = h
+        .call(
+            "messages.canRead",
+            json!({"name":"QSHQ400","queue":{"library":"QGPL","queue":"X"}}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, -32010);
+}
+
+#[test]
+fn messages_arrived_is_forwarded_from_the_watch() {
+    let h = Host::new();
+    h.call("messages.watch", json!({"name":"QSHQ400","queue":"own"}))
+        .unwrap();
+    assert_eq!(h.asked(), vec!["watch Queue(Own)"]);
+    h.notes();
+    let mut m = queued(0x1A2, MessageType::Inquiry, "reply test", ENTERED);
+    m.from_user = "CWELLMAN".into();
+    h.report(vec![
+        WatchEvent::Arrived {
+            queue: Queue::Own,
+            message: m,
+            caught_up: false,
+        },
+        WatchEvent::CaughtUp {
+            queue: Queue::Own,
+            count: 0,
+        },
+        WatchEvent::Arrived {
+            queue: Queue::Own,
+            message: queued(0x1A3, MessageType::Informational, "Job ended.", ENTERED),
+            caught_up: true,
+        },
+    ]);
+    let notes: Vec<_> = h
+        .notes()
+        .into_iter()
+        .filter(|(m, _)| m == "messages.arrived")
+        .collect();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].1["name"], json!("QSHQ400"));
+    assert_eq!(notes[0].1["queue"], json!("own"));
+    assert_eq!(notes[0].1["caughtUp"], json!(false));
+    assert_eq!(notes[0].1["message"]["key"], json!("000001A2"));
+    assert_eq!(notes[0].1["message"]["needsReply"], json!(true));
+    assert_eq!(notes[1].1["caughtUp"], json!(true));
+    h.call("messages.unwatch", json!({"name":"QSHQ400","queue":"own"}))
+        .unwrap();
+    assert_eq!(h.asked(), vec!["unwatch Queue(Own)"]);
+}
+
+#[test]
+fn a_watch_the_server_refuses_is_its_message() {
+    let h = Host::new();
+    h.refuse(
+        "watch",
+        Status::NotAuthorized,
+        message("CPF9802", 40, "Not authorized to object QSYSOPR.", ""),
+    );
+    let e = h
+        .call("messages.watch", json!({"name":"QSHQ400","queue":"sysopr"}))
+        .unwrap_err();
+    assert_eq!(e.code, -32010);
+    assert_eq!(e.data.unwrap()["messageId"], json!("CPF9802"));
+}
+
+#[test]
+fn messages_below_version_6_send_nothing() {
+    let h = Host::at(Some(5));
+    for (m, p) in [
+        ("messages.list", json!({"name":"QSHQ400","queue":"own"})),
+        ("messages.canRead", json!({"name":"QSHQ400","queue":"own"})),
+        ("messages.watch", json!({"name":"QSHQ400","queue":"own"})),
+    ] {
+        let e = h.call(m, p).unwrap_err();
+        assert_eq!((e.code, e.data.unwrap()), (-32001, json!({"version":5})));
+    }
+    assert!(h.asked().is_empty());
+}

@@ -27,6 +27,7 @@
     "onView:code-for-qs400.sql",
     "onView:code-for-qs400.jobs",
     "onView:code-for-qs400.spool",
+    "onView:code-for-qs400.messages",
     "onFileSystem:qs400ifs",
     "workspaceContains:.vscode/actions.json",
     "onLanguage:qs400-rpgle",
@@ -71,6 +72,10 @@
         {
           "id": "code-for-qs400.spool",
           "name": "Spooled files"
+        },
+        {
+          "id": "code-for-qs400.messages",
+          "name": "Messages"
         }
       ]
     },
@@ -610,6 +615,54 @@
         "title": "Refresh Spooled File",
         "category": "Code for QS/400",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.messages.refresh",
+        "title": "Refresh Messages",
+        "category": "Code for QS/400",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "code-for-qs400.messages.reply",
+        "title": "Reply…",
+        "category": "Code for QS/400",
+        "icon": "$(reply)"
+      },
+      {
+        "command": "code-for-qs400.messages.remove",
+        "title": "Remove Message",
+        "category": "Code for QS/400",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "code-for-qs400.messages.copyText",
+        "title": "Copy Text",
+        "category": "Code for QS/400",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "code-for-qs400.messages.send",
+        "title": "Send Message…",
+        "category": "Code for QS/400",
+        "icon": "$(send)"
+      },
+      {
+        "command": "code-for-qs400.messages.removeAnswered",
+        "title": "Remove All Answered",
+        "category": "Code for QS/400",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "code-for-qs400.messages.addQueue",
+        "title": "Add Message Queue…",
+        "category": "Code for QS/400",
+        "icon": "$(add)"
+      },
+      {
+        "command": "code-for-qs400.messages.removeQueue",
+        "title": "Remove Message Queue from View",
+        "category": "Code for QS/400",
+        "icon": "$(close)"
       }
     ],
     "configuration": {
@@ -836,6 +889,21 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "Refresh the **Jobs** view every 30 seconds while it is shown."
+        },
+        "code-for-qs400.messages.notify": {
+          "type": "string",
+          "enum": [
+            "inquiries",
+            "all",
+            "none"
+          ],
+          "enumDescriptions": [
+            "A notification for each inquiry that waits for a reply, with Reply and Show.",
+            "A notification for every message that arrives on your own queue.",
+            "No notifications; the Messages view's badge still counts."
+          ],
+          "default": "inquiries",
+          "markdownDescription": "Which messages arriving on your own message queue show a notification. Every arrival counts on the **Messages** view's badge."
         }
       }
     },
@@ -926,6 +994,21 @@
           "command": "code-for-qs400.spool.refresh",
           "when": "view == code-for-qs400.spool",
           "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.messages.send",
+          "when": "view == code-for-qs400.messages",
+          "group": "navigation@1"
+        },
+        {
+          "command": "code-for-qs400.messages.addQueue",
+          "when": "view == code-for-qs400.messages",
+          "group": "navigation@2"
+        },
+        {
+          "command": "code-for-qs400.messages.refresh",
+          "when": "view == code-for-qs400.messages",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -1333,6 +1416,46 @@
           "command": "code-for-qs400.spool.refresh",
           "when": "view == code-for-qs400.spool && viewItem =~ /^spool\\.(mine|queues|queue|job)$/",
           "group": "9_refresh@1"
+        },
+        {
+          "command": "code-for-qs400.messages.reply",
+          "when": "view == code-for-qs400.messages && viewItem == messages.message.waiting",
+          "group": "inline"
+        },
+        {
+          "command": "code-for-qs400.messages.reply",
+          "when": "view == code-for-qs400.messages && viewItem == messages.message.waiting",
+          "group": "1_reply@1"
+        },
+        {
+          "command": "code-for-qs400.messages.copyText",
+          "when": "view == code-for-qs400.messages && viewItem =~ /^messages\\.message/",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "code-for-qs400.messages.remove",
+          "when": "view == code-for-qs400.messages && viewItem =~ /^messages\\.message/",
+          "group": "3_remove@1"
+        },
+        {
+          "command": "code-for-qs400.messages.send",
+          "when": "view == code-for-qs400.messages && viewItem =~ /^messages\\.queue\\./",
+          "group": "1_send@1"
+        },
+        {
+          "command": "code-for-qs400.messages.removeAnswered",
+          "when": "view == code-for-qs400.messages && viewItem =~ /^messages\\.queue\\./",
+          "group": "2_remove@1"
+        },
+        {
+          "command": "code-for-qs400.messages.removeQueue",
+          "when": "view == code-for-qs400.messages && viewItem == messages.queue.named",
+          "group": "2_remove@2"
+        },
+        {
+          "command": "code-for-qs400.messages.refresh",
+          "when": "view == code-for-qs400.messages && viewItem =~ /^messages\\.queue\\./",
+          "group": "9_refresh@1"
         }
       ],
       "commandPalette": [
@@ -1555,6 +1678,26 @@
         {
           "command": "code-for-qs400.spool.viewerRefresh",
           "when": "resourceScheme == qs400spl"
+        },
+        {
+          "command": "code-for-qs400.messages.reply",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.messages.remove",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.messages.copyText",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.messages.removeAnswered",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.messages.removeQueue",
+          "when": "false"
         }
       ],
       "editor/context": [

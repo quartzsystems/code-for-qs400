@@ -129,6 +129,7 @@ export class HostClient implements vscode.Disposable {
   private readonly sqlProgressEmitter = new vscode.EventEmitter<HostNotifications['sql.progress']>();
   private readonly spoolChangedEmitter = new vscode.EventEmitter<HostNotifications['spool.changed']>();
   private readonly spoolProgressEmitter = new vscode.EventEmitter<HostNotifications['spool.progress']>();
+  private readonly messageEmitter = new vscode.EventEmitter<HostNotifications['messages.arrived']>();
 
   /** Fires on every state change. */
   readonly onDidChangeState = this.stateEmitter.event;
@@ -148,6 +149,8 @@ export class HostClient implements vscode.Disposable {
   readonly onDidChangeSpool = this.spoolChangedEmitter.event;
   /** `spool.progress` of a download. */
   readonly onDidSpoolProgress = this.spoolProgressEmitter.event;
+  /** `messages.arrived`: a message on a watched queue. */
+  readonly onDidArriveMessage = this.messageEmitter.event;
 
   constructor(
     private readonly extensionPath: string,
@@ -248,6 +251,7 @@ export class HostClient implements vscode.Disposable {
     this.sqlProgressEmitter.dispose();
     this.spoolChangedEmitter.dispose();
     this.spoolProgressEmitter.dispose();
+    this.messageEmitter.dispose();
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -370,6 +374,10 @@ export class HostClient implements vscode.Disposable {
     }
     if (method === 'spool.progress') {
       this.spoolProgressEmitter.fire(params as HostNotifications['spool.progress']);
+      return;
+    }
+    if (method === 'messages.arrived') {
+      this.messageEmitter.fire(params as HostNotifications['messages.arrived']);
       return;
     }
     this.output.debug(`unhandled notification ${method}`);

@@ -83,7 +83,7 @@ pub fn registry(outbound: &Outbound) -> Registry {
 }
 
 /// Every method, with `sessions` behind `session.*`, `libl.*`, `object.*`,
-/// `member.*`, `ifs.*`, `action.*`, `job.*`, `jobs.*`, `spool.*` and `sql.*`.
+/// `member.*`, `ifs.*`, `action.*`, `job.*`, `jobs.*`, `spool.*`, `messages.*` and `sql.*`.
 pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     let mut r = Registry::new();
     session::register(&mut r, sessions);
@@ -94,6 +94,7 @@ pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     jobs::register(&mut r, sessions);
     let watches = watches::Watches::new(sessions);
     spool::register(&mut r, sessions, &watches);
+    messages::register(&mut r, sessions, &watches);
     sql::register(&mut r, sessions);
     r.register("host.version", |_: NoParams, _: &Context| {
         Ok::<_, RpcError>(VersionResult {
@@ -238,6 +239,13 @@ mod tests {
                 "member.rename",
                 "member.unlock",
                 "member.write",
+                "messages.canRead",
+                "messages.list",
+                "messages.remove",
+                "messages.reply",
+                "messages.send",
+                "messages.unwatch",
+                "messages.watch",
                 "object.libraries",
                 "object.list",
                 "object.properties",

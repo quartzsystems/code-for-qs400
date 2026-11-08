@@ -30,6 +30,7 @@ import { SqlNode, SqlProvider, registerSqlViewCommands } from './views/sql';
 import { JobNode, JobsProvider, registerJobsViewCommands } from './views/jobs';
 import { SpoolNode, SpoolProvider, nodeRef, registerSpoolViewCommands } from './views/spool';
 import { SpoolViewer } from './spool/viewer';
+import { MessageNode, MessagesProvider, registerMessagesViewCommands } from './views/messages';
 import { LanguageServers } from './languages/client';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -72,6 +73,8 @@ export interface ExtensionApi {
   readonly spool: SpoolProvider;
   readonly spoolView: vscode.TreeView<SpoolNode>;
   readonly viewer: SpoolViewer;
+  readonly messages: MessagesProvider;
+  readonly messagesView: vscode.TreeView<MessageNode>;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -135,6 +138,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const spool = new SpoolProvider(store, sessions, context.workspaceState, host);
   const spoolView = vscode.window.createTreeView('code-for-qs400.spool', { treeDataProvider: spool, showCollapseAll: true });
   const viewer = new SpoolViewer(store, sessions, spool);
+  const messages = new MessagesProvider(store, sessions, context.workspaceState, host);
+  const messagesView = vscode.window.createTreeView('code-for-qs400.messages', { treeDataProvider: messages, showCollapseAll: true });
 
   context.subscriptions.push(
     output,
@@ -190,6 +195,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     spool.attach(spoolView),
     ...registerSpoolViewCommands(spool, spoolView, sessions, host, (arg) => nodeRef(arg) ?? viewer.refOf(arg)),
     ...viewer.register(),
+    messages,
+    messagesView,
+    messages.attach(messagesView),
+    ...registerMessagesViewCommands(messages, sessions),
     // A session signed on again: includes it could not read may be there now.
     sessions.onDidChange((st) => {
       if (st?.state === 'connected') {
@@ -208,7 +217,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView };
 }
 
 export function deactivate(): void {

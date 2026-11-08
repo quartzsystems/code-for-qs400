@@ -615,6 +615,41 @@ export const SpoolErrorCodes = {
   Cancelled: -32040,
 } as const;
 
+/** A message queue: the signed-on profile's own, `QSYSOPR`, or one by name. */
+export type MessageQueue = 'own' | 'sysopr' | { library: string; queue: string };
+
+/** A message on a queue: the spec's `QueuedMessage`, its key 8 hexadecimal characters. */
+export interface QueuedMessage {
+  key: string;
+  /** Empty for an impromptu message. */
+  id: string;
+  kind: MessageType;
+  severity: number;
+  text: string;
+  secondLevel?: string;
+  sent: number;
+  fromUser: string;
+  fromJob: SessionJob;
+  /** An inquiry waiting for its reply. */
+  needsReply: boolean;
+  /** An inquiry's or a sender's copy's reply, once it has one. */
+  reply?: string;
+  /** A reply's: the key of the message it answers on the same queue. */
+  answers?: string;
+}
+
+/** Where `messages.send` sends. */
+export type MessageRecipient = { profile: string } | { queue: MessageQueue };
+
+/** `messages.arrived`: a message on a watched queue, reported once. */
+export interface MessageArrived {
+  name: string;
+  queue: MessageQueue;
+  message: QueuedMessage;
+  /** Found by a catch-up after a resume or a sign-on. */
+  caughtUp: boolean;
+}
+
 /** Requests the extension sends, by method name. */
 /** `sql.*`'s commit level: the spec's `CommitLevel` (`*NONE`, `*CHG`, `*CS`, `*ALL`, `*RR`). */
 export type SqlCommit = 'none' | 'readUncommitted' | 'readCommitted' | 'repeatableRead' | 'serializable';
@@ -837,6 +872,13 @@ export interface HostMethods {
   'spool.watch': { params: { name: string; target: SpoolTarget }; result: null };
   'spool.unwatch': { params: { name: string; target: SpoolTarget }; result: null };
   /** Waits for one of the job's files, up to `timeoutMs` (10 minutes): no request timeout. */
+  'messages.list': { params: { name: string; queue: MessageQueue; newestFirst: boolean }; result: QueuedMessage[] };
+  'messages.reply': { params: { name: string; queue: MessageQueue; key: string; reply: string }; result: null };
+  'messages.remove': { params: { name: string; queue: MessageQueue; keys: string[] }; result: null };
+  'messages.send': { params: { name: string; to: MessageRecipient; text: string; inquiry: boolean }; result: { key?: string } };
+  'messages.canRead': { params: { name: string; queue: MessageQueue }; result: { ok: boolean } };
+  'messages.watch': { params: { name: string; queue: MessageQueue }; result: null };
+  'messages.unwatch': { params: { name: string; queue: MessageQueue }; result: null };
   'spool.awaitFile': { params: { name: string; job: SessionJob; file?: string; timeoutMs?: number }; result: SpooledFile | null };
   'sql.options.get': { params: NameParams; result: SqlOptions };
   'sql.options.set': { params: SqlOptionsSetParams; result: SqlOptions };
@@ -869,6 +911,7 @@ export interface HostNotifications {
   'sql.progress': SqlProgress;
   'spool.changed': SpoolChanged;
   'spool.progress': SpoolProgress;
+  'messages.arrived': MessageArrived;
 }
 
 export type MethodName = keyof HostMethods;
