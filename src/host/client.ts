@@ -87,7 +87,17 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * Methods answered only when the work ends (a transfer), or that wait in the
  * connection job's lane, where the host bounds the wait itself: no timeout.
  */
-export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>(['ifs.download', 'ifs.upload', 'action.check', 'action.run']);
+export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>([
+  'ifs.download',
+  'ifs.upload',
+  'action.check',
+  'action.run',
+  'sql.run',
+  'sql.fetch',
+  'sql.commit',
+  'sql.rollback',
+  'sql.options.set',
+]);
 const SHUTDOWN_GRACE_MS = 2_000;
 
 /** File name of the host binary on this platform. */
@@ -111,6 +121,7 @@ export class HostClient implements vscode.Disposable {
   private readonly sessionEmitter = new vscode.EventEmitter<HostNotifications['session.changed']>();
   private readonly progressEmitter = new vscode.EventEmitter<HostNotifications['ifs.progress']>();
   private readonly transferEmitter = new vscode.EventEmitter<HostNotifications['ifs.transferEnded']>();
+  private readonly sqlLostEmitter = new vscode.EventEmitter<HostNotifications['sql.lost']>();
 
   /** Fires on every state change. */
   readonly onDidChangeState = this.stateEmitter.event;
@@ -122,6 +133,8 @@ export class HostClient implements vscode.Disposable {
   readonly onDidProgress = this.progressEmitter.event;
   /** Fires for each `ifs.transferEnded` notification. */
   readonly onDidEndTransfer = this.transferEmitter.event;
+  /** Fires for each `sql.lost` notification. */
+  readonly onDidLoseSql = this.sqlLostEmitter.event;
 
   constructor(
     private readonly extensionPath: string,
@@ -218,6 +231,7 @@ export class HostClient implements vscode.Disposable {
     this.sessionEmitter.dispose();
     this.progressEmitter.dispose();
     this.transferEmitter.dispose();
+    this.sqlLostEmitter.dispose();
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -324,6 +338,10 @@ export class HostClient implements vscode.Disposable {
     }
     if (method === 'ifs.transferEnded') {
       this.transferEmitter.fire(params as HostNotifications['ifs.transferEnded']);
+      return;
+    }
+    if (method === 'sql.lost') {
+      this.sqlLostEmitter.fire(params as HostNotifications['sql.lost']);
       return;
     }
     this.output.debug(`unhandled notification ${method}`);

@@ -32,7 +32,9 @@
 //! [`Sessions::ifs`], for `crate::ifs`. `Command` (version 2), `Develop`'s
 //! `Compile` and `Jobs`' `JobLog` (version 8) are reached through
 //! [`Backend::command`] and [`Sessions::command`], for `crate::actions`
-//! and `crate::jobs`.
+//! and `crate::jobs`. `Sql` (version 4, the catalog's routines and
+//! indexes 8) is reached through [`Backend::sql`] and [`Sessions::sql`],
+//! for `crate::sql`, which keeps each session's own attached connection.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -94,6 +96,10 @@ pub const QAP_IFS: u16 = 5;
 
 /// The version `Command` (`RunCommand`, `CheckCommand`) needs.
 pub const QAP_COMMAND: u16 = 2;
+
+/// The version `Sql` needs: statements, cursors and `ListSchemas` to
+/// `ListColumns`. `ListRoutines` and `ListIndexes` need [`QAP_DEVELOP`].
+pub const QAP_SQL: u16 = 4;
 
 /// How often the watcher looks at the sessions without being woken.
 const WATCH_EVERY: Duration = Duration::from_secs(5);
@@ -246,6 +252,12 @@ pub trait Backend: Send {
     /// `Command`, `Develop`'s `Compile` and `Jobs`' `JobLog` on this
     /// connection.
     fn command(&mut self) -> &mut dyn CommandBackend;
+    /// The `Sql` catalog on this connection, and attaching a connection of
+    /// its own for statements. `None` for a backend without them (the
+    /// tests of the other services).
+    fn sql(&mut self) -> Option<&mut dyn crate::sql::SqlBackend> {
+        None
+    }
 }
 
 /// The lane's commands and the job log as an object, for a [`Backend`]
@@ -560,6 +572,10 @@ impl Backend for QapBackend {
     fn command(&mut self) -> &mut dyn CommandBackend {
         &mut self.client
     }
+
+    fn sql(&mut self) -> Option<&mut dyn crate::sql::SqlBackend> {
+        Some(&mut self.client)
+    }
 }
 
 /// Trust for `tls`: the platform's store, plus `caFile` when given. The
@@ -704,6 +720,9 @@ pub struct Session {
     job: Option<JobDto>,
     /// The status last sent as `session.changed`.
     sent: Option<StatusDto>,
+    /// Counts sign-ons: what was attached to an earlier one (an SQL
+    /// connection) belongs to a session token that is gone.
+    epoch: u64,
 }
 
 impl Session {
@@ -720,6 +739,7 @@ impl Session {
             system: None,
             job: None,
             sent: None,
+            epoch: 0,
         }
     }
 
@@ -756,6 +776,7 @@ impl Session {
         self.system = Some(system);
         self.job = job;
         self.expired = false;
+        self.epoch += 1;
         Ok(())
     }
 
@@ -783,6 +804,10 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Called with a session's name after it was closed: disconnected, or
+/// replaced by a new sign-on.
+pub type CloseHook = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Every session of this host.
 pub struct Sessions {
     map: Mutex<BTreeMap<String, Arc<Mutex<Session>>>>,
@@ -790,6 +815,7 @@ pub struct Sessions {
     outbound: Outbound,
     wake_tx: Mutex<Sender<()>>,
     wake_rx: Mutex<Option<Receiver<()>>>,
+    closed: Mutex<Vec<CloseHook>>,
 }
 
 impl Sessions {
@@ -801,7 +827,26 @@ impl Sessions {
             outbound,
             wake_tx: Mutex::new(tx),
             wake_rx: Mutex::new(Some(rx)),
+            closed: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Calls `f` with a session's name each time it is closed, after the
+    /// session is let go.
+    pub fn on_close(&self, f: CloseHook) {
+        lock(&self.closed).push(f);
+    }
+
+    fn closed(&self, name: &str) {
+        let hooks: Vec<CloseHook> = lock(&self.closed).clone();
+        for h in hooks {
+            h(name);
+        }
+    }
+
+    /// The outbound stream notifications go on.
+    pub fn outbound(&self) -> &Outbound {
+        &self.outbound
     }
 
     /// Starts the watcher thread. It ends when the sessions are dropped.
@@ -907,12 +952,19 @@ impl Sessions {
             }
             return Err(needs_password(None));
         };
+        let was_signed_on = matches!(s.state, State::Connected | State::Stale);
         if let Some(problem) = s.close() {
             log(
                 &self.outbound,
                 LogLevel::Warn,
                 format!("{}: sign-off before connecting again: {problem}", s.name),
             );
+        }
+        if was_signed_on {
+            // What was attached to the old session goes before the new one.
+            drop(s);
+            self.closed(&p.name);
+            s = lock(&sess);
         }
         s.endpoint = Some(endpoint.clone());
         s.user = user;
@@ -989,6 +1041,8 @@ impl Sessions {
             );
         }
         self.publish(&mut s);
+        drop(s);
+        self.closed(name);
     }
 
     pub fn status(&self, name: &str) -> StatusDto {
@@ -1116,6 +1170,39 @@ impl Sessions {
         f: impl FnOnce(&mut dyn CommandBackend) -> Result<T, Error>,
     ) -> Result<T, RpcError> {
         self.with_backend(name, needed, |b| f(b.command()))
+    }
+
+    /// Runs `f` on the session's `Sql` catalog and attach (version 4, or
+    /// `needed`), as [`Sessions::with_backend`] does; with the session's
+    /// sign-on epoch, which changes when it signs on anew.
+    pub fn sql<T>(
+        &self,
+        name: &str,
+        needed: u16,
+        f: impl FnOnce(&mut dyn crate::sql::SqlBackend) -> Result<T, Error>,
+    ) -> Result<(T, u64), RpcError> {
+        let mut epoch = 0;
+        let out = self.with_backend(name, needed, |b| match b.sql() {
+            Some(q) => f(q),
+            None => Err(Error::Unsupported {
+                op: Op::Prepare,
+                needs: needed,
+                has: 0,
+            }),
+        });
+        if out.is_ok()
+            && let Some(sess) = self.get(name)
+        {
+            epoch = lock(&sess).epoch;
+        }
+        out.map(|t| (t, epoch))
+    }
+
+    /// The session's sign-on epoch while it is signed on.
+    pub fn epoch(&self, name: &str) -> Option<u64> {
+        let sess = self.get(name)?;
+        let s = lock(&sess);
+        matches!(s.state, State::Connected | State::Stale).then_some(s.epoch)
     }
 
     /// `libl.get`: `GetLibraryList`, in the connection job's lane.

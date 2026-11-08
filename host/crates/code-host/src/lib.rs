@@ -10,6 +10,7 @@ pub mod jobs;
 pub mod members;
 pub mod objects;
 pub mod session;
+pub mod sql;
 
 use std::sync::Arc;
 
@@ -78,7 +79,7 @@ pub fn registry(outbound: &Outbound) -> Registry {
 }
 
 /// Every method, with `sessions` behind `session.*`, `libl.*`, `object.*`,
-/// `member.*`, `ifs.*`, `action.*` and `job.*`.
+/// `member.*`, `ifs.*`, `action.*`, `job.*` and `sql.*`.
 pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     let mut r = Registry::new();
     session::register(&mut r, sessions);
@@ -87,6 +88,7 @@ pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     ifs::register(&mut r, sessions);
     actions::register(&mut r, sessions);
     jobs::register(&mut r, sessions);
+    sql::register(&mut r, sessions);
     r.register("host.version", |_: NoParams, _: &Context| {
         Ok::<_, RpcError>(VersionResult {
             host: HOST_VERSION.to_owned(),
@@ -233,6 +235,14 @@ mod tests {
                 "session.disconnect",
                 "session.list",
                 "session.status",
+                "sql.cancel",
+                "sql.close",
+                "sql.commit",
+                "sql.fetch",
+                "sql.options.get",
+                "sql.options.set",
+                "sql.rollback",
+                "sql.run",
             ]
         );
     }

@@ -477,6 +477,116 @@ export interface JobLogResult {
 }
 
 /** Requests the extension sends, by method name. */
+/** `sql.*`'s commit level: the spec's `CommitLevel` (`*NONE`, `*CHG`, `*CS`, `*ALL`, `*RR`). */
+export type SqlCommit = 'none' | 'readUncommitted' | 'readCommitted' | 'repeatableRead' | 'serializable';
+/** `sql.*`'s naming: `schema.table` or `library/file`. */
+export type SqlNaming = 'sql' | 'system';
+
+/** The session's SQL options, and whether changes wait for a commit or rollback. */
+export interface SqlOptions {
+  commit: SqlCommit;
+  naming: SqlNaming;
+  defaultSchema?: string;
+  uncommitted: boolean;
+}
+
+export interface SqlOptionsSetParams {
+  name: string;
+  commit?: SqlCommit;
+  naming?: SqlNaming;
+  /** Empty: none. */
+  defaultSchema?: string;
+}
+
+/** A result column or a table's column, as the spec's `Column`. */
+export interface SqlColumn {
+  name: string;
+  label: string;
+  /** The SQL type (`DECIMAL`). */
+  type: string;
+  length: number;
+  scale: number;
+  nullable: boolean;
+  /** 65535 for binary character data, 0 for non-character. */
+  ccsid: number;
+}
+
+/**
+ * One value as the host sends it: `null`; a number (an integer within
+ * 53 bits); a string (a larger integer, a decimal or float's exact text,
+ * text, an ISO date, time or timestamp); a boolean; or `{ hex }` bytes.
+ */
+export type SqlCell = null | number | string | boolean | { hex: string };
+
+export interface SqlRunParams {
+  name: string;
+  sql: string;
+  maxRows?: number;
+  /** The ID `sql.cancel` names. */
+  run?: string;
+}
+
+export interface SqlRunResult {
+  kind: 'query' | 'update' | 'ddl';
+  columns?: SqlColumn[];
+  rows?: SqlCell[][];
+  /** The cursor has no more rows. */
+  end?: boolean;
+  /** The result's ID for `sql.fetch`, `sql.export` and `sql.close`. */
+  cursor?: number;
+  updated?: number;
+  /** Cancelled while it ran. */
+  cancelled?: boolean;
+  messages: CommandMessage[];
+  uncommitted: boolean;
+}
+
+export interface SqlFetchParams {
+  name: string;
+  cursor: number;
+  maxRows?: number;
+}
+
+export interface SqlFetchResult {
+  rows: SqlCell[][];
+  end: boolean;
+}
+
+export interface SqlCursorParams {
+  name: string;
+  cursor: number;
+}
+
+export interface SqlCancelParams {
+  name?: string;
+  /** A run's or an export's ID. */
+  id: string;
+}
+
+/** `sql.lost`: uncommitted changes and open cursors went with the connection. */
+export interface SqlLost {
+  name: string;
+  message: string;
+}
+
+/** `data` of an SQL error, beside a `ServerMessageData`'s fields. */
+export interface SqlErrorData {
+  status?: string;
+  messageId?: string;
+  text?: string;
+  secondLevel?: string;
+  sqlstate?: string;
+  sqlcode?: number;
+  /** The failing parameter row. */
+  row?: number;
+}
+
+/** Error codes of `sql.*` (host/crates/code-host/src/sql/mod.rs). */
+export const SqlErrorCodes = {
+  /** No result has that cursor, or its rows are no longer held. */
+  NoResult: -32031,
+} as const;
+
 export interface HostMethods {
   'host.version': { params: undefined; result: HostVersionResult };
   'host.ping': { params: PingParams; result: PingParams };
@@ -520,6 +630,18 @@ export interface HostMethods {
   'action.run': { params: ActionRunParams; result: ActionOutcome };
   'action.cancel': { params: ActionCancelParams; result: null };
   'job.log': { params: JobLogParams; result: JobLogResult };
+  'sql.options.get': { params: NameParams; result: SqlOptions };
+  'sql.options.set': { params: SqlOptionsSetParams; result: SqlOptions };
+  /** Waits in the connection job's lane until the statement ends: no request timeout. */
+  'sql.run': { params: SqlRunParams; result: SqlRunResult };
+  /** Waits in the lane: no request timeout. */
+  'sql.fetch': { params: SqlFetchParams; result: SqlFetchResult };
+  'sql.close': { params: SqlCursorParams; result: null };
+  /** Waits in the lane: no request timeout. */
+  'sql.commit': { params: NameParams; result: SqlOptions };
+  /** Waits in the lane: no request timeout. */
+  'sql.rollback': { params: NameParams; result: SqlOptions };
+  'sql.cancel': { params: SqlCancelParams; result: null };
 }
 
 /** Notifications the host sends, by method name. */
@@ -528,6 +650,7 @@ export interface HostNotifications {
   'session.changed': SessionStatus;
   'ifs.progress': IfsProgress;
   'ifs.transferEnded': IfsTransferEnded;
+  'sql.lost': SqlLost;
 }
 
 export type MethodName = keyof HostMethods;
