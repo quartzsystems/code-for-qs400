@@ -32,10 +32,12 @@ export interface DeployResult {
   failed: string[];
   /** Records of local files removed since the last deploy: their members or files stay. */
   leftOnSystem: string[];
+  /** Why a file was skipped, failed or left in conflict: its output line, by local path. */
+  reasons: Record<string, string>;
 }
 
 function emptyResult(): DeployResult {
-  return { deployed: [], unchanged: [], skipped: [], conflicts: [], failed: [], leftOnSystem: [] };
+  return { deployed: [], unchanged: [], skipped: [], conflicts: [], failed: [], leftOnSystem: [], reasons: {} };
 }
 
 /** The output's last line. */
@@ -234,6 +236,7 @@ export class Deployer {
       const m = memberOf(c.rel);
       if (!isMember(m)) {
         result.skipped.push(c.rel);
+        result.reasons[c.rel] = `${c.rel} is ${m.reason}`;
         this.deps.append(`Skipped  ${c.rel}: ${m.reason}`);
         continue;
       }
@@ -247,6 +250,7 @@ export class Deployer {
     const ok = members.filter((c) => {
       if (clashing.has(c.rel)) {
         result.failed.push(c.rel);
+        result.reasons[c.rel] = 'another local file names the same member';
         return false;
       }
       return true;
@@ -270,11 +274,15 @@ export class Deployer {
     } catch (err) {
       this.deps.append(`Failed   ${library}: ${errorText(err, connection)}`);
       result.failed.push(...ok.map((c) => c.rel));
+      for (const c of ok) {
+        result.reasons[c.rel] = `the source files of ${library} could not be listed: ${errorText(err, connection)}`;
+      }
       this.deps.ui.error(errorText(err, connection));
       return;
     }
     const missing = dirs.filter((d) => !existing.has(d));
-    const unmade = new Set<string>();
+    /** Source files not made, with why. */
+    const unmade = new Map<string, string>();
     if (missing.length > 0) {
       if (await this.deps.ui.createSourceFiles(library, missing)) {
         for (const f of missing) {
@@ -284,24 +292,27 @@ export class Deployer {
             if (o.status === 'Ok') {
               this.deps.append(`Created  ${library}/${f}: ${command}`);
             } else {
-              unmade.add(f);
-              this.deps.append(`Failed   ${command}: ${o.escape ? `${o.escape.id}: ${o.escape.text}` : o.status}`);
+              const why = o.escape ? `${o.escape.id}: ${o.escape.text}` : o.status;
+              unmade.set(f, `${command} failed: ${why}`);
+              this.deps.append(`Failed   ${command}: ${why}`);
             }
           } catch (err) {
-            unmade.add(f);
+            unmade.set(f, `${command} failed: ${errorText(err, connection)}`);
             this.deps.append(`Failed   ${command}: ${errorText(err, connection)}`);
           }
         }
       } else {
         for (const f of missing) {
-          unmade.add(f);
+          unmade.set(f, `source file ${library}/${f} is not there and was not created`);
           this.deps.append(`Skipped  ${library}/${f}: the source file is not there and was not created`);
         }
       }
     }
     const go = ok.filter((c) => {
-      if (unmade.has((c.member as LocalMember).file)) {
+      const why = unmade.get((c.member as LocalMember).file);
+      if (why !== undefined) {
         result.skipped.push(c.rel);
+        result.reasons[c.rel] = why;
         return false;
       }
       return true;
@@ -347,6 +358,7 @@ export class Deployer {
           }
           if (token.isCancellationRequested) {
             result.skipped.push(c.rel);
+            result.reasons[c.rel] = 'the deploy was cancelled';
             continue;
           }
           progress.report({ message: `${c.rel} (${i + 1} of ${go.length})`, increment: 100 / go.length });
@@ -381,10 +393,12 @@ export class Deployer {
             if (isConflict(err)) {
               // Changed on the system between the check and the write.
               result.conflicts.push(c.rel);
+              result.reasons[c.rel] = `${label} changed on the system; not written`;
               conflictSet.add(c.rel);
               this.deps.append(`Conflict ${c.rel}: ${label} changed on the system; not written`);
             } else {
               result.failed.push(c.rel);
+              result.reasons[c.rel] = errorText(err, connection);
               this.deps.append(`Failed   ${c.rel} → ${label}: ${errorText(err, connection)}`);
             }
           }
@@ -434,6 +448,7 @@ export class Deployer {
         continue;
       }
       result.conflicts.push(x.c.rel);
+      result.reasons[x.c.rel] = `${x.label} changed on the system since the last deploy or pull, and ${choice === 'pull' ? 'was pulled instead' : 'was skipped'}`;
       if (choice === 'pull') {
         try {
           await this.puller.pullOne(p, x.c.rel, { keepHash: true, state });
@@ -464,6 +479,7 @@ export class Deployer {
       } catch (err) {
         if (serverMessage(err)?.status !== 'NotFound') {
           result.failed.push(c.rel);
+          result.reasons[c.rel] = errorText(err, connection);
           this.deps.append(`Failed   ${c.rel} → ${path}: ${errorText(err, connection)}`);
           continue;
         }
@@ -504,6 +520,7 @@ export class Deployer {
             }
             if (token.isCancellationRequested) {
               result.skipped.push(x.c.rel);
+              result.reasons[x.c.rel] = 'the deploy was cancelled';
               continue;
             }
             const recorded = baseline(x.c.record, x.at);
@@ -527,13 +544,16 @@ export class Deployer {
             } catch (err) {
               if (isConflict(err)) {
                 result.conflicts.push(x.c.rel);
+                result.reasons[x.c.rel] = `${x.at} changed on the system; not written`;
                 conflictSet.add(x.c.rel);
                 this.deps.append(`Conflict ${x.c.rel}: ${x.at} changed on the system; not written`);
               } else if (err instanceof HostRpcError && err.code === IfsErrorCodes.Cancelled) {
                 result.skipped.push(x.c.rel);
+                result.reasons[x.c.rel] = 'the upload was cancelled';
                 this.deps.append(`Cancelled ${x.c.rel} → ${x.at}: the system has part of it; deploy again to replace it`);
               } else {
                 result.failed.push(x.c.rel);
+                result.reasons[x.c.rel] = errorText(err, connection);
                 this.deps.append(`Failed   ${x.c.rel} → ${x.at}: ${errorText(err, connection)}`);
               }
             }

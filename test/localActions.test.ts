@@ -32,6 +32,7 @@ suite('Projects: why a local file was not deployed', () => {
     conflicts: [],
     failed: [],
     leftOnSystem: [],
+    reasons: {} as Record<string, string>,
     ...over,
   });
   test('deployed, or the reason in words', () => {
@@ -42,6 +43,8 @@ suite('Projects: why a local file was not deployed', () => {
     assert.match(deployOutcome(r({ skipped: [rel] }), rel) as string, /skipped/);
     assert.match(deployOutcome(r({}), rel) as string, /not one of the project/);
     assert.match(deployOutcome(undefined, rel) as string, /did not start/);
+    const why = { reasons: { [rel]: 'CRTSRCPF FILE(INVMGR/QSQLSRC) RCDLEN(112) failed: CPF5813: File QSQLSRC in library INVMGR already exists.' } };
+    assert.equal(deployOutcome({ ...r({ skipped: [rel] }), ...why }, rel), why.reasons[rel], 'the recorded reason, word for word');
   });
 });
 

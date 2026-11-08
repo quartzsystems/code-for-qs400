@@ -20,6 +20,9 @@ export function deployOutcome(r: DeployResult | undefined, rel: string): true | 
   if (r.deployed.includes(rel)) {
     return true;
   }
+  if (r.reasons[rel]) {
+    return r.reasons[rel];
+  }
   if (r.conflicts.includes(rel)) {
     return 'it changed on the system since the last deploy or pull, and was not overwritten';
   }
