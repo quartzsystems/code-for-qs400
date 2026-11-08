@@ -16,6 +16,9 @@ This guide grows with each phase and ships with the marketplace listing.
 - [Connections and sign-on](connections.md): adding a connection, where the
   password is kept, the Connections view, the status bar, reconnecting and
   the library list.
+- [Objects and source members](objects-and-members.md): the Objects view,
+  filters, opening and saving members, sequence numbers and dates, and the
+  member commands.
 
 ## Troubleshooting
 

@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.0.0-pre · Phase 2 · object browser and members
+
+- **Objects** view: the active connection's library list libraries (the
+  current library first), their object types, objects with attribute and
+  text, and the members of source files. Refresh on every node.
+- **Properties** on an object: a read-only `LIBRARY/OBJECT (*TYPE)`
+  document of the system's `name: value` lines, in Courier.
+- Filters per connection (`code-for-qs400.connections[].filters`) with
+  **Add**, **Edit** and **Remove Filter**; a filter opens straight to its
+  objects.
+- Members open as editor tabs on `qs400mbr://`, with the extension and
+  language from the source type. Languages `qs400-rpgle`, `qs400-cl`,
+  `qs400-dds`, `qs400-sql` and `qs400-cmd` are registered, without
+  grammars yet.
+- An open member is held as `STRSEU` holds it and let go when its last tab
+  closes. A member another job holds shows the system's `CPF1002` and
+  opens read-only; **Open Read-Only** opens without holding it. Locks are
+  taken again after a reconnect, and any lost are reported.
+- Saving keeps the sequence numbers and dates of unchanged lines, numbers
+  inserted lines between their neighbours, and renumbers (with a
+  notification) only when no gap is left or on **Renumber Member**. An
+  unchanged member is not written. Dates are the system's.
+- Member commands: **New Member**, **Copy**, **Rename**, **Delete** (asks
+  by name), **Change Text** and **Compare with…** another member or a
+  local file.
+- Library list editing now works: `libl.get` and `libl.set` use QAP
+  version 8's `GetLibraryList` and `SetLibraryList`.
+- Host: `object.libraries`, `object.list`, `object.properties`,
+  `member.list`, `member.read`, `member.write`, `member.unlock`,
+  `member.create`, `member.copy`, `member.rename`, `member.delete` and
+  `member.changeText`, over `qap-client`'s `Develop` service. Every
+  connection asks for QAP version 9; a server below 8 gets
+  `-32001 QAP version 8 not available on this server`. About now shows
+  `QAP v9`.
+
 ## 1.0.0-pre · Phase 1 · connections and sign-on
 
 - Saved connections in `code-for-qs400.connections` (user settings only),

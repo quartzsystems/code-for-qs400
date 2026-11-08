@@ -12,13 +12,16 @@ decided along the way.
 | `src/host/client.ts` | Spawns `qs400-code-host`, frames and correlates JSON-RPC, supervises the process |
 | `src/host/protocol.ts` | Types for every host method and notification; keep in step with `host/crates/code-host/src/lib.rs` |
 | `src/connections/` | The connections setting (`config.ts`, no `vscode` import), store and secrets, prompts, the session manager, the library list |
-| `src/views/`, `src/commands/` | Tree views, the status bar item and commands |
+| `src/objects/filters.ts` | Object filters, generic names and object types (no `vscode` import) |
+| `src/members/` | `types.ts` (the one source type → extension and language table), `uri.ts` (`qs400mbr` URIs), `provider.ts` (the file system provider, locks, the cache), `diff.ts` (the save diff; no `vscode` import) |
+| `src/views/`, `src/commands/` | The Connections and Objects trees, the status bar item and commands |
 | `syntaxes/`, `languages/` | Grammars and language configuration (Phase 5) |
 | `schemas/actions.json` | Schema for `.vscode/actions.json` (Phase 4) |
 | `media/` | Activity bar icon (placeholder until Phase 10) |
 | `bin/` | Host binary for the current platform, copied in by `scripts/package.sh`; gitignored |
 | `host/` | Cargo workspace: `crates/host-rpc` (framing, registry, error codes; no QS/400 knowledge) and `crates/code-host` (the `qs400-code-host` binary) |
-| `host/crates/code-host/src/session.rs` | Sessions: one per connection name, the state machine, `session.*` and `libl.*` |
+| `host/crates/code-host/src/session.rs` | Sessions: one per connection name, the state machine, `session.*` and `libl.*`, and `DevelopBackend` |
+| `host/crates/code-host/src/objects.rs`, `members.rs` | `object.*` and `member.*`, thin over `qap-client`'s `Develop`; `members::codec` is the one place `seq` and `date` convert |
 | `test/` | Extension tests, run inside VS Code; `live.test.ts` against a real system |
 | `scripts/` | `check-naming.sh`, `package.sh`, `package.ps1` |
 | `.github/workflows/ci.yml` | CI for Windows and Linux |
@@ -67,10 +70,15 @@ sign-on sends. One test drives the real `qap-client` against a closed
 port. `host_rpc::Context::new` exists so these tests can act between
 calls.
 
+`host/crates/code-host/tests/develop.rs` does the same for `object.*` and
+`member.*`: a fake `DevelopBackend` serves canned `qap-client` replies and
+refusals (`CPF1002`, `TCP1A5A`, `TCP1A61`, `CPF9801`, `CPF7306`,
+`TCP1A62`), which must come back unchanged with their second-level text.
+
 ### Live tests
 
-`test/live.test.ts` runs the Phase 1 exit test's connect and library list
-steps against a real system. It is skipped unless these are set:
+`test/live.test.ts` runs the automatic steps of the Phase 1 and Phase 2
+exit tests against a real system. It is skipped unless these are set:
 
 | Variable | Meaning |
 | --- | --- |
@@ -79,6 +87,10 @@ steps against a real system. It is skipped unless these are set:
 | `QS400_TEST_CA_FILE` | PEM file to trust (CI writes `QS400_TEST_CA_PEM` to one). |
 | `QS400_TEST_LIBRARY` | Library to add and move to the top. Default `QGPL`. |
 | `QS400_TEST_CURLIB` | Library to set as current. Default the user profile. |
+| `QS400_TEST_SRCPF` | Source file Phase 2 makes and removes its `QS4*` members in. Default `HLINV/QTMPSRC`; it must exist. |
+| `QS400_TEST_SOURCE` | Member Phase 2 copies (and only reads). Default `HLINV/QRPGLESRC(ASSETS)`. |
+
+In CI the last two are repository variables, not secrets.
 
 It never signs on with a wrong password, so it cannot count against
 `QMAXSIGN`. When the server has no `library_list` service, the library list
@@ -340,6 +352,100 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
    session back, checks the version, makes the call and reports a drop
    the call met; it adds no ordering (the host already answers one request
    at a time, Phase 0 decision 6).
+5. **Where `qap-client`'s types and the prompt's method shapes differ, the
+   prompt's JSON shapes were followed** and the host renames at the JSON
+   layer: `Library.name` is `library`, `ObjectEntry.name` is `object`,
+   `MemberEntry.name` and `srctype` are `member` and `type`,
+   `MemberData.srctype` is `type`, `SourceRecord.data` is `text`. The types
+   the prompt left open follow the spec: `changed` and `created` are QAP's
+   i64 milliseconds since 1970 as JSON numbers, `size` is bytes. Error
+   `data` keeps Phase 1's `status` beside `messageId`, `text` and
+   `secondLevel`.
+6. **Names and patterns are passed as typed.** The host trims `library`,
+   `file`, `member`, `object` and `type` and refuses an empty one with
+   `-32602`; it checks no name syntax and folds no case (the server
+   does). An absent `pattern` is sent empty, which the spec defines as
+   `*ALL`. `seq` must be one to four digits, a point and two digits;
+   `date` six digits; anything else is `-32602` before anything is sent.
+7. **Paging** asks for pages of 500 from `start` 0 until the entries reach
+   `total`, or a page comes back empty (the list shrank while it was read).
+8. **Objects view roots are the current library and the user part**, the
+   same libraries the Library list node shows (Phase 1 decision 16); the
+   system part is not shown. The list comes from the Library list node's
+   controller, which reads it once per session job; Refresh on the view's
+   title bar reads it again. A session whose `system.qap` is below 8 gets
+   the one line without a call; the host's `-32001` gives the same line.
+9. **Properties** is a `TextDocumentContentProvider` on the `qs400obj`
+   scheme, read-only by being one. The document's path is
+   `/<LIB>/<OBJ> (<TYPE>)`; VS Code shows the last segment on the tab, so
+   the tab reads `ASSETS (*PGM)` with `HLINV` beside it, a constraint of
+   the editor. The Courier style is a language of its own,
+   `qs400-properties`, with `editor.fontFamily` set through
+   `configurationDefaults`.
+10. **Filter values are upper-cased** when entered through the input
+    boxes, and `library` may be `*LIBL`, `*CURLIB`, `*USRLIBL` or `*ALL`,
+    which `ListObjects` accepts. A filter whose fields do not parse is
+    skipped and reported in the host output channel, like a connection.
+11. **The first `stat` of a member reads it.** VS Code takes an editor's
+    read-only state from `stat`, before `readFile`, so the lock attempt
+    (and the `CPF1002` fallback to `lock: false`) happens there. The cache
+    is per URI string.
+12. **Open Read-Only uses the same URI with the query `readonly`**: it never
+    locks, `stat` reports it read-only, and Compare opens both sides that
+    way so comparing holds nothing. It is a separate document from the
+    writable one.
+13. **The language is set when the document opens**
+    (`setTextDocumentLanguage`, from the type the server sent, else from
+    the extension). The languages register no file extensions, so local
+    `.cmd`, `.cl` or `.pf` files are left to whatever claims them; Phase 5
+    decides. A member with no source type gets the extension `mbr`.
+14. **Unlock follows tabs**, `window.tabGroups.onDidChangeTabs`: when no
+    tab (text or diff) shows the URI any more, `member.unlock`. Document
+    close events are not used, because setting a document's language
+    closes and reopens it.
+15. **The URI's connection is matched without case.** `Uri.toString`
+    lower-cases the authority, so a restored editor may name `qshq400`;
+    the provider maps it to the saved connection's name, as everywhere
+    else (Phase 1 decision 11).
+16. **The save diff.** Common prefix and suffix are trimmed, then a
+    standard LCS table over the middle (over 8 million cells, the middle
+    counts as changed line by line). In each run of differences, deleted
+    and inserted lines are paired in order: a pair is a changed line and
+    keeps the old `seq` and `date`. `k` unpaired inserts between `lo` and
+    `hi` get `lo + floor((hi − lo)·j/(k+1))`; after the last line they step
+    by `0001.00` while that fits, as SEU numbers. Trailing blanks are
+    removed and CRLF is read as LF before comparing, so neither counts as
+    a change.
+17. **A renumbered write still sends the old `seq` of every kept and
+    changed line**, because the spec keeps a record's date when its data
+    equals the member's record with the same `seq` "before renumbering".
+    Inserted lines carry `0000.00`, which no record has, so the server
+    dates them today. This is the one place the extension relies on the
+    server accepting non-ascending numbers with `renumber`.
+18. **After a successful write** the lock is taken again with `member.read`
+    (`lock: true`), which also refreshes the cache. If another job took
+    the member in between, it turns read-only and a warning says so.
+19. **Reconnect.** When a session goes `stale` or `disconnected` its locks
+    are counted as gone. When it is `connected` again after any other
+    state, each writable member open on it is read again with
+    `lock: true`. Members that could not be locked turn read-only and
+    members whose lines changed meanwhile are both reported, in one
+    notification each.
+20. **Renumber Member saves a dirty document first**, then sends its text
+    with `renumber: true`, so what is renumbered is what the editor shows.
+21. **Member commands.** Rename and Delete first release this window's own
+    lock on the member. Copy asks before replacing when the server says
+    `Exists`. New Member opens the member it made. Saving into a member
+    that does not exist (Save As) creates it with the type the extension
+    names.
+22. **Prompt and spec differences.** The prompt has the live test create
+    and delete `HLINV/QTMPSRC`; no host method creates a file in this phase
+    (and `createDirectory` refuses by design), so the test makes and
+    removes only its own `QS4*` members in it, and the file must exist.
+    The exit test's `CPYSRCF` is `member.copy`, which the spec defines as
+    `CPYSRCF` of one member.
+23. **Deferred:** "Open in 5250" on objects and members, as the prompt
+    says.
 
 ## Phase 0 exit test
 

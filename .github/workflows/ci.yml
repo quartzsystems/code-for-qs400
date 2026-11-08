@@ -104,6 +104,8 @@ jobs:
       QS400_TEST_PASSWORD: ${{ secrets.QS400_TEST_PASSWORD }}
       QS400_TEST_PORT: ${{ secrets.QS400_TEST_PORT }}
       QS400_TEST_CA_PEM: ${{ secrets.QS400_TEST_CA_PEM }}
+      QS400_TEST_SRCPF: ${{ vars.QS400_TEST_SRCPF }}
+      QS400_TEST_SOURCE: ${{ vars.QS400_TEST_SOURCE }}
     defaults:
       run:
         shell: bash
