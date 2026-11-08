@@ -5,7 +5,7 @@ remote operation goes through `qs400-code-host`, a Rust sidecar bundled
 with the extension that speaks QAP, the Quartz Access Protocol shared with
 QS/400 Access.
 
-**Status: 1.0.0 pre-release, Phase 8.** Saved connections, sign-on over
+**Status: 1.0.0 pre-release, Phase 9.** Saved connections, sign-on over
 QAP, a session per connection with its status, session job and library
 list; the Objects view with filters; source members opened, locked and
 saved with their sequence numbers and dates; the IFS view, with stream
@@ -25,13 +25,18 @@ Messages view with inquiry replies, sends and notifications; and local
 projects: a folder of source under git mapped to a library or an IFS
 directory by `qs400project.json`, pulled from the system, deployed back
 with the changed files only and their sequence numbers kept, conflicts
-caught, actions run on local files, and the Project view.
+caught, actions run on local files, and the Project view; and debugging
+in VS Code's own debugger: a program called, attached to, or stopped by a
+service entry point when a 5250 user calls it, with breakpoints and
+conditions, stepping, the call stack, variables, watch and hover in the
+source it was compiled from.
 See [docs/connections.md](docs/connections.md),
 [docs/objects-and-members.md](docs/objects-and-members.md),
 [docs/ifs.md](docs/ifs.md), [docs/actions.md](docs/actions.md),
 [docs/languages.md](docs/languages.md), [docs/sql.md](docs/sql.md) and
-[docs/jobs-spool-messages.md](docs/jobs-spool-messages.md) and
-[docs/projects.md](docs/projects.md).
+[docs/jobs-spool-messages.md](docs/jobs-spool-messages.md),
+[docs/projects.md](docs/projects.md) and
+[docs/debugging.md](docs/debugging.md).
 
 ## Requirements
 
@@ -83,6 +88,7 @@ code --install-extension code-for-qs400-linux-x64.vsix   # Linux
 | Deploy Changed, Deploy All, Deploy Git-Changed, Deploy File | `code-for-qs400.deploy.changed`, `.all`, `.git`, `.file` |
 | Project: Refresh Project, Pull into Project, Pull from System, Diff with System, Open on System | `code-for-qs400.project.refresh`, `.pull`, `.pullFile`, `.diff`, `.openRemote` |
 | Messages: Refresh, Reply…, Remove, Copy Text, Send Message…, Remove All Answered, Add and Remove Message Queue | `code-for-qs400.messages.refresh`, `.reply`, `.remove`, `.copyText`, `.send`, `.removeAnswered`, `.addQueue`, `.removeQueue` |
+| Debug (Call), Debug (Service entry), Attach to Job… | `code-for-qs400.debug.call`, `.serviceEntry`, `.attach` |
 
 **About** asks the host for its version and shows, for example,
 `Code for QS/400 V1R0M0 · host 1.0.0 · QAP v9`.
@@ -121,7 +127,9 @@ qs400-code-host --version
 
 The language servers are the same binary, one per language per window:
 `qs400-code-host lsp rpgle|cl|dds|sql|cmd`, LSP over stdio. Their log is
-the **Code for QS/400 Languages** output channel.
+the **Code for QS/400 Languages** output channel. The debug adapter is
+`qs400-code-host dap`, one process per debug session, the Debug Adapter
+Protocol over stdio on a QAP connection of its own.
 
 ## Repository layout
 
@@ -149,6 +157,9 @@ package.json, src/      the extension (TypeScript, bundled by esbuild to dist/)
   src/views/sql.ts        the SQL tree
   src/views/jobs.ts, spool.ts, messages.ts  the Jobs, Spooled files and Messages trees
   src/views/project.ts    the Project tree and its status bar item
+  src/debug/              the qs400 debugger: the configuration and its CALL, the provider, the
+                          adapter process, qs400/debugSource, the statements document, the
+                          commands, the recompile and the status bar
   src/views/sessionStatusBar.ts  the active connection in the status bar
   src/commands/           About, connection, object, member and IFS commands
 syntaxes/, languages/   grammars and language configuration
@@ -167,6 +178,8 @@ host/                   Cargo workspace for the sidecar
                           queues, src/watches.rs the watches and their events,
                           src/codec.rs keys and job names, src/sql/ the SQL methods,
                           values and CSV, src/deploy.rs the deploy sequences
+  crates/dap              qs400-code-host dap: the debug adapter over QAP's Debug service
+                          (code-host's src/debug.rs is its connection)
   crates/lsp-common       what the language servers share: the loop, positions, includes, features
   crates/lsp-<lang>       one language server each (rpgle, cl, dds, sql, cmd) on its front end
   crates/severity         the one severity table, shared with the extension

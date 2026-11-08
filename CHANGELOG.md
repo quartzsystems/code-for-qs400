@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.0-pre · Phase 9 · debugging
+
+- RPG and CL programs debugged in VS Code's own debugger, the `qs400`
+  debug type, over QS/400's source debugger (QAP version 9's `Debug`
+  service). Each session signs on with a connection of its own, with the
+  editor session's library list, so a stopped program holds up nothing
+  else.
+- Three ways to start: **Call** a program in the session's own job with
+  its parameters quoted as CL needs; **Service entry**, which stops the
+  next job of the user that calls the program (a 5250 session waits at
+  its locked display); **Attach** to a running job by its qualified name.
+  `launch.json` snippets for each; the connection and program are filled
+  in from the window when left out.
+- Breakpoints, conditional ones included, set in the source the program
+  was compiled from and moved to the statement where they landed; Step
+  Over, Into and Out, Continue; the Call Stack as `PROGRAM › MODULE ›
+  PROCEDURE · stmt n`; Variables with data structures and arrays opening
+  to their parts; Watch, hover and the Debug Console with `EVAL`, `:x`
+  and `:c`. Pause is not offered: the system stops a job only at a
+  breakpoint or a step. Set Value appears only where the system's `Eval`
+  takes an assignment, which QS/400's does not at this release.
+- Frames open the local project file the member was deployed from, else
+  the member read-only, else the stream file; a module without a source
+  view stands on a read-only document of its statement numbers.
+- **Debug (Call)** and **Debug (Service entry)** on programs in the
+  Objects view, in a member's editor title and on project files (deployed,
+  and compiled when the program is older than the source); **Attach to
+  Job…** in the Jobs view; the debugged job in the status bar.
+- A program compiled `DBGVIEW(*NONE)` is refused with the system's
+  `CPF9C15` and **Recompile with DBGVIEW(*SOURCE)**, then **Start again**.
+- `qs400-code-host dap`, the debug adapter.
+  See [docs/debugging.md](docs/debugging.md).
+
 ## 1.0.0-pre · Phase 8 · local projects and deploy
 
 - `qs400project.json` maps a workspace folder to a library or an IFS

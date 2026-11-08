@@ -23,6 +23,7 @@ decided along the way.
 | `src/languages/` | `client.ts` (one language client per language, the include notifications), `includes.ts` (`qs400/fetchInclude` and `qs400/listMembers` through the host), `protocol.ts` (keep in step with `host/crates/lsp-common/src/protocol.rs`), `rpgColumns.ts` (the fixed-form columns; no `vscode` import), `fixedForm.ts` (the guides and the column in the status bar) |
 | `src/projects/` | `config.ts` (`qs400project.json` and the ignore globs), `layout.ts` (the `sourceFiles` layout, names and types both ways, the hash), `state.ts` (`.qs400/state.json` and each file's state), `model.ts` (the Project view's rows), none of which imports `vscode`; `store.ts` (the projects, validation, state on disk, the generator), `ui.ts` (the questions), `pull.ts`, `deploy.ts`, `git.ts` (the git extension's changes), `local.ts` (actions on local files), `includes.ts` (includes from the workspace), `commands.ts` |
 | `src/views/project.ts` | The Project tree, its commands and status bar item |
+| `src/debug/` | The `qs400` debugger: `config.ts` (the configuration, the CALL's quoting, the defaults, `DBGVIEW(*SOURCE)` forced; no `vscode` import), `debugging.ts` (the provider, the adapter factory, the `qs400/debugSource` answer, the tracker), `adapter.ts` (the adapter process, inline, with the sign-on put into `launch`), `source.ts` (where a module's source is), `statements.ts` (the `qs400dbg` document), `programs.ts`, `commands.ts` (the debug commands, Attach to Job…, the recompile), `statusBar.ts` |
 | `src/sql/` | `statements.ts` (the split and the statement under the cursor), `format.ts` (labels), `generate.ts` (the SQL the tree writes), none of which imports `vscode`; `resultsHtml.ts` (the results page; no `vscode` import), `session.ts` (each document's connection, the options, the status bar, Commit, Rollback, the disconnect question), `run.ts` (**Run Statement**, the Problems panel), `results.ts` (the **SQL results** panel), `export.ts` (Export CSV), `history.ts` |
 | `src/views/sql.ts` | The SQL tree and its commands |
 | `src/views/jobs.ts`, `spool.ts`, `messages.ts` | The Jobs, Spooled files and Messages trees, their watches, badges and commands |
@@ -39,6 +40,7 @@ decided along the way.
 | `host/crates/code-host/src/spool.rs`, `messages.rs`, `watches.rs`, `codec.rs` | `spool.*` and `messages.*` over `Client`'s `Spool` and `Messages` through `WorkBackend`; the watches the extension and the one-shot waits hold, and their events as notifications; `codec.rs` the one place keys, job names, queues and enum names convert |
 | `host/crates/code-host/src/deploy.rs` | `deploy.member` and `deploy.path`: the existing `member.*` and `ifs.*` calls in sequence behind a `Steps` trait, and `deploy::plan`, the save diff's rules in Rust |
 | `host/crates/code-host/src/sql/` | `sql.*` over one `SqlConnection` per session and the `Sql` catalog; `values.rs` is the one place a `SqlValue` becomes JSON or CSV text, `csv.rs` the CSV writer |
+| `host/crates/dap` | `qs400-code-host dap`: the Debug Adapter Protocol (`protocol.rs`, hand-written types) over `backend::DebugBackend` (the `Debug` service as an object-safe trait), the adapter itself in `adapter.rs`; `code-host`'s `src/debug.rs` is its `qap-client` connection |
 | `host/crates/lsp-common` | What the language servers share: the loop (`server.rs`), positions (`position.rs`), the URI's source (`uri.rs`), the include cache (`includes.rs`), the features (`features.rs`), the custom messages (`protocol.rs`) and a test client (`testing.rs`) |
 | `host/crates/lsp-rpgle`, `lsp-cl`, `lsp-dds`, `lsp-sql`, `lsp-cmd` | One `Language` each over its front end's `analyze`: options, folding, completion words |
 | `host/crates/severity` | `severity.json`, the one severity table, read by the servers and by `src/actions/severity.ts` |
@@ -143,10 +145,30 @@ messages use QS/400's IDs and texts (`SQL0104`, `SQL0551`, `SQL0752`,
 `SQL0803`, `SQL0952`). The same file tests `sql::values` and `sql::csv` at
 their edges.
 
+### Debug adapter tests
+
+`host/crates/dap/tests/` drive `dap::serve` over in-memory pipes with a
+DAP client (`tests/common/mod.rs`) and a canned `DebugBackend` that
+records every `Debug` call and sends the events a test asks for. The
+client answers `qs400/debugSource` as the extension would, from a table.
+`adapter.rs` covers launch, events and the stack; `stepping.rs`
+breakpoints, sources, stepping and terminate; `inspect.rs` scopes,
+variables, evaluate, the `setVariable` probe both ways and events while a
+`Stack` waits; `modes.rs` attach and service entry. The canned refusals
+use the IDs `docs/QAP.md` at `7f82a43f` names (`CPF9C15`, `TCP1A72`,
+`CPF3501`, `CPF3502`, `CPF3503`, `CPF3520`, `CPF9C59`, `CPD9CCC`,
+`CPF7E12`, `TCP1A75`). `code-host`'s `tests/process.rs` runs the real
+`qs400-code-host dap` through `initialize`, a launch that cannot connect,
+and `disconnect`.
+
 ### Live tests
 
-`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3, 4, 6, 7
-and 8 exit tests against a real system. Phase 8 makes the library
+`test/live.test.ts` runs the automatic steps of the Phase 1, 2, 3, 4, 6, 7,
+8 and 9 exit tests against a real system. Phase 9 compiles `ASSETS` (with
+`DBGVIEW(*SOURCE)`) and `NODEBUG` (with `DBGVIEW(*NONE)`) from
+`QS400_PROJECT_SOURCE/QRPGLESRC(ASSETS)` into `QS400_PROJECT_LIBRARY`,
+debugs them through the real adapter, and deletes the library; it needs a
+server at QAP version 9. Phase 8 makes the library
 `QS400_PROJECT_LIBRARY` with `CRTLIB`, pulls `QS400_PROJECT_SOURCE` into a
 temporary folder, deploys, compiles and makes a conflict there, and
 deletes the library with `DLTLIB`; its git steps need `git` on `PATH`. Phase 7 compiles its own member
@@ -1356,6 +1378,153 @@ Decisions 1 and 6 are superseded by Phase 2 decisions 1 and 2.
     member's `changed` the same way.
 24. **The activity bar icon** is now a Q on a terminal display
     (`media/qs400.svg`), chosen by the user from eight drawn options.
+
+## Decisions made in Phase 9
+
+1. **No new pins.** `qap-client` stays at `quartz-systems-access`
+   `90d9bba`, whose `debug.rs` has the `Debugger` trait, `DebugSession`
+   and `DebugEvent` the prompt names. "Service 11 `Debug`" (version 9) in
+   `docs/QAP.md` at `7f82a43f` matches the prompt's numbering. Its "as
+   built" notes decide two things the prompt left open, recorded below
+   (decisions 11 and 12).
+2. **Hand-written DAP types.** The `dap` crate on crates.io is published
+   only as `0.4.1-alpha1`, a pre-release, and would share the new crate's
+   name, so `host/crates/dap/src/protocol.rs` has serde types for what
+   the adapter reads and writes and nothing more. The framing is
+   `host-rpc`'s `Content-Length` framing, as the language servers'.
+3. **`DebugBackend`.** `Debugger` is a trait over `Requests`, whose
+   methods are generic, so it cannot be a trait object.
+   `dap::backend::DebugBackend` is the same ten operations, object-safe,
+   plus `JobInfo` (the `Own` thread's name), `SetLibraryList`, the `CALL`
+   (sent with `request_op(RunCommand)` and waited for in 50 ms steps so a
+   cancel can come between) and the sign-off. `code-host`'s
+   `src/debug.rs` implements it for `qap-client`'s `Client`, and its
+   `connector` signs on (with `session::trust_for`, so TLS is the editor's)
+   and refuses a server below version 9 before anything of the session is
+   sent. The refusal is the DAP error "QAP version 9 not available on this
+   server": the adapter is not JSON-RPC and there are no `debug.*` host
+   methods, so it carries no `-32001` code.
+4. **Where the password goes.** The prompt puts the sign-on in the
+   `launch` and `attach` arguments. A resolved debug configuration is
+   `vscode.debug.activeDebugSession.configuration`, which every extension
+   can read, so the password is not put in it. The extension runs the
+   adapter as an inline `DebugAdapter` (`src/debug/adapter.ts`) over the
+   host process's stdio, and adds `qs400` to the `launch` or `attach`
+   request's arguments as it writes them to the adapter, once. The
+   password is read, or asked for, in
+   `resolveDebugConfigurationWithSubstitutedVariables` (so a cancel
+   starts nothing) and kept by a key in the configuration until the
+   adapter is made. It is never on a command line.
+5. **The library list.** The adapter's job is a new sign-on with the
+   profile's library list, where a `CALL` or `*LIBL` would not find what
+   the editor's compiles and calls find. So the extension passes the
+   editor session's list as `libl.get` reads it, and the adapter sets it
+   with `SetLibraryList` (what `libl.set` sends) before `Start`. A list
+   the server refuses is reported in the Debug Console and the session
+   goes on.
+6. **`qs400/debugSource` is an event and a request.** DAP has no custom
+   requests from the adapter to the client. The adapter sends the event
+   `qs400/debugSource { id, program, module }`; the extension answers with
+   the request of the same name, `{ id, path, name }`, `path` null for "no
+   source". The adapter's reader thread takes the answer, so a worker
+   waiting for it inside `stackTrace` is not blocked; no answer in 5 s is
+   null. Each module with a `Source` view is asked about right after
+   `AddProgram`, so `setBreakpoints` knows which module a source path is;
+   a frame of a module not yet known is asked about then. Once per module
+   per session.
+7. **Where a module's source is.** `object.properties` of the `*MODULE`,
+   then of the `*PGM` (or `*SRVPGM`) when the module has the program's
+   name, since `CRTBNDRPG`'s module is temporary. The labels are the
+   server's (`Source file` as `LIB/FILE` or a path, `Source member`,
+   `Attribute`), from `work/qsjob/src/work/qap/develop.rs` at `7f82a43f`.
+   The local file comes from Phase 8's deploy map, then from a library
+   project whose target is the source library (its layout), since the map
+   is empty after a window reload (Phase 8 decision 17). A member opens
+   with `?readonly`; source paths are compared without case, query and
+   escapes, so a breakpoint set in the writable member's editor finds the
+   module too.
+8. **The synthetic document** is `qs400dbg:/LIB/PROGRAM/MODULE`: the
+   prompt's `PROGRAM/MODULE` with the library, since two libraries can
+   hold a program of one name. Line *n* reads `LIB/PROGRAM MODULE
+   statement n`, so a frame's statement is its line. It has 200 lines and
+   grows to the highest statement a stack has shown (a tracker reads the
+   `stackTrace` responses). A frame stands on it when its view is not
+   `Source` or its `line` is 0; a frame with neither line nor statement
+   has no source and is shown subtle. Breakpoints on it are refused with
+   the message to compile with `DBGVIEW(*SOURCE)`.
+9. **Frame names** are `PROGRAM › MODULE › PROCEDURE · stmt n`, the
+   prompt's name with the statement the exit test asks the Call Stack to
+   show; empty parts are left out.
+10. **Breakpoints.** All of a source's lines go in one `SetBreakpoints`,
+    each with its condition as typed. A `BreakpointSet` on another line
+    is answered at that line, which moves the breakpoint in the editor. A
+    refusal (`CPD9CCB`, `CPF9C59`) changes nothing on the server, so every
+    breakpoint of the request is answered unverified with the server's
+    text.
+11. **`setVariable` is hidden.** The probe is `Eval` of `NAME = NAME` on
+    the first variable without parts, at the first `variables` of a
+    session, which changes nothing where an assignment is taken. QS/400's
+    `eval_in` (`runtime/mi/src/debug.rs` at `7f82a43f`) looks the whole
+    text up as a name, so it answers `CPF7E12` and **Set Value** is not
+    shown. Had it succeeded, a `capabilities` event would turn it on.
+    `initialize` advertises `supportsSetVariable: false` either way, since
+    no session exists yet then.
+12. **`ProgramEnd` and `Exception`.** The spec's "as built" notes say this
+    build sends neither: an unhandled exception goes to the job's own
+    handling and a step past the end runs on. Both are mapped as the
+    prompt says and tested. A **Call** session ends when the `CALL`'s
+    reply comes: its messages, its escape message last, and `CALL
+    PGM(HLINV/ASSETS) ended: Ok` in the Debug Console, then `terminated`.
+    So the exit test's "ends with `ProgramEnd` in the Debug Console" reads
+    "ended: Ok" against this build.
+13. **A second session.** One debug session per connection is the
+    spec's rule, and every VS Code debug session has its own connection,
+    so two sessions run side by side; `TCP1A72` comes only from a second
+    `Start` on one connection, which the adapter never sends. Its mapping
+    (the server's text, nothing else sent) is tested with the mock. The
+    exit test's "start a second session: `TCP1A72`" therefore does not
+    happen as written; attaching to a job already serviced is the
+    server's `CPF3503`. This needs a decision if one session at a time is
+    wanted (see the Phase 9 exit test).
+14. **Terminate cancels before `End`.** `End` first would let a stopped
+    job run on to its program's end. `terminate`, and `disconnect` with
+    `terminateDebuggee` (true when absent), cancel the `CALL` (`CPF1907`)
+    and then send `End`, wait up to 2 s for the `CALL`'s reply, and sign
+    off. A service entry point is removed before `End`.
+15. **Service entry.** `Start(Own)`, the program added, the breakpoints,
+    then `SetServiceEntry` at `configurationDone`, so the breakpoints are
+    there when the job stops. No thread is listed until the first stop
+    binds the job that called. The adapter's event `qs400/thread {
+    threadId, job }` names each job as it becomes a thread, for the status
+    bar.
+16. **`programs`.** Each is tried as `*PGM`, then as `*SRVPGM` on
+    `NotFound`, and a refusal of one is reported in the Debug Console
+    without stopping the session. The launched program's refusal stops
+    it. **Attach** has no launched program: all of its programs are
+    `programs`.
+17. **`CPF9C15`.** The extension always sends `recompileOffer`, and the
+    adapter then answers the refusal with `showUser: false`, so VS Code
+    does not show it beside the extension's notification. The message ID
+    is in the error's `variables` (not its `format`, so nothing is
+    substituted). The recompile finds the source as decision 7 does (a
+    member made writable), runs the compile that applies to it (the one
+    last run on its kind when that is a compile, else the first compile
+    in merge order, never a batch one) with `DBGVIEW(*SOURCE)` forced into
+    the resolved command (`ActionRunner.run`'s new `rewrite`), and offers
+    **Start again** with the configuration as it was asked for.
+18. **Where the commands are.** On `*PGM` objects in the Objects view; in
+    a member's editor title when its program (Phase 4's `&LIBRARY`, the
+    current library) is found there by `object.list`, the context key
+    `code-for-qs400.debuggable`; on a library project's files in the
+    editor title and the Project view. A project file is deployed, then
+    compiled when its program is missing or its `changed` is before the
+    member's (`object.list` and `member.list` after the deploy). The
+    Objects view is now a `TreeView` so its selection can be a default
+    program.
+19. **The Debug Console** takes `EVAL NAME` as typed at `STRDBG` (the
+    `EVAL` is dropped), and `NAME:x`, `NAME:c` and `&NAME` are passed
+    through for the server. A hover that fails is not shown. **Pause** is
+    refused with a sentence saying a stop needs a breakpoint.
 
 ## Phase 0 exit test
 

@@ -39,6 +39,10 @@ This guide grows with each phase and ships with the marketplace listing.
   or an IFS directory, Pull, Deploy and its conflicts, actions on local
   files, includes from the workspace, the Project view and a git
   workflow.
+- [Debugging](debugging.md): Call, Service entry and Attach, what
+  `DBGVIEW` each program needs, breakpoints and conditions, stepping, the
+  Call Stack, Variables and the Debug Console, and what a display user
+  sees during a stop.
 
 ## Troubleshooting
 

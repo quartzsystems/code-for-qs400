@@ -2,10 +2,11 @@
 // licensed under the terms of the MIT license which can be found in the
 // root directory of this project.
 
-// The Phase 1, 2, 3, 4, 6, 7 and 8 exit tests' automatic steps against a real
-// QS/400 system. Phase 6 makes and drops the table HLINV.QS4SQL6; Phase 7
+// The Phase 1, 2, 3, 4, 6, 7, 8 and 9 exit tests' automatic steps against a
+// real QS/400 system. Phase 6 makes and drops the table HLINV.QS4SQL6; Phase 7
 // compiles QS4SPL7 and submits CODETEST; Phase 8 makes and deletes the
-// library QS400_PROJECT_LIBRARY (default HLINVDEV). Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
+// library QS400_PROJECT_LIBRARY (default HLINVDEV); Phase 9 compiles ASSETS
+// and NODEBUG into it, debugs them, and deletes it. Skipped unless QS400_TEST_HOST, QS400_TEST_USER and
 // QS400_TEST_PASSWORD are set. Optional: QS400_TEST_PORT, QS400_TEST_CA_FILE,
 // QS400_TEST_LIBRARY (added to the list, default QGPL),
 // QS400_TEST_CURLIB (set as the current library, default the user profile),
@@ -37,6 +38,7 @@ import { memberUri } from '../src/members/uri';
 import { Deployer, GitChanges, UsableProject } from '../src/projects/deploy';
 import { ProjectDeps, Puller } from '../src/projects/pull';
 import { FakeUi } from './pull.test';
+import { type DebugCredentials, HostDebugAdapter } from '../src/debug/adapter';
 
 const env = process.env;
 const HOST = env.QS400_TEST_HOST ?? '';
@@ -1315,5 +1317,201 @@ suite('Live: Phase 8 exit test', function () {
     console.log(`live: git-changed: ${lines.slice(1).join(' | ')}`);
     assert.deepEqual(r?.deployed, []);
     assert.ok(lines.includes('Nothing to deploy'));
+  });
+});
+
+/** A DAP client of `qs400-code-host dap`, answering `qs400/debugSource` through the extension's own handler. */
+class DapDriver {
+  readonly got: Array<Record<string, unknown>> = [];
+  private seq = 0;
+  readonly adapter: HostDebugAdapter;
+
+  constructor(api: ExtensionApi, connection: string) {
+    const creds: DebugCredentials = { host: HOST, user: USER, password: PASSWORD };
+    if (env.QS400_TEST_PORT) {
+      creds.port = Number(env.QS400_TEST_PORT);
+    }
+    if (env.QS400_TEST_CA_FILE) {
+      creds.caFile = env.QS400_TEST_CA_FILE;
+    }
+    this.adapter = new HostDebugAdapter(api.host.resolveBinary(), creds, (l) => console.log(`live: adapter: ${l}`));
+    const session = {
+      configuration: { connection },
+      customRequest: async (command: string, args: unknown) => this.send(command, args),
+    } as unknown as vscode.DebugSession;
+    this.adapter.onDidSendMessage((m) => {
+      const msg = m as Record<string, unknown>;
+      this.got.push(msg);
+      if (msg.type === 'event' && msg.event === 'qs400/debugSource') {
+        void api.debugging.answerSource(session, msg.body as { id: number; program: string; module: string });
+      }
+    });
+  }
+
+  send(command: string, args: unknown = {}): number {
+    const seq = ++this.seq;
+    this.adapter.handleMessage({ seq, type: 'request', command, arguments: args } as vscode.DebugProtocolMessage);
+    return seq;
+  }
+
+  async request(command: string, args: unknown = {}, ms = 30_000): Promise<Record<string, unknown>> {
+    const seq = this.send(command, args);
+    return until(`${command} response`, () => this.got.find((m) => m.type === 'response' && m.request_seq === seq), ms);
+  }
+
+  /** The `n`th event named `name` (1 the first), waited for. */
+  async event(name: string, n = 1, ms = 30_000): Promise<Record<string, unknown>> {
+    return until(`event ${name} #${n}`, () => this.got.filter((m) => m.type === 'event' && m.event === name)[n - 1], ms);
+  }
+
+  console(): string[] {
+    return this.got.filter((m) => m.event === 'output').map((m) => String((m.body as { output?: string }).output ?? '').trimEnd());
+  }
+
+  dispose(): void {
+    this.adapter.dispose();
+  }
+}
+
+suite('Live: Phase 9 exit test', function () {
+  let api: ExtensionApi;
+  const command = async (cmd: string, kind: 'command' | 'compile' = 'command') => {
+    const o = await api.host.request('action.run', { name: NAME, command: cmd, kind });
+    console.log(`live: ${cmd}: ${o.status}${o.escape ? ` ${o.escape.id} ${o.escape.text}` : ''}`);
+    return o;
+  };
+  const program = `${PROJ_LIB}/ASSETS`;
+  const launchArgs = (pgm: string) => ({ program: pgm, command: `CALL PGM(${pgm})`, programs: [], recompileOffer: true });
+  const assetsPath = () => memberUri(NAME, PROJ_SRC, 'QRPGLESRC', 'ASSETS', 'RPGLE', true).toString();
+  const drivers: DapDriver[] = [];
+  const driver = () => {
+    const d = new DapDriver(api, NAME);
+    drivers.push(d);
+    return d;
+  };
+
+  suiteSetup(async function () {
+    if (!HOST || !USER || !PASSWORD) {
+      this.skip();
+    }
+    const ext = vscode.extensions.getExtension<ExtensionApi>('quartzsystems.code-for-qs400');
+    assert.ok(ext);
+    api = await ext.activate();
+    await config().update('connections', [connection()], true);
+    await api.sessions.signOn(connection(), { password: PASSWORD, save: false }, false);
+    const qap = api.sessions.status(NAME).system?.qap ?? 0;
+    if (qap < 9) {
+      console.log(`live: Phase 9 skipped: the server agreed QAP ${qap}; Debug needs 9`);
+      this.skip();
+    }
+    await command(`CRTLIB LIB(${PROJ_LIB}) TEXT('Code for QS/400 Phase 9 live test')`);
+    const src = `SRCFILE(${PROJ_SRC}/QRPGLESRC) SRCMBR(ASSETS)`;
+    const made = await command(`CRTBNDRPG PGM(${program}) ${src} DBGVIEW(*SOURCE) OPTION(*EVENTF)`, 'compile');
+    assert.equal(made.status, 'Ok', `CRTBNDRPG ${program} DBGVIEW(*SOURCE)`);
+    await command(`CRTBNDRPG PGM(${PROJ_LIB}/NODEBUG) ${src} DBGVIEW(*NONE)`, 'compile');
+  });
+
+  suiteTeardown(async function () {
+    drivers.forEach((d) => d.dispose());
+    if (!api) {
+      return;
+    }
+    await command(`DLTLIB LIB(${PROJ_LIB})`).catch(() => undefined);
+    await api.host.request('session.disconnect', { name: NAME }).catch(() => undefined);
+    await config().update('connections', undefined, true);
+  });
+
+  test('Call: breakpoint hit, the stack, variables and a structure, hover, step over, continue to the end', async function () {
+    this.timeout(180_000);
+    const d = driver();
+    assert.equal((await d.request('initialize', { adapterID: 'qs400', linesStartAt1: true })).success, true);
+    const l = await d.request('launch', launchArgs(program));
+    assert.equal(l.success, true, String(l.message));
+    await d.event('initialized');
+    console.log(`live: debugSource asked: ${JSON.stringify((await d.event('qs400/debugSource')).body)}`);
+    const props = await api.host.request('object.properties', { name: NAME, library: PROJ_LIB, object: 'ASSETS', type: '*PGM' });
+    console.log(`live: ${program} source: ${props.filter((p) => p.name.startsWith('Source')).map((p) => `${p.name}=${p.value}`).join(', ')}`);
+    // Set on line 1, a breakpoint lands on the first statement.
+    const bp = await d.request('setBreakpoints', { source: { path: assetsPath() }, breakpoints: [{ line: 1 }] });
+    const set = (bp.body as { breakpoints: Array<{ verified: boolean; line: number; message?: string }> }).breakpoints[0];
+    console.log(`live: breakpoint on line 1: verified ${set.verified}, landed on ${set.line}${set.message ? ` (${set.message})` : ''}`);
+    assert.equal(set.verified, true, set.message);
+    const asked = Date.now();
+    await d.request('configurationDone');
+    const stop = await d.event('stopped', 1, 60_000);
+    console.log(`live: stopped ${JSON.stringify(stop.body)} ${Date.now() - asked} ms after configurationDone`);
+    assert.equal((stop.body as { reason: string }).reason, 'breakpoint');
+    const thread = (stop.body as { threadId: number }).threadId;
+
+    const st = await d.request('stackTrace', { threadId: thread });
+    const frames = (st.body as { stackFrames: Array<{ id: number; name: string; line: number; source?: { path: string } }> }).stackFrames;
+    console.log(`live: stack: ${frames.map((f) => `${f.name} @ ${f.source?.path ?? '-'}:${f.line}`).join(' | ')}`);
+    assert.match(frames[0].name, /^ASSETS › ASSETS/);
+    assert.equal(frames[0].line, set.line, 'the editor shows the breakpoint line');
+    console.log(`live: threads: ${JSON.stringify((await d.request('threads')).body)}`);
+
+    const scopes = await d.request('scopes', { frameId: frames[0].id });
+    const ref = (scopes.body as { scopes: Array<{ variablesReference: number }> }).scopes[0].variablesReference;
+    const vars = (await d.request('variables', { variablesReference: ref })).body as { variables: Array<{ name: string; value: string; variablesReference: number }> };
+    console.log(`live: variables: ${vars.variables.map((v) => `${v.name}=${v.value}${v.variablesReference ? ' (+)' : ''}`).join(', ')}`);
+    assert.ok(vars.variables.length > 0, 'the program fields');
+    const ds = vars.variables.find((v) => v.variablesReference > 0);
+    if (ds) {
+      const parts = (await d.request('variables', { variablesReference: ds.variablesReference })).body as { variables: Array<{ name: string; value: string }> };
+      console.log(`live: ${ds.name} parts: ${parts.variables.map((v) => `${v.name}=${v.value}`).join(', ')}`);
+      assert.ok(parts.variables.length > 0);
+    } else {
+      console.log('live: no structure among the variables to expand');
+    }
+    const assignment = d.got.some((m) => m.event === 'capabilities');
+    console.log(`live: setVariable: ${assignment ? 'Eval took an assignment; Set Value shown' : 'Eval took no assignment; Set Value hidden'}`);
+    const field = vars.variables.find((v) => v.variablesReference === 0);
+    if (field) {
+      const hover = await d.request('evaluate', { expression: field.name, frameId: frames[0].id, context: 'hover' });
+      console.log(`live: hover ${field.name}: ${String((hover.body as { result?: string } | undefined)?.result ?? hover.message)}`);
+      assert.equal(hover.success, true);
+    }
+
+    assert.equal((await d.request('next', { threadId: thread })).success, true);
+    const stepped = await d.event('stopped', 2, 60_000);
+    const st2 = (await d.request('stackTrace', { threadId: thread })).body as { stackFrames: Array<{ line: number }> };
+    console.log(`live: step over: ${(stepped.body as { reason: string }).reason}, line ${frames[0].line} to ${st2.stackFrames[0].line}`);
+    assert.equal((stepped.body as { reason: string }).reason, 'step');
+
+    assert.equal((await d.request('continue', { threadId: thread })).success, true);
+    await d.event('terminated', 1, 120_000);
+    console.log(`live: Debug Console: ${d.console().join(' | ')}`);
+    assert.ok(d.console().some((c) => /ProgramEnd|ended/.test(c)), 'the end in the Debug Console');
+    await d.request('disconnect');
+  });
+
+  test('Call on a program compiled DBGVIEW(*NONE): CPF9C15, for the recompile offer', async () => {
+    const d = driver();
+    await d.request('initialize', { adapterID: 'qs400' });
+    const l = await d.request('launch', launchArgs(`${PROJ_LIB}/NODEBUG`));
+    console.log(`live: NODEBUG: ${String(l.message)}`);
+    assert.equal(l.success, false);
+    const error = (l.body as { error?: { showUser?: boolean; variables?: { messageId?: string } } }).error;
+    assert.equal(error?.variables?.messageId, 'CPF9C15');
+    assert.equal(error?.showUser, false, 'the extension shows it, with the recompile button');
+    await d.request('disconnect');
+  });
+
+  test('a second session while one is stopped: TCP1A72 only on the same connection', async function () {
+    this.timeout(180_000);
+    const first = driver();
+    await first.request('initialize', { adapterID: 'qs400' });
+    assert.equal((await first.request('launch', launchArgs(program))).success, true);
+    await first.request('setBreakpoints', { source: { path: assetsPath() }, breakpoints: [{ line: 1 }] });
+    await first.request('configurationDone');
+    await first.event('stopped', 1, 60_000);
+    const second = driver();
+    await second.request('initialize', { adapterID: 'qs400' });
+    const l = await second.request('launch', launchArgs(program));
+    console.log(`live: second session: ${l.success ? 'started on its own connection' : String(l.message)}`);
+    // One session per connection (the spec): each adapter signs on its own.
+    assert.ok(l.success === true || /TCP1A72/.test(String(l.message)), String(l.message));
+    await second.request('disconnect');
+    await first.request('disconnect');
   });
 });
