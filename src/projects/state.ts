@@ -10,9 +10,10 @@
  * - **Changed**: the content hash differs from the one recorded.
  * - **New**: nothing recorded.
  * - **Conflict**: the system's change timestamp (`member.list`'s
- *   `changed`, `ifs.info`'s `change`) is not the one recorded: someone
- *   changed it since. Milliseconds compare as newer; an IFS change
- *   counter compares as different.
+ *   `changed`, `ifs.info`'s `change`) is not the one recorded for the
+ *   same member or file: someone changed it since. Milliseconds compare
+ *   as newer; an IFS change counter compares as different. A record of
+ *   another place (a pull from another library) is no baseline.
  */
 
 /** What is recorded for one local file. */
@@ -20,7 +21,11 @@ export interface FileRecord {
   hash: string;
   /** The member's `changed` (milliseconds) or the stream file's `change`, as the system gave it. */
   remote: number | string;
-  /** Where it went: `QRPGLESRC/ASSETS` or `/home/CWELLMAN/app/x.sql`. */
+  /**
+   * Where the timestamp is from: `HLINV/QRPGLESRC(ASSETS)` or
+   * `/home/CWELLMAN/app/x.sql`. A pull from another library than the
+   * target records that library's, which says nothing about the target's.
+   */
   at: string;
 }
 
@@ -90,9 +95,17 @@ export function remoteChanged(recorded: number | string | undefined, now: number
   return String(recorded) !== String(now);
 }
 
-/** A file's state from its hash, what is recorded, and the system's timestamp when it was read. */
-export function fileStatus(hash: string, record: FileRecord | undefined, remote?: number | string): FileStatus {
-  if (record && remoteChanged(record.remote, remote)) {
+/** The timestamp recorded for `at`, the target's member or file; none when the record is of another place. */
+export function baseline(record: FileRecord | undefined, at: string): number | string | undefined {
+  return record && record.at.toUpperCase() === at.toUpperCase() ? record.remote : undefined;
+}
+
+/**
+ * A file's state from its hash, what is recorded, and the system's
+ * timestamp of `at` when it was read.
+ */
+export function fileStatus(hash: string, record: FileRecord | undefined, remote?: number | string, at?: string): FileStatus {
+  if (record && at !== undefined && remoteChanged(baseline(record, at), remote)) {
     return 'conflict';
   }
   if (!record) {

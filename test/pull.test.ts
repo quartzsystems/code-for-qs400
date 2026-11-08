@@ -228,7 +228,7 @@ suite('Projects: pull', () => {
       assert.deepEqual(state.files['QRPGLESRC/ASSETS.rpgle'], {
         hash: contentHash(new TextEncoder().encode('**free\ndcl-s count int(10);\n*inlr = *on;\n'), 'member'),
         remote: 1_000,
-        at: 'QRPGLESRC/ASSETS',
+        at: 'HLINV/QRPGLESRC(ASSETS)',
       });
       assert.equal(await rig.read('.gitignore'), '.qs400/\n');
       assert.ok(rig.lines.some((l) => l.startsWith('── ') && l.endsWith(' · Pull · HLINV · PRJ')));

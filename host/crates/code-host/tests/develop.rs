@@ -828,3 +828,113 @@ fn a_session_that_is_not_signed_on_is_not_connected() {
         .unwrap_err();
     assert_eq!(e.code, codes::NOT_CONNECTED);
 }
+
+// deploy.member: the sequence of existing Develop calls.
+
+fn assets_entry(changed: i64) -> MemberEntry {
+    MemberEntry {
+        name: "ASSETS".into(),
+        srctype: "RPGLE".into(),
+        text: "Asset maintenance".into(),
+        records: 3,
+        created: 1_700_000_000_000,
+        changed,
+    }
+}
+
+#[test]
+fn deploy_member_over_an_existing_member_locks_reads_writes_the_diff_and_lists_again() {
+    let h = Host::new();
+    h.script().members = vec![assets_entry(1_762_473_600_000)];
+    h.script().member = MemberData {
+        srctype: "RPGLE".into(),
+        text: "Asset maintenance".into(),
+        width: 100,
+        ccsid: 37,
+        records: vec![
+            record(100, 260_105, "**free"),
+            record(200, 260_105, "dcl-s count int(10);"),
+            record(300, 251_231, "*inlr = *on;"),
+        ],
+    };
+    let r = h
+        .call(
+            "deploy.member",
+            with_member(
+                r#","type":"RPGLE","lines":["**free","dcl-s count int(20);","*inlr = *on;"],"expect":1762473600000"#,
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        h.asked(),
+        [
+            r#"list_members HLINV/QRPGLESRC "ASSETS" 0 500"#,
+            "read_member HLINV/QRPGLESRC(ASSETS) lock=true",
+            "write_member HLINV/QRPGLESRC(ASSETS)",
+            r#"list_members HLINV/QRPGLESRC "ASSETS" 0 500"#,
+        ]
+    );
+    let (records, options) = h.script().written.clone().unwrap();
+    assert!(!options.renumber);
+    assert_eq!(
+        records,
+        vec![
+            record(100, 260_105, "**free"),
+            record(200, 260_105, "dcl-s count int(20);"),
+            record(300, 251_231, "*inlr = *on;"),
+        ],
+        "every line keeps its seq and date; the server dates the changed one"
+    );
+    assert_eq!(
+        r,
+        json!({"outcome":"written","lines":3,"renumbered":false,"changed":1762473600000_i64})
+    );
+}
+
+#[test]
+fn deploy_member_of_a_new_member_creates_it_and_writes_renumbered() {
+    let h = Host::new();
+    let r = h
+        .call(
+            "deploy.member",
+            with_member(
+                r#","type":"rpgle","text":"Asset maintenance","lines":["**free","*inlr = *on;"]"#,
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        h.asked(),
+        [
+            r#"list_members HLINV/QRPGLESRC "ASSETS" 0 500"#,
+            r#"create_member HLINV/QRPGLESRC(ASSETS) RPGLE "Asset maintenance""#,
+            "write_member HLINV/QRPGLESRC(ASSETS)",
+            r#"list_members HLINV/QRPGLESRC "ASSETS" 0 500"#,
+        ]
+    );
+    let (records, options) = h.script().written.clone().unwrap();
+    assert!(options.renumber);
+    assert_eq!(
+        records,
+        vec![record(0, 0, "**free"), record(0, 0, "*inlr = *on;")]
+    );
+    assert_eq!(r["outcome"], json!("created"));
+    assert_eq!(r["changed"], Value::Null, "the fake lists nothing after");
+}
+
+#[test]
+fn deploy_member_changed_on_the_system_is_a_conflict_and_nothing_is_locked() {
+    let h = Host::new();
+    h.script().members = vec![assets_entry(2_000)];
+    let e = h
+        .call(
+            "deploy.member",
+            with_member(r#","type":"RPGLE","lines":["x"],"expect":1000"#),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, code_host::deploy::codes::CONFLICT);
+    assert_eq!(e.data, Some(json!({"changed":2000})));
+    assert_eq!(
+        h.asked(),
+        [r#"list_members HLINV/QRPGLESRC "ASSETS" 0 500"#]
+    );
+}

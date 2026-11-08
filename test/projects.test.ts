@@ -118,13 +118,15 @@ suite('Projects: state.json', () => {
   });
 
   test('changed, new, deployed and conflict', () => {
-    const r = { hash: 'h', remote: 1000, at: 'QRPGLESRC/A' };
+    const at = 'HLINVDEV/QRPGLESRC(A)';
+    const r = { hash: 'h', remote: 1000, at };
     assert.equal(fileStatus('h', r), 'deployed');
     assert.equal(fileStatus('x', r), 'changed');
     assert.equal(fileStatus('x', undefined), 'new');
-    assert.equal(fileStatus('h', r, 1000), 'deployed', 'the same timestamp');
-    assert.equal(fileStatus('x', r, 2000), 'conflict', 'newer on the system');
-    assert.equal(fileStatus('h', r, 500), 'deployed', 'older is not newer');
+    assert.equal(fileStatus('h', r, 1000, at), 'deployed', 'the same timestamp');
+    assert.equal(fileStatus('x', r, 2000, at), 'conflict', 'newer on the system');
+    assert.equal(fileStatus('h', r, 500, at), 'deployed', 'older is not newer');
+    assert.equal(fileStatus('h', { ...r, at: 'HLINV/QRPGLESRC(A)' }, 2000, at), 'deployed', 'a pull from another library is no baseline');
     assert.ok(remoteChanged('17', '18'), 'a change counter is only compared');
     assert.ok(!remoteChanged('17', '17'));
     assert.ok(!remoteChanged(undefined, 5));

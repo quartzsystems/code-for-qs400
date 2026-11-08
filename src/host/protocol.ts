@@ -367,6 +367,53 @@ export interface IfsTransferEnded {
   offset?: number;
 }
 
+export interface DeployMemberParams extends MemberParams {
+  /** The source type of a member created; an existing member of another type is changed to it. */
+  type: string;
+  /** The text of a member created; an existing member keeps its own. */
+  text?: string;
+  /** The local file's lines, trailing blanks removed. */
+  lines: string[];
+  /** The `changed` recorded at the last deploy or pull: a newer one is `DeployErrorCodes.Conflict`. */
+  expect?: number;
+}
+
+/** How a deploy ended: the member or file made, written, or already holding the text. */
+export type DeployOutcome = 'created' | 'written' | 'unchanged';
+
+export interface MemberDeployed {
+  outcome: DeployOutcome;
+  lines: number;
+  renumbered: boolean;
+  /** The member's `changed` after; null when it could not be read. */
+  changed: number | null;
+}
+
+export interface DeployPathParams {
+  name: string;
+  /** The local file. */
+  from: string;
+  path: string;
+  /** The CCSID of a file created. */
+  ccsid?: number;
+  /** The `change` recorded at the last deploy or pull. */
+  expect?: IfsChange;
+  /** The transfer `ifs.progress` and `ifs.cancel` name. */
+  transfer?: string;
+}
+
+export interface PathDeployed {
+  outcome: DeployOutcome;
+  size: number;
+  change: IfsChange | null;
+}
+
+/** Error codes of `deploy.*` (host/crates/code-host/src/deploy.rs). */
+export const DeployErrorCodes = {
+  /** Changed on the system since `expect`. `data` is `{ changed }` or `{ change }`. */
+  Conflict: -32050,
+} as const;
+
 /**
  * A message as a command or compile sent it: the server's own, with its
  * second-level text when it has one.
@@ -847,6 +894,10 @@ export interface HostMethods {
   /** Answered when the transfer ends: no request timeout. */
   'ifs.upload': { params: IfsUploadParams; result: { size: number } };
   'ifs.cancel': { params: IfsCancelParams; result: null };
+  /** `member.list`, `member.read` locked, the save diff and `member.write`; or `member.create` and a renumbered write. */
+  'deploy.member': { params: DeployMemberParams; result: MemberDeployed };
+  /** `ifs.info`, `ifs.mkdir` of the parent, `ifs.upload` replace: answered when the upload ends, no request timeout. */
+  'deploy.path': { params: DeployPathParams; result: PathDeployed };
   /** Waits in the connection job's lane; the host bounds the wait. */
   'action.check': { params: ActionCheckParams; result: ActionCheckResult };
   /** Answered when the command ends, however long it runs: no request timeout. */

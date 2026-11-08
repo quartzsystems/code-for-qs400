@@ -21,7 +21,7 @@ export const STATE_FILE = `${STATE_DIR}/state.json`;
 /** The CCSID a stream file is created with when `encoding.ifsCcsid` is not given. */
 export const DEFAULT_IFS_CCSID = 1208;
 /** What is never deployed, whatever `ignore` says: the project's own files and the tools'. */
-export const ALWAYS_IGNORED: readonly string[] = ['.git/**', `${STATE_DIR}/**`, '.vscode/**', PROJECT_FILE];
+export const ALWAYS_IGNORED: readonly string[] = ['.git/**', '.gitignore', '.gitattributes', `${STATE_DIR}/**`, '.vscode/**', PROJECT_FILE];
 
 export type ProjectTarget = { kind: 'library'; library: string } | { kind: 'path'; path: string };
 

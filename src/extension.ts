@@ -21,7 +21,7 @@ import { IFS_SCHEME } from './ifs/uri';
 import { Transfers, registerTransferCommands } from './ifs/transfers';
 import { JobLogProvider } from './jobs/jobLog';
 import { MemberFsProvider } from './members/provider';
-import { MEMBER_SCHEME } from './members/uri';
+import { MEMBER_SCHEME, isReadonlyUri, parseMemberUri } from './members/uri';
 import { ConnectionsProvider } from './views/connections';
 import { IfsNode, IfsProvider } from './views/ifs';
 import { ObjectsProvider } from './views/objects';
@@ -35,7 +35,8 @@ import { LanguageServers } from './languages/client';
 import { ProjectStore } from './projects/store';
 import { ProjectDeps, Puller } from './projects/pull';
 import { ProjectPrompts } from './projects/ui';
-import { registerPullCommands } from './projects/commands';
+import { registerDeployCommands, registerPullCommands } from './projects/commands';
+import { Deployer } from './projects/deploy';
 import { sameName } from './connections/config';
 import { FixedFormRpg } from './languages/fixedForm';
 import type { SpecForm } from './languages/rpgColumns';
@@ -82,6 +83,7 @@ export interface ExtensionApi {
   readonly messagesView: vscode.TreeView<MessageNode>;
   readonly projects: ProjectStore;
   readonly puller: Puller;
+  readonly deployer: Deployer;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -125,6 +127,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     showOutput: () => runner.output.show(true),
   };
   const puller = new Puller(projectDeps);
+  const deployer = new Deployer(projectDeps, puller, undefined, async (connection, library, file, member) => {
+    // A member written under an open editor: read it again (and lock it again), so its next save diffs the new lines.
+    for (const d of vscode.workspace.textDocuments) {
+      const m = d.uri.scheme === MEMBER_SCHEME && !isReadonlyUri(d.uri) ? parseMemberUri(d.uri) : undefined;
+      if (m?.kind === 'member' && sameName(m.connection, connection) && m.library === library && m.file === file && m.member === member && members.member(d.uri)) {
+        await members.refresh(d.uri).catch(() => undefined);
+      }
+    }
+  });
+  const hasProject = () => void vscode.commands.executeCommand('setContext', 'code-for-qs400.hasProject', projects.usable().length > 0);
   const diagnostics = new CompileDiagnostics();
   const jobLog = new JobLogProvider(store, sessions, vscode.Uri.joinPath(context.extensionUri, 'media'));
   const languagesOutput = vscode.window.createOutputChannel('Code for QS/400 Languages', { log: true });
@@ -179,6 +191,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       projects.onDidChange,
     ),
     ...registerPullCommands(projectDeps, puller),
+    ...registerDeployCommands(projectDeps, deployer),
+    deployer,
+    projects.onDidChange(hasProject),
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
@@ -240,7 +255,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions, runner, diagnostics, jobLog, languages, rpg, sql, sqlRunner, results, exporter, sqlTree, sqlView, history, jobs, jobsView, spool, spoolView, viewer, messages, messagesView, projects, puller, deployer };
 }
 
 export function deactivate(): void {

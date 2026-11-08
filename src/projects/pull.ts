@@ -216,7 +216,7 @@ export class Puller {
               result.unchanged.push(rel);
               this.deps.append(`Same     ${label} = ${rel}`);
             }
-            state.files[rel] = { hash, remote: m.changed, at: memberKey(item.file, m.member) };
+            state.files[rel] = { hash, remote: m.changed, at: qualifiedMember({ library: item.library, file: item.file, member: m.member }) };
             const text = (read.text || m.text).trim();
             if (text !== '') {
               texts[rel] = text;
@@ -458,9 +458,10 @@ export class Puller {
    * Project view's **Pull**): its record keeps its old hash and takes the
    * system's timestamp, so the file shows as changed until it is deployed.
    */
-  async pullOne(project: Project & { config: ProjectConfig }, rel: string, opts: { keepHash: boolean }): Promise<void> {
+  async pullOne(project: Project & { config: ProjectConfig }, rel: string, opts: { keepHash: boolean; state?: ProjectState }): Promise<void> {
     const connection = this.deps.projects.connectionOf(project);
-    const state = await this.deps.projects.readState(project);
+    // A deploy under way hands its own state, which it writes at its end.
+    const state = opts.state ?? (await this.deps.projects.readState(project));
     const file = nodePath.join(project.folder.uri.fsPath, ...rel.split('/'));
     const t = project.config.target;
     let bytes: Uint8Array;
@@ -479,7 +480,7 @@ export class Puller {
       const read = await this.sessions.call(connection, 'member.read', { name: connection, library: t.library, file: m.file, member: m.member, lock: false });
       bytes = new TextEncoder().encode(memberFileText(read.lines.map((l) => l.text)));
       remote = entry.changed;
-      at = memberKey(m.file, m.member);
+      at = qualifiedMember({ library: t.library, file: m.file, member: m.member });
     } else {
       const path = joinPath(t.path, rel);
       const info = await this.sessions.call(connection, 'ifs.info', { name: connection, path });
@@ -506,7 +507,9 @@ export class Puller {
       remote,
       at,
     };
-    await this.deps.projects.writeState(project, state);
+    if (!opts.state) {
+      await this.deps.projects.writeState(project, state);
+    }
     this.deps.append(`Pulled   ${at} → ${rel}`);
   }
 }

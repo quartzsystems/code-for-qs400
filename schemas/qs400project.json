@@ -79,7 +79,7 @@
         "type": "string",
         "minLength": 1
       },
-      "markdownDescription": "Globs, relative to the folder, of files never deployed: `*` and `?` within a name, `**` across directories. A glob without `/` matches a name in any directory. `.git/**`, `.qs400/**`, `.vscode/**` and `qs400project.json` are always ignored."
+      "markdownDescription": "Globs, relative to the folder, of files never deployed: `*` and `?` within a name, `**` across directories. A glob without `/` matches a name in any directory. `.git/**`, `.gitignore`, `.gitattributes`, `.qs400/**`, `.vscode/**` and `qs400project.json` are always ignored."
     },
     "texts": {
       "type": "object",

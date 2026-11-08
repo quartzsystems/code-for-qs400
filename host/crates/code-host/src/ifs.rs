@@ -239,7 +239,7 @@ fn path_param<'a>(field: &str, p: &'a str) -> Result<&'a str, RpcError> {
     Ok(p)
 }
 
-fn not_found(e: &Error) -> bool {
+pub(crate) fn not_found(e: &Error) -> bool {
     e.status() == Some(Status::NotFound)
 }
 
@@ -529,7 +529,7 @@ impl Transfers {
     }
 
     /// A transfer begins under `asked`, or an ID made here.
-    fn begin(&self, asked: Option<&str>) -> Result<(String, Arc<AtomicBool>), RpcError> {
+    pub(crate) fn begin(&self, asked: Option<&str>) -> Result<(String, Arc<AtomicBool>), RpcError> {
         let id = match asked {
             Some("") => return Err(RpcError::invalid_params("transfer is empty")),
             Some(t) => t.to_owned(),
@@ -546,7 +546,7 @@ impl Transfers {
         Ok((id, cancel))
     }
 
-    fn end(&self, id: &str) {
+    pub(crate) fn end(&self, id: &str) {
         self.running().remove(id);
     }
 
@@ -613,7 +613,7 @@ fn cancelled(transfer: &str, offset: u64) -> RpcError {
 }
 
 /// A transfer's end: the error and, for an upload, the bytes confirmed.
-type Stopped = (RpcError, Option<u64>);
+pub(crate) type Stopped = (RpcError, Option<u64>);
 
 /// `ifs.download`, to its end.
 fn run_download(
@@ -649,7 +649,7 @@ fn run_download(
 }
 
 /// `ifs.upload`, to its end.
-fn run_upload(
+pub(crate) fn run_upload(
     s: &Sessions,
     outbound: &Outbound,
     p: &UploadParams,
@@ -780,8 +780,9 @@ fn spawn_transfer(
     }
 }
 
-/// Registers `ifs.*`.
-pub fn register(r: &mut Registry, sessions: &Arc<Sessions>) {
+/// Registers `ifs.*`; the transfers, which `deploy.path` shares so
+/// `ifs.cancel` reaches its uploads.
+pub fn register(r: &mut Registry, sessions: &Arc<Sessions>) -> Arc<Transfers> {
     let transfers = Arc::new(Transfers::default());
     let s = Arc::clone(sessions);
     let t = Arc::clone(&transfers);
@@ -842,4 +843,5 @@ pub fn register(r: &mut Registry, sessions: &Arc<Sessions>) {
     r.register("ifs.resolve", move |p: PathParams, _: &Context| {
         resolve(&s, &p)
     });
+    transfers
 }

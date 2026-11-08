@@ -6,6 +6,7 @@
 
 pub mod actions;
 pub mod codec;
+pub mod deploy;
 pub mod ifs;
 pub mod jobs;
 pub mod members;
@@ -83,13 +84,14 @@ pub fn registry(outbound: &Outbound) -> Registry {
 }
 
 /// Every method, with `sessions` behind `session.*`, `libl.*`, `object.*`,
-/// `member.*`, `ifs.*`, `action.*`, `job.*`, `jobs.*`, `spool.*`, `messages.*` and `sql.*`.
+/// `member.*`, `ifs.*`, `deploy.*`, `action.*`, `job.*`, `jobs.*`, `spool.*`, `messages.*` and `sql.*`.
 pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     let mut r = Registry::new();
     session::register(&mut r, sessions);
     objects::register(&mut r, sessions);
     members::register(&mut r, sessions);
-    ifs::register(&mut r, sessions);
+    let transfers = ifs::register(&mut r, sessions);
+    deploy::register(&mut r, sessions, &transfers);
     actions::register(&mut r, sessions);
     jobs::register(&mut r, sessions);
     let watches = watches::Watches::new(sessions);
@@ -207,6 +209,8 @@ mod tests {
                 "action.cancel",
                 "action.check",
                 "action.run",
+                "deploy.member",
+                "deploy.path",
                 "host.ping",
                 "host.shutdown",
                 "host.version",

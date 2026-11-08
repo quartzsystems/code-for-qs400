@@ -90,6 +90,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>([
   'ifs.download',
   'ifs.upload',
+  'deploy.path',
   'action.check',
   'action.run',
   'sql.run',

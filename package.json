@@ -688,6 +688,30 @@
         "title": "Pull into Project",
         "category": "Code for QS/400",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.deploy.changed",
+        "title": "Deploy Changed",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "code-for-qs400.deploy.all",
+        "title": "Deploy All",
+        "category": "Code for QS/400",
+        "icon": "$(repo-push)"
+      },
+      {
+        "command": "code-for-qs400.deploy.git",
+        "title": "Deploy Git-Changed",
+        "category": "Code for QS/400",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "code-for-qs400.deploy.file",
+        "title": "Deploy File",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-upload)"
       }
     ],
     "configuration": {
@@ -1755,6 +1779,22 @@
         {
           "command": "code-for-qs400.pull.path",
           "when": "false"
+        },
+        {
+          "command": "code-for-qs400.deploy.changed",
+          "when": "code-for-qs400.hasProject"
+        },
+        {
+          "command": "code-for-qs400.deploy.all",
+          "when": "code-for-qs400.hasProject"
+        },
+        {
+          "command": "code-for-qs400.deploy.git",
+          "when": "code-for-qs400.hasProject"
+        },
+        {
+          "command": "code-for-qs400.deploy.file",
+          "when": "code-for-qs400.hasProject && resourceScheme == file"
         }
       ],
       "editor/context": [
@@ -1834,6 +1874,18 @@
           "command": "code-for-qs400.spool.delete",
           "when": "resourceScheme == qs400spl",
           "group": "2_delete@1"
+        },
+        {
+          "command": "code-for-qs400.deploy.changed",
+          "when": "resourceScheme == file && code-for-qs400.hasProject",
+          "group": "navigation@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "code-for-qs400.deploy.file",
+          "when": "resourceScheme == file && !explorerResourceIsFolder && code-for-qs400.hasProject",
+          "group": "7_qs400@1"
         }
       ]
     },
