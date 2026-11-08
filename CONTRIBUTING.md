@@ -1742,3 +1742,118 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
    counts; **Run Again** on the first.
 8. Record the result, the CSV row count against `COUNT(*)`, the `DSPFFD`
    and `DSPDBR` observations and every message ID seen here.
+
+## Phase 7 exit test
+
+> Compile output spooled file opens from the Actions result; an inquiry
+> reply clears the message.
+
+**Not run yet, 2026-11-08: no QAP server was reachable from the
+development machine.** `QSHQ400` does not resolve (bare, under
+`ad.quartz.systems` or `quartz.systems`), checked at the start of the
+phase (08:36) and again at its end (09:19); 10.42.70.150 answers ping and
+refuses port 2320, as at the end of Phase 6. So no compile listing has
+been read from a real system, no inquiry has arrived from one, and the
+event latency below is not a measurement.
+
+| Step | Result |
+| --- | --- |
+| Compile `HLINV/QRPGLESRC/ASSETS`: `Listing: Open` opens `QSYSPRT`, 132 columns, page breaks, the `RNF` summary; **Save as PDF** | not run |
+| Hold from the viewer (`Held` in the tree), release, delete with confirmation | not run |
+| `SNDMSG MSG('reply test') TOUSR(CWELLMAN) MSGTYPE(*INQ)` at 5250: badge 1, notification with **Reply**; reply `OK`; `DSPMSG` shows it | not run |
+| `SBMJOB CMD(DLYJOB 300) JOB(CODETEST)`: Active, its log, **End** `*IMMED` | not run |
+| Send a message to yourself: listed with its key and time | not run |
+
+**Event latency to expect**, from QS/400's `docs/QAP.md` at `7f82a43f`
+("Version 6, as built") and the host's code, not from a run: the server
+looks at each watch every 250 ms (`Config::watch_poll`); the event wakes
+the host's watcher at once through the connection's `Wake`, which takes it
+from the client and sends `messages.arrived`. So an inquiry should show
+within about a quarter of a second, well inside the exit test's "few
+seconds"; a session busy with a long call sends it when the call ends.
+The live suite logs `live: inquiry … arrived N ms after the send`.
+
+Message IDs to expect, from the spec and QS/400's message files at
+`7f82a43f`, not from a run: `CPC1221` for the `SBMJOB`, `CPF1321` for the
+log of an ended job without a spooled log, `CPF1362` for ending a job that
+has ended, `CPF2422` for replying twice, `CPF2420` for a reply the message
+does not take, `TCP1A57` for reading a spooled file still open,
+`CPF3337` for releasing one not held.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The host's `jobs.*`, `spool.*` and `messages.*` against canned replies
+  (`tests/work.rs`, 43 tests): 1,203 jobs and 1,203 log entries drained in
+  500s; `user` and `state` passed as typed; `CPF1343` (another user's
+  jobs), `CPF2204`, `CPF1321` and `CPF1362` passed through with their
+  second-level text; `end` with `immediate`, `controlled` with and without
+  a delay, and a delay with `*IMMED` refused before anything is sent;
+  version 7 refusing `Jobs`; spooled files filtered to a job, the filters
+  passed as typed, `NotAuthorized` passed through, output queues;
+  `readText` of a three-page listing with a 132-column line, whole and as
+  a range, its form feeds kept, `TCP1A57` for a file still open; hold at
+  the end of the page and immediately, release, move to the top of a
+  queue, delete, `CPF3337`, ids checked first; downloads as PDF (starting
+  `%PDF`), text and SCS in one batch of 25 pages with `spool.progress`, a
+  refused one leaving no file; `spool.changed` for added, removed and
+  rewatched, and events taken after an unrelated call; `spool.awaitFile`
+  answering on the first closed file of its job (not while `Open`), from a
+  list made before its watch, `null` after its timeout and when the
+  session ends, and the watch kept while the view or a wait still wants it;
+  `messages.list` newest first in 500s with keys as hex, `reply` with the
+  key either case and an empty reply as typed, `CPF2422`, `remove` all or
+  none, `send` answering an inquiry's key, `CPF2403`, `canRead` false only
+  for `NotAuthorized`, `messages.arrived` with `caughtUp`, a refused watch
+  (`CPF9802`), version 5 refusing `Messages`. The codecs at their edges:
+  keys `00000001` to `FFFFFFFF` both ways, job names, queues, recipients,
+  targets and every enum name.
+- The extension against fake hosts (`jobs`, `spool`, `viewer`, `messages`
+  and `run` suites): the Jobs view grouped by state with the connection job
+  marked, the filter saved per connection, `CPF1343` shown in the tree, the
+  job log of any job from `jobs.log` with `from → to` in its hover; the
+  Spooled files view's roots, descriptions, the library saved per
+  connection, a job's node, `spool.changed` refreshing it and counting new
+  files; the viewer on a three-page listing with a 132-column line: page
+  markers on empty lines, every printed line unchanged, Go to Page and the
+  status bar's `Page 3 of 3`, rulers at 80 and 132 and no word wrap, a
+  2,500-page file opened at 100 pages and Load All Pages; the Messages
+  view's inquiries first, System operator only when readable, the badge
+  through arrivals, replies and a look, and `code-for-qs400.messages.notify`
+  as `inquiries`, `all` and `none`; a compile's listing found by its job and
+  number, none when the run made none, a batch run's by
+  `spool.awaitFile`, and every output channel link.
+- `cargo fmt --check`, `cargo clippy --all-targets -D warnings` and the
+  whole workspace's tests; `npm run lint` and the full extension suite
+  (231 passing, the live suites pending); the `win32-x64` VSIX packaged,
+  carrying the five job log glyphs.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER` and `QS400_TEST_PASSWORD` (and
+   `QS400_TEST_SRCPF`, `QS400_TEST_CURLIB` as for Phase 4) and run
+   `npm test`. The Phase 7 live suite compiles `QS4SPL7`, reads its
+   listing, saves it as PDF, holds, releases and deletes it, submits and
+   ends `CODETEST`, and sends itself an inquiry and a message. Record its
+   `live:` lines here, the inquiry's latency among them.
+2. By hand: run **Compile (CRTBNDRPG)** on `HLINV/QRPGLESRC/ASSETS`. In the
+   **Code for QS/400** output channel, **Open** on `Listing: Open` shows
+   the new `QSYSPRT` in the viewer: 132 columns intact (the ruler at 132
+   meets the right margin), `— page n —` at each break, the `RNF` summary
+   on the last page. **Save as PDF…** from its title bar; open the file.
+3. **Hold** from the viewer's title bar: the Spooled files view shows
+   `Held`. **Release**; **Delete**, which names the file and the job.
+4. At a 5250 session, `SNDMSG MSG('reply test') TOUSR(CWELLMAN)
+   MSGTYPE(*INQ)`. Within a few seconds the Messages view's badge shows 1
+   and a notification offers **Reply**; reply `OK`. The message leaves the
+   inquiries at the top of the list, and `DSPMSG` at the 5250 session shows
+   the reply.
+5. Submit `SBMJOB CMD(DLYJOB DLY(300)) JOB(CODETEST)` from **Run
+   Action…** (a connection action with that `command` and `"environment":
+   "object"`; Phase 4's own batch actions name the job after their
+   target). **Refresh Jobs**: `CODETEST` is under Active; **Job Log**
+   opens; **End Job…** offers `*CNTRLD` and `*IMMED` and confirms
+   `End job nnnnnn/CWELLMAN/CODETEST *IMMED?`; after the next refresh it is
+   no longer Active.
+6. **Send Message…** to your own profile: it is listed with its key and
+   time.
+7. Record the result, the latency, and every message ID seen here.
