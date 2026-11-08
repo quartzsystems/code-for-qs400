@@ -1989,3 +1989,109 @@ To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
 6. **Send Message…** to your own profile: it is listed with its key and
    time.
 7. Record the result, the latency, and every message ID seen here.
+
+## Phase 8 exit test
+
+> Clone `HLINV` sources locally, change one file, deploy, compile; only
+> the changed member is rewritten.
+
+**Not run yet, 2026-11-08: the system could not be signed on to.**
+`QSHQ400` does not resolve (bare, under `ad.quartz.systems` or
+`quartz.systems`), checked at the start of the phase (09:27) and again at
+its end (10:17). 10.42.70.150 has changed since Phase 7: it no longer
+answers ping, but its port 2320 now **accepts** a TCP connection, where in
+Phases 3 to 7 it refused it. No `QS400_TEST_*` variables were set on the
+development machine and no password was at hand, so nothing signed on
+there, and whether a QAP server answers on that port is not known. So no
+member was pulled from or deployed to a real system, and no timestamp
+below is observed.
+
+| Step | Result |
+| --- | --- |
+| **Pull Library…** `HLINV` into an empty folder, target `HLINVDEV` (`CRTLIB`, `CRTSRCPF` per source file); `git init` and commit | not run |
+| **Deploy all**: every member in `HLINVDEV` with `HLINV`'s text and type; `DSPFD` member counts match the folder | not run |
+| `DSPFD *MBRLIST` timestamps; one line of `ASSETS.rpgle` changed; **Deploy changed**: one timestamp moved, that line dated today, every other line's seq and date kept | not run |
+| **Compile (CRTBNDRPG)** on the local `ASSETS.rpgle`: deployed, compiled into `HLINVDEV`, the error on line 42 in Problems on the local file | not run |
+| `STRSEU` at a 5250 session, then **Deploy changed**: Conflict in the Project view, Overwrite / Pull / Skip | not run |
+| `git stash`, **Deploy git-changed**: nothing to deploy | not run |
+
+Members **Deploy changed** wrote: not observed. Against the fake system of
+`test/deploy.test.ts` and in the host's `deploy.member` sequence it is one
+(`QRPGLESRC/ASSETS`), every other member untouched.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The host's `deploy.*` (`deploy.rs`, 15 unit tests, and the registry):
+  `deploy::plan` on Phase 2's six save fixtures and its gaps; an existing
+  member listed, read with `lock: true`, written with the diff and listed
+  again, with no unlock after the write; nothing to write unlocking and
+  keeping the timestamp; a new member created with its type and text and
+  written with `renumber: true`, every line `0000.00`/`000000`; a newer
+  `changed` refused with `-32050` before anything is locked; a refused write
+  ending the lock; a member of another type changed to the file's; a new
+  stream file's directory made and the file uploaded with Replace and the
+  CCSID, and an existing one checked against its change counter. Through
+  the registry on `tests/develop.rs`'s `Develop` fake and `tests/ifs.rs`'s
+  `Files` over a real `Connection`: `list_members` with the member as the
+  pattern, `read_member lock=true`, `write_member` with every seq and date
+  kept on the one changed line, `create_member`; `Stat`, `Stat` of the
+  parent, `CreateDirectory parents=true`, `WriteFile Replace ccsid=1208`,
+  `Stat`, and `ifs.progress` under the deploy's transfer.
+- The extension against fake systems (`projects`, `pull`, `deploy`,
+  `localActions`, `workspaceIncludes`, `projectView` suites, 47 tests):
+  the project file's every problem at its place; the layout both ways over
+  the whole type table, clashes; pull of four source files into the layout
+  with the project file, texts, state and `.gitignore`, Overwrite and Keep;
+  **Deploy all** into a new library with `CRTSRCPF` asked once, every member
+  with its type and text; **Deploy changed** after one change sending one
+  `deploy.member` and moving one timestamp; a member changed on the system
+  listed first and Skipped, Pulled and Overwritten; a removed file left on
+  the system; an IFS project's uploads and its conflict; git-changed through
+  a mock git API, nothing after a stash, Deploy changed without a
+  repository; a compile on a local file deployed first, run as
+  `CRTBNDRPG PGM(HLINVDEV/ASSETS) SRCFILE(HLINVDEV/QRPGLESRC)`, with its
+  line 42 error on the local file and a member with no local file left on
+  its `qs400mbr` URI; a file in conflict not compiled; includes from the
+  workspace first and the system second; the Project view's states, the
+  ignored group folded, Conflict after Refresh, the status bar's count.
+- `cargo fmt --check`, `cargo clippy --all-targets -D warnings` and the
+  whole workspace's tests; `npm run lint` and the full extension suite
+  (270 passing, the live suites pending), again on the release host the
+  `win32-x64` VSIX was packaged with, which carries
+  `schemas/qs400project.json`.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER` and `QS400_TEST_PASSWORD` (and
+   `QS400_TEST_CURLIB` if not `CWELLMAN`), with `git` on `PATH`, and run
+   `npm test`. The Phase 8 live suite deletes and makes `HLINVDEV`, pulls
+   `HLINV`'s four source files into a temporary folder, commits, deploys
+   all and compares every member's type and text and each file's count,
+   changes one line of `ASSETS` and deploys, checks that one `changed`
+   moved and the line's seq and date, compiles with line 42 broken, writes
+   the member from the host and checks the conflict and the Project view,
+   stashes and deploys git-changed, and deletes `HLINVDEV`. Record its
+   `live:` lines, the timestamps among them.
+2. By hand, in an empty folder opened in VS Code: **Pull Library…** →
+   `HLINV` → all source files → target `HLINVDEV` (after `CRTLIB
+   HLINVDEV` at a 5250 session). The folder has `QRPGLESRC/ASSETS.rpgle`,
+   `QCLSRC/…`, `QDDSSRC/…`, `QSQLSRC/…` and `qs400project.json`. `git init`,
+   `git add -A`, `git commit`.
+3. **Deploy All**: confirm the `CRTSRCPF`s. `DSPFD FILE(HLINVDEV/QRPGLESRC)
+   TYPE(*MBRLIST)` (and each other file): the member count is the folder's;
+   `WRKMBRPDM` shows each member's type and text as in `HLINV`.
+4. Note each member's change date and time from `DSPFD *MBRLIST`. Change one
+   line of `ASSETS.rpgle`; **Deploy Changed**. `DSPFD *MBRLIST` again:
+   only `ASSETS` moved. `DSPPFM HLINVDEV/QRPGLESRC ASSETS`: the changed line
+   has today's date and its own sequence number, every other line as
+   before. Record the timestamps.
+5. Break line 42 of the local `ASSETS.rpgle`; **Run Action… → Compile
+   (CRTBNDRPG)** from its editor title: the output shows the deploy and
+   then `CRTBNDRPG PGM(HLINVDEV/ASSETS) SRCFILE(HLINVDEV/QRPGLESRC)…`; the
+   Problems panel has the error on the local file at line 42. Fix it.
+6. `STRSEU SRCFILE(HLINVDEV/QRPGLESRC) SRCMBR(ASSETS)`, change a line,
+   save. Change a line locally; **Deploy Changed**: the output lists the
+   conflict first, the question offers Overwrite, Pull and Skip, and the
+   Project view marks the file Conflict.
+7. `git stash`; **Deploy Git-Changed**: the output says `Nothing to deploy`.
+8. Record the result, the timestamps and every message ID seen here.
