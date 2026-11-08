@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import { SessionManager } from '../src/connections/sessions';
 import { ConnectionStore } from '../src/connections/store';
 import { HostClient, HostRpcError } from '../src/host/client';
-import { SessionErrorCodes, SessionStatus, SourceLine } from '../src/host/protocol';
+import { IfsProgress, SessionErrorCodes, SessionStatus, SourceLine } from '../src/host/protocol';
 import { MemberFsProvider } from '../src/members/provider';
 import { memberType, typeForExtension } from '../src/members/types';
 import { isReadonlyUri, memberUri, parseMemberUri } from '../src/members/uri';
@@ -88,6 +88,8 @@ export class FakeHost {
   private readonly session = new vscode.EventEmitter<SessionStatus>();
   private readonly state = new vscode.EventEmitter<string>();
   readonly onDidChangeSession = this.session.event;
+  readonly progress = new vscode.EventEmitter<IfsProgress>();
+  readonly onDidProgress = this.progress.event;
   readonly onDidChangeState = this.state.event;
   constructor(public answer: (method: string, params: Record<string, unknown>) => unknown) {}
   async request(method: string, params: Record<string, unknown>): Promise<unknown> {
@@ -100,6 +102,7 @@ export class FakeHost {
   dispose(): void {
     this.session.dispose();
     this.state.dispose();
+    this.progress.dispose();
   }
 }
 

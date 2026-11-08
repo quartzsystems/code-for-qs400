@@ -15,6 +15,7 @@ import { ConnectionStore } from './connections/store';
 import { HostClient, HostState } from './host/client';
 import { IfsFsProvider } from './ifs/provider';
 import { IFS_SCHEME } from './ifs/uri';
+import { Transfers, registerTransferCommands } from './ifs/transfers';
 import { MemberFsProvider } from './members/provider';
 import { MEMBER_SCHEME } from './members/uri';
 import { ConnectionsProvider } from './views/connections';
@@ -34,6 +35,7 @@ export interface ExtensionApi {
   readonly ifs: IfsProvider;
   readonly ifsView: vscode.TreeView<IfsNode>;
   readonly ifsFs: IfsFsProvider;
+  readonly transfers: Transfers;
   readonly statusBar: SessionStatusBar;
 }
 
@@ -65,6 +67,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     dragAndDropController: ifsDrop,
   });
   const ifsFs = new IfsFsProvider(sessions, store, output);
+  const transfers = new Transfers(host, sessions, ifs, ifsFs);
 
   context.subscriptions.push(
     output,
@@ -93,6 +96,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ...registerIfsViewCommands({ provider: ifs, view: ifsView, store, sessions }),
     ...registerIfsOpenCommands({ provider: ifs, view: ifsView, store, sessions }),
     ...registerIfsFileCommands({ provider: ifs, view: ifsView, store, sessions }, ifsFs),
+    ...registerTransferCommands({ provider: ifs, view: ifsView, store, sessions }, transfers, (f) => (ifsDrop.uploadDropped = f)),
     vscode.commands.registerCommand('code-for-qs400.host.restart', async () => {
       try {
         await host.restart();
@@ -104,7 +108,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers };
 }
 
 export function deactivate(): void {

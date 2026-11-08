@@ -314,6 +314,30 @@
         "title": "Change CCSID…",
         "category": "Code for QS/400",
         "icon": "$(symbol-key)"
+      },
+      {
+        "command": "code-for-qs400.ifs.upload",
+        "title": "Upload Files…",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "code-for-qs400.ifs.uploadFolder",
+        "title": "Upload Folder…",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "code-for-qs400.ifs.download",
+        "title": "Download…",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "code-for-qs400.ifs.downloadFolder",
+        "title": "Download Folder…",
+        "category": "Code for QS/400",
+        "icon": "$(cloud-download)"
       }
     ],
     "configuration": {
@@ -747,6 +771,26 @@
           "command": "code-for-qs400.ifs.properties",
           "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs\\.(root|directory|file|symlink|other)/",
           "group": "6_info@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.upload",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs.(root|directory)/",
+          "group": "3_transfer@1"
+        },
+        {
+          "command": "code-for-qs400.ifs.uploadFolder",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs.(root|directory)/",
+          "group": "3_transfer@2"
+        },
+        {
+          "command": "code-for-qs400.ifs.downloadFolder",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs.(root|directory)/",
+          "group": "3_transfer@3"
+        },
+        {
+          "command": "code-for-qs400.ifs.download",
+          "when": "view == code-for-qs400.ifs && viewItem =~ /^ifs.(file|symlink)$/",
+          "group": "3_transfer@1"
         }
       ],
       "commandPalette": [
@@ -844,6 +888,22 @@
         },
         {
           "command": "code-for-qs400.ifs.newFolder",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.upload",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.uploadFolder",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.download",
+          "when": "false"
+        },
+        {
+          "command": "code-for-qs400.ifs.downloadFolder",
           "when": "false"
         }
       ],
