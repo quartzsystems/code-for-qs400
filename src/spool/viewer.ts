@@ -242,37 +242,12 @@ export class SpoolViewer implements vscode.TextDocumentContentProvider, vscode.D
     }
   }
 
-  register(): vscode.Disposable[] {
-    const onViewer = (f: (uri: vscode.Uri) => unknown) => (uri?: vscode.Uri) => {
-      const u = uri ?? vscode.window.activeTextEditor?.document.uri;
-      return u?.scheme === SPOOL_SCHEME ? f(u) : undefined;
-    };
+  /** The content provider and the editor listeners, without the commands (what the tests register). */
+  registerProvider(): vscode.Disposable[] {
     return [
       this,
       this.status,
       vscode.workspace.registerTextDocumentContentProvider(SPOOL_SCHEME, this),
-      vscode.commands.registerCommand('code-for-qs400.spool.open', async (arg?: FileArg) => {
-        const ref = nodeRef(arg);
-        if (!ref) {
-          return undefined;
-        }
-        const pages = arg && !(arg instanceof vscode.Uri) && 'kind' in arg && arg.kind === 'file' ? arg.file.pages : undefined;
-        try {
-          return await this.open(ref, pages);
-        } catch (err) {
-          void showError(err, ref.connection);
-          return undefined;
-        }
-      }),
-      vscode.commands.registerCommand('code-for-qs400.spool.goToPage', () => this.goToPage()),
-      vscode.commands.registerCommand(
-        'code-for-qs400.spool.loadAll',
-        onViewer((u) => this.reload(u, true)),
-      ),
-      vscode.commands.registerCommand(
-        'code-for-qs400.spool.viewerRefresh',
-        onViewer((u) => this.reload(u)),
-      ),
       vscode.window.onDidChangeVisibleTextEditors((eds) => this.decorate(eds)),
       vscode.window.onDidChangeActiveTextEditor((ed) => this.update(ed)),
       vscode.window.onDidChangeTextEditorSelection((e) => {
@@ -295,6 +270,38 @@ export class SpoolViewer implements vscode.TextDocumentContentProvider, vscode.D
             }),
           ]
         : []),
+    ];
+  }
+
+  register(): vscode.Disposable[] {
+    const onViewer = (f: (uri: vscode.Uri) => unknown) => (uri?: vscode.Uri) => {
+      const u = uri ?? vscode.window.activeTextEditor?.document.uri;
+      return u?.scheme === SPOOL_SCHEME ? f(u) : undefined;
+    };
+    return [
+      ...this.registerProvider(),
+      vscode.commands.registerCommand('code-for-qs400.spool.open', async (arg?: FileArg) => {
+        const ref = nodeRef(arg);
+        if (!ref) {
+          return undefined;
+        }
+        const pages = arg && !(arg instanceof vscode.Uri) && 'kind' in arg && arg.kind === 'file' ? arg.file.pages : undefined;
+        try {
+          return await this.open(ref, pages);
+        } catch (err) {
+          void showError(err, ref.connection);
+          return undefined;
+        }
+      }),
+      vscode.commands.registerCommand('code-for-qs400.spool.goToPage', () => this.goToPage()),
+      vscode.commands.registerCommand(
+        'code-for-qs400.spool.loadAll',
+        onViewer((u) => this.reload(u, true)),
+      ),
+      vscode.commands.registerCommand(
+        'code-for-qs400.spool.viewerRefresh',
+        onViewer((u) => this.reload(u)),
+      ),
     ];
   }
 

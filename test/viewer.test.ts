@@ -84,7 +84,7 @@ suite('Spooled file viewer: the editor', () => {
       return { pages: 3, firstPage: 1, lastPage: 3, text: LISTING };
     });
     const viewer = new SpoolViewer(v.store, v.sessions, v.provider);
-    const subs = viewer.register();
+    const subs = viewer.registerProvider();
     try {
       const ed = await viewer.open({ connection: 'QSHQ400', id: splf(8).id }, 3);
       assert.ok(ed);
@@ -122,7 +122,7 @@ suite('Spooled file viewer: the editor', () => {
       return { pages: 2500, firstPage: 1, lastPage: last, text: pages.slice(0, last).join('\f') };
     });
     const viewer = new SpoolViewer(v.store, v.sessions, v.provider);
-    const subs = viewer.register();
+    const subs = viewer.registerProvider();
     try {
       const ed = await viewer.open({ connection: 'QSHQ400', id: splf(9).id }, 2500);
       const uri = ed!.document.uri;
@@ -137,7 +137,7 @@ suite('Spooled file viewer: the editor', () => {
           }
         });
       });
-      await vscode.commands.executeCommand('code-for-qs400.spool.loadAll', uri);
+      viewer.reload(uri, true);
       await done;
       assert.equal(viewer.state(uri)?.partial, false);
       assert.equal(viewer.state(uri)?.layout.markers.length, 2500);

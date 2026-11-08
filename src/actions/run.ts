@@ -7,7 +7,9 @@ import { libraryName, sameName } from '../connections/config';
 import { errorText, showError } from '../connections/prompts';
 import { SessionManager } from '../connections/sessions';
 import { ConnectionStore } from '../connections/store';
-import { ActionOutcome, ActionRunParams } from '../host/protocol';
+import { ActionOutcome, ActionRunParams, SessionJob, SpooledFile } from '../host/protocol';
+import { parseQualifiedJob, qualifiedJob } from '../jobs/model';
+import { highestNumber, jobFilesUser, listingFile, newListing } from '../spool/model';
 import { IFS_SCHEME, parseIfsUri } from '../ifs/uri';
 import { typeForExtension } from '../members/types';
 import { MEMBER_SCHEME, isReadonlyUri, parseMemberUri } from '../members/uri';
@@ -16,12 +18,18 @@ import { ObjectsProvider } from '../views/objects';
 import { Action, applies, kindOf } from './model';
 import {
   JOB_LOG_LINE,
+  LISTING_PREFIX,
   OUTPUT_CHANNEL,
   OUTPUT_LANGUAGE,
+  blockJob,
   failureLines,
   headerLines,
+  jobOnLine,
   linkConnection,
+  listingLine,
   outcomeLines,
+  parseListingLine,
+  submittedJob,
 } from './output';
 import { ActionStore, connectionValues } from './store';
 import {
@@ -43,6 +51,12 @@ export const LAST_ACTIONS_KEY = 'code-for-qs400.lastActions';
 /** The job log command the output channel's links open. */
 export const JOB_LOG_COMMAND = 'code-for-qs400.job.log';
 
+/** What `Job:` and `Submitted:` open: the job in the Jobs view. */
+export const JOB_REVEAL_COMMAND = 'code-for-qs400.jobs.reveal';
+
+/** What `Listing: Open` opens: the spooled file viewer. */
+export const LISTING_COMMAND = 'code-for-qs400.spool.open';
+
 /** What a run did, for the tests and for the diagnostics. */
 export interface RunResult {
   action: Action;
@@ -51,6 +65,11 @@ export interface RunResult {
   command: string;
   outcome?: ActionOutcome;
   error?: unknown;
+  /**
+   * The compile listing, looked for after the run (a compile) or waited for
+   * (a batch run); its line is written when it is found.
+   */
+  listing?: Promise<SpooledFile | undefined>;
 }
 
 /** What a run needs of the document a target is open in. */
@@ -67,6 +86,57 @@ export interface RunnerOptions {
   findDocument?: (t: ActionTarget) => SavableDocument | undefined;
   /** Where each output line goes; the output channel by default. */
   append?: (line: string) => void;
+  /** How long a batch run's listing is waited for; the host's 10 minutes by default. */
+  listingWaitMs?: number;
+}
+
+/** A link in the output channel: where it is and the command it runs. */
+export interface OutputLink {
+  line: number;
+  start: number;
+  end: number;
+  command: string;
+  args: unknown[];
+  tooltip: string;
+}
+
+/**
+ * The output channel's links: `Job log: Show` to the block's job's log,
+ * the job on `Job:` and `Submitted:` to the Jobs view, and `Listing: Open`
+ * to the viewer.
+ */
+export function outputLinks(lines: readonly string[]): OutputLink[] {
+  const links: OutputLink[] = [];
+  lines.forEach((l, i) => {
+    if (l === JOB_LOG_LINE) {
+      const connection = linkConnection(lines, i);
+      const job = blockJob(lines, i);
+      const start = JOB_LOG_LINE.indexOf('Show');
+      links.push({
+        line: i,
+        start,
+        end: start + 4,
+        command: JOB_LOG_COMMAND,
+        args: [connection ?? null, job ?? null],
+        tooltip: job ? `Job log of ${qualifiedJob(job)}${connection ? ` on ${connection}` : ''}` : 'Job log of the connection job',
+      });
+      return;
+    }
+    if (l.startsWith(LISTING_PREFIX)) {
+      const p = parseListingLine(l);
+      if (p) {
+        const start = 'Listing: '.length;
+        links.push({ line: i, start, end: start + 4, command: LISTING_COMMAND, args: [p], tooltip: `Open ${p.id.file}(${p.id.number}) ${qualifiedJob(p.id.job)} in the spooled file viewer` });
+      }
+      return;
+    }
+    const j = jobOnLine(l);
+    const connection = j ? linkConnection(lines, i) : undefined;
+    if (j && connection) {
+      links.push({ line: i, start: j.start, end: j.end, command: JOB_REVEAL_COMMAND, args: [connection, j.job], tooltip: `Show ${qualifiedJob(j.job)} in the Jobs view` });
+    }
+  });
+  return links;
 }
 
 /** What `action.run` is handed: a URI (editor title, palette), a tree node, or nothing (the active editor). */
@@ -154,6 +224,7 @@ export class ActionRunner implements vscode.Disposable {
   private readonly ifs?: IfsProvider;
   private readonly findDocument: (t: ActionTarget) => SavableDocument | undefined;
   private readonly append: (line: string) => void;
+  private readonly listingWaitMs: number | undefined;
 
   constructor(
     private readonly store: ConnectionStore,
@@ -166,6 +237,58 @@ export class ActionRunner implements vscode.Disposable {
     this.ifs = options.ifs;
     this.findDocument = options.findDocument ?? targetDocument;
     this.append = options.append ?? ((l) => this.output.appendLine(l));
+    this.listingWaitMs = options.listingWaitMs;
+  }
+
+  /** `job`'s spooled files; the connection job's are the signed-on profile's. */
+  private jobFiles(name: string, job: SessionJob): Promise<SpooledFile[]> {
+    return this.sessions.call(name, 'spool.files', { name, user: jobFilesUser(job, this.sessions.status(name).job), job });
+  }
+
+  /** The highest spooled file number `job` has now; undefined when it cannot be read (no listing link then). */
+  private async highestFile(name: string, job: SessionJob): Promise<number | undefined> {
+    try {
+      return highestNumber(await this.jobFiles(name, job), job);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The listing a compile made in `job`: its newest file named for the
+   * listing (the command's `PRTFILE`, else `QSYSPRT`) numbered after
+   * `before`, the job's highest number before the run. Its line is written
+   * when there is one.
+   */
+  private async compileListing(name: string, job: SessionJob, command: string, before: number): Promise<SpooledFile | undefined> {
+    try {
+      const f = newListing(await this.jobFiles(name, job), job, listingFile(command), before);
+      if (f) {
+        this.write([listingLine(f.id, name)]);
+      }
+      return f;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** A batch run's listing: waited for with a one-shot watch the host drops after the first match or 10 minutes. */
+  private async batchListing(name: string, job: SessionJob, command: string): Promise<SpooledFile | undefined> {
+    try {
+      const f = await this.sessions.call(name, 'spool.awaitFile', {
+        name,
+        job,
+        file: listingFile(command),
+        ...(this.listingWaitMs !== undefined ? { timeoutMs: this.listingWaitMs } : {}),
+      });
+      if (f && typeof f === 'object' && typeof f.id?.file === 'string') {
+        this.write([listingLine(f.id, name)]);
+        return f;
+      }
+    } catch {
+      // No listing link; the run itself is done.
+    }
+    return undefined;
   }
 
   /** The target of what the command was handed, or of the active editor. */
@@ -291,6 +414,9 @@ export class ActionRunner implements vscode.Disposable {
     const command = batch ? batchCommand(resolved.command, jobName) : resolved.command;
     const params: ActionRunParams = { name, command, kind: batch ? 'command' : kindOf(command), run: `a${++this.runs}-${Date.now()}` };
 
+    // A compile's listing is the one numbered after the job's files before the run.
+    const ownJob = this.sessions.status(name).job;
+    const before = params.kind === 'compile' && ownJob ? await this.highestFile(name, ownJob) : undefined;
     this.write(headerLines({ when: new Date(), action: action.name, target: targetLabel(t), connection: name, command }));
     const result: RunResult = { action, target: t, command };
     try {
@@ -317,6 +443,14 @@ export class ActionRunner implements vscode.Disposable {
     }
     const o = result.outcome;
     this.write(outcomeLines(o, batch));
+    if (before !== undefined && o.job && o.status !== 'Cancelled') {
+      result.listing = this.compileListing(name, o.job, resolved.command, before);
+    } else if (batch && o.status === 'Ok') {
+      const submitted = parseQualifiedJob(submittedJob(o.messages) ?? '');
+      if (submitted) {
+        result.listing = this.batchListing(name, submitted, resolved.command);
+      }
+    }
     this.finished.fire(result);
     if (action.refresh !== 'none') {
       if (t.environment === 'file') {
@@ -361,21 +495,13 @@ export class ActionRunner implements vscode.Disposable {
         { language: OUTPUT_LANGUAGE },
         {
           provideDocumentLinks: (doc) => {
-            const lines = doc.getText().split(/\r?\n/);
-            const links: vscode.DocumentLink[] = [];
-            lines.forEach((l, i) => {
-              if (l !== JOB_LOG_LINE) {
-                return;
-              }
-              const connection = linkConnection(lines, i);
-              const args = encodeURIComponent(JSON.stringify([connection ?? null]));
-              const start = JOB_LOG_LINE.indexOf('Show');
+            const links = outputLinks(doc.getText().split(/\r?\n/)).map((k) => {
               const link = new vscode.DocumentLink(
-                new vscode.Range(i, start, i, start + 4),
-                vscode.Uri.parse(`command:${JOB_LOG_COMMAND}?${args}`),
+                new vscode.Range(k.line, k.start, k.line, k.end),
+                vscode.Uri.parse(`command:${k.command}?${encodeURIComponent(JSON.stringify(k.args))}`),
               );
-              link.tooltip = connection ? `Job log of the connection job on ${connection}` : 'Job log of the connection job';
-              links.push(link);
+              link.tooltip = k.tooltip;
+              return link;
             });
             return links;
           },

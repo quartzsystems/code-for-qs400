@@ -4,8 +4,8 @@
 
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { JOB_LOG_LINE, headerLines, linkConnection, outcomeLines, submittedJob, timestamp } from '../src/actions/output';
-import { ActionRunner, LAST_ACTIONS_KEY, SavableDocument, nodeTarget, uriTarget } from '../src/actions/run';
+import { JOB_LOG_LINE, headerLines, linkConnection, listingLine, outcomeLines, parseListingLine, submittedJob, timestamp } from '../src/actions/output';
+import { ActionRunner, LAST_ACTIONS_KEY, SavableDocument, nodeTarget, outputLinks, uriTarget } from '../src/actions/run';
 import { ActionStore } from '../src/actions/store';
 import { ActionTarget } from '../src/actions/targets';
 import { SessionManager } from '../src/connections/sessions';
@@ -278,5 +278,122 @@ suite('Run: running an action', () => {
       ['Compile (CRTBNDCL)', 'Compile module (CRTCLMOD)', 'Source'],
       'remembered per type; the RPG compiles do not apply',
     );
+  });
+});
+
+suite('Run: listings and links (Phase 7)', () => {
+  let parts: vscode.Disposable[] = [];
+  teardown(async () => {
+    parts.forEach((p) => p.dispose());
+    parts = [];
+    await vscode.workspace.getConfiguration('code-for-qs400').update('connections', undefined, true);
+  });
+
+  const file = (number: number, name = 'QSYSPRT', job = JOB) => ({
+    id: { job, file: name, number },
+    status: 'ready',
+    outq: { library: 'QUSRSYS', name: 'CWELLMAN' },
+    user: 'CWELLMAN',
+    userData: 'ASSETS42',
+    formType: '*STD',
+    deviceType: 'scs',
+    pages: 3,
+    copies: 1,
+    size: 4096,
+    created: 0,
+  });
+
+  test('a compile’s listing: the job’s newest QSYSPRT numbered after the run started', async () => {
+    let compiled = false;
+    const r = await runnerOn((method, params) => {
+      if (method === 'libl.get') {
+        return { current: 'CWELLMAN', system: ['QSYS'], user: ['HLINV'] };
+      }
+      if (method === 'spool.files') {
+        assert.deepEqual(params, { name: 'QSHQ400', user: '*CURRENT', job: JOB });
+        return compiled ? [file(6), file(7), file(8), file(9, 'QPJOBLOG')] : [file(6), file(7)];
+      }
+      assert.equal(method, 'action.run');
+      compiled = true;
+      return { status: 'Ok', job: JOB, messages: [RNS9304], diagnostics: [] };
+    });
+    parts = r.parts;
+    const result = await r.runner.run(MEMBER_NODE, 'Compile (CRTBNDRPG)');
+    const f = await result?.listing;
+    assert.equal(f?.id.number, 8);
+    assert.deepEqual(
+      r.host.sent.map((s) => s.method),
+      ['libl.get', 'spool.files', 'action.run', 'spool.files'],
+    );
+    assert.equal(r.lines[r.lines.length - 1], 'Listing: Open  QSYSPRT(8) 123456/QUSER/QAPCNN · QSHQ400');
+  });
+
+  test('no listing made during the run: no listing line', async () => {
+    const r = await runnerOn((method) => {
+      if (method === 'libl.get') {
+        return { current: 'CWELLMAN', system: [], user: [] };
+      }
+      if (method === 'spool.files') {
+        return [file(6), file(7)];
+      }
+      return { status: 'Ok', job: JOB, messages: [RNS9304], diagnostics: [] };
+    });
+    parts = r.parts;
+    const result = await r.runner.run(MEMBER_NODE, 'Compile (CRTBNDRPG)');
+    assert.equal(await result?.listing, undefined);
+    assert.equal(r.lines[r.lines.length - 1], JOB_LOG_LINE);
+  });
+
+  test('a batch run waits for its submitted job’s listing with spool.awaitFile', async () => {
+    const submitted = { number: '654321', user: 'CWELLMAN', name: 'ASSETS' };
+    const r = await runnerOn((method, params) => {
+      if (method === 'spool.awaitFile') {
+        assert.deepEqual(params, { name: 'QSHQ400', job: submitted, file: 'QSYSPRT' });
+        return file(1, 'QSYSPRT', submitted);
+      }
+      return {
+        status: 'Ok',
+        job: JOB,
+        messages: [{ id: 'CPC1221', severity: 0, text: 'Job 654321/CWELLMAN/ASSETS submitted to job queue QBATCH in QGPL.' }],
+        diagnostics: [],
+      };
+    });
+    parts = r.parts;
+    const result = await r.runner.run(OBJECT_NODE, 'Submit (SBMJOB CALL)');
+    assert.equal((await result?.listing)?.id.job.number, '654321');
+    assert.equal(r.lines[r.lines.length - 1], 'Listing: Open  QSYSPRT(1) 654321/CWELLMAN/ASSETS · QSHQ400');
+  });
+
+  test('the links: the job to the Jobs view, its log, and the listing to the viewer', () => {
+    const lines = [
+      '── 2026-11-08 09:00:00 · Compile (CRTBNDRPG) · HLINV/QRPGLESRC(ASSETS) · QSHQ400',
+      'Command: CRTBNDRPG PGM(CWELLMAN/ASSETS)',
+      'Job:     123456/QUSER/QAPCNN',
+      'Ended:   Completed',
+      JOB_LOG_LINE,
+      'Listing: Open  QSYSPRT(8) 123456/QUSER/QAPCNN · QSHQ400',
+      '── 2026-11-08 09:01:00 · Submit (SBMJOB CALL) · HLINV/ASSETS (*PGM) · QSHQ400',
+      'Job:     123456/QUSER/QAPCNN',
+      'Submitted: 654321/CWELLMAN/ASSETS',
+      'Ended:   Completed',
+      JOB_LOG_LINE,
+    ];
+    const links = outputLinks(lines);
+    assert.deepEqual(
+      links.map((k) => [k.line, lines[k.line].slice(k.start, k.end), k.command, JSON.stringify(k.args)]),
+      [
+        [2, '123456/QUSER/QAPCNN', 'code-for-qs400.jobs.reveal', JSON.stringify(['QSHQ400', JOB])],
+        [4, 'Show', 'code-for-qs400.job.log', JSON.stringify(['QSHQ400', JOB])],
+        [5, 'Open', 'code-for-qs400.spool.open', JSON.stringify([{ connection: 'QSHQ400', id: { file: 'QSYSPRT', number: 8, job: JOB } }])],
+        [7, '123456/QUSER/QAPCNN', 'code-for-qs400.jobs.reveal', JSON.stringify(['QSHQ400', JOB])],
+        [8, '654321/CWELLMAN/ASSETS', 'code-for-qs400.jobs.reveal', JSON.stringify(['QSHQ400', { number: '654321', user: 'CWELLMAN', name: 'ASSETS' }])],
+        [10, 'Show', 'code-for-qs400.job.log', JSON.stringify(['QSHQ400', { number: '654321', user: 'CWELLMAN', name: 'ASSETS' }])],
+      ],
+    );
+    assert.deepEqual(parseListingLine(listingLine({ job: JOB, file: 'QSYSPRT', number: 8 }, 'QSHQ400')), {
+      connection: 'QSHQ400',
+      id: { file: 'QSYSPRT', number: 8, job: JOB },
+    });
+    assert.equal(parseListingLine('Listing: Open  nonsense'), undefined);
   });
 });

@@ -14,7 +14,15 @@
  * RNS9310  Program ASSETS42 was not created in library CWELLMAN.
  * Ended:   Error
  * Job log: Show
+ * Listing: Open  QSYSPRT(8) 123456/QUSER/QAPCNN · QSHQ400
  * ```
+ *
+ * The job on `Job:` and `Submitted:` is a link to it in the Jobs view;
+ * `Job log: Show` opens the log of the block's job (the submitted one for
+ * a batch run); `Listing: Open` opens the compile listing in the spooled
+ * file viewer. The listing line names its own file and connection: a
+ * batch run's comes when the submitted job has written it, after other
+ * blocks perhaps.
  */
 
 import type { ActionOutcome, CommandMessage, SessionJob } from '../host/protocol';
@@ -30,6 +38,9 @@ export const JOB_LOG_LINE = 'Job log: Show';
 
 /** The rule each block starts with. */
 export const BLOCK_START = '── ';
+
+/** What a listing line starts with. */
+export const LISTING_PREFIX = 'Listing: Open  ';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -132,4 +143,49 @@ export function linkConnection(lines: readonly string[], line: number): string |
     }
   }
   return undefined;
+}
+
+/** `Listing: Open  QSYSPRT(8) 123456/QUSER/QAPCNN · QSHQ400`. */
+export function listingLine(id: { job: SessionJob; file: string; number: number }, connection: string): string {
+  return `${LISTING_PREFIX}${id.file}(${id.number}) ${jobText(id.job)} · ${connection}`;
+}
+
+/** The file and connection a listing line names. */
+export function parseListingLine(line: string): { connection: string; id: { job: SessionJob; file: string; number: number } } | undefined {
+  const m = /^Listing: Open {2}([^(\s]+)\((\d+)\) (\d{6})\/([^/\s]+)\/([^/\s]+) · (.+)$/.exec(line);
+  if (!m) {
+    return undefined;
+  }
+  return { connection: m[6].trim(), id: { file: m[1], number: Number(m[2]), job: { number: m[3], user: m[4], name: m[5] } } };
+}
+
+/** Where the job is on a `Job:` or `Submitted:` line, and the job. */
+export function jobOnLine(line: string): { start: number; end: number; job: SessionJob } | undefined {
+  const m = /^(Job: {5}|Submitted: )(\d{6})\/([^/\s]+)\/([^/\s.]+)/.exec(line);
+  if (!m) {
+    return undefined;
+  }
+  const start = m[1].length;
+  return { start, end: m[0].length, job: { number: m[2], user: m[3], name: m[4] } };
+}
+
+/**
+ * The job of the block line `line` is in: the job a batch run submitted,
+ * else the job it ran in.
+ */
+export function blockJob(lines: readonly string[], line: number): SessionJob | undefined {
+  let ran: SessionJob | undefined;
+  for (let i = line; i >= 0; i--) {
+    const l = lines[i];
+    if (l.startsWith('Submitted: ')) {
+      return jobOnLine(l)?.job;
+    }
+    if (l.startsWith('Job:     ')) {
+      ran ??= jobOnLine(l)?.job;
+    }
+    if (l.startsWith(BLOCK_START)) {
+      break;
+    }
+  }
+  return ran;
 }
