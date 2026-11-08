@@ -84,7 +84,7 @@ opens and 300 ms after you stop typing.
 | Rename | A name's declaration and every reference to it, in this document only. A name declared in a copy member is refused, with where it is declared. |
 | Folding | Procedures, subroutines, `IF`, `DO` and `SELECT` groups, data structures, CL `PGM`, `DO` and `SUBR` groups, DDS record formats, multi-line SQL statements and command definition statements. |
 
-The compile diagnostics of Phase 4 stay as they were: after a compile,
+Compile diagnostics are kept apart from these: after a compile,
 the Problems panel shows the compiler's messages (source `CRTBNDRPG`) and
 the editor's (source `qs400-rpgle`) side by side.
 
@@ -114,7 +114,8 @@ the editor's (source `qs400-rpgle`) side by side.
 
 The language servers never read the network. When the RPG front end
 meets `/COPY`, `/INCLUDE` or `EXEC SQL INCLUDE`, the server asks the
-extension (`qs400/fetchInclude`), which reads it through the host:
+extension (`qs400/fetchInclude`), which answers from a local project
+when one holds it (below), else reads it through the host:
 
 - A member: `member.read` without a lock. A library not written, or
   written as `*LIBL` or `*CURLIB`, is looked up with the job's library
@@ -126,8 +127,13 @@ extension (`qs400/fetchInclude`), which reads it through the host:
 - Not found, or no connection signed on: the directive is reported as the
   compiler would report a member it cannot open.
 
-The connection is the document's own (`qs400mbr`, `qs400ifs`), or the
-active connection for a local file.
+The connection is the document's own (`qs400mbr`, `qs400ifs`). For a
+local file it is its project's connection, or the active connection when
+the file is in no project.
+
+In a workspace with [local projects](projects.md), includes are read from
+the projects' files first and from the system only when no project has
+them; see [Includes](projects.md#includes) there.
 
 What is fetched is kept for every document in the window, and a member
 not found is remembered as not found. Saving a member or stream file

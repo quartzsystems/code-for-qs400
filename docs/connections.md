@@ -130,8 +130,10 @@ active connection: pick a connected one to make it active, or one that is
 not connected to connect it.
 
 The active connection is the one Connect last signed on, or the one you
-picked in the status bar. It is kept per workspace; later features act on
-it.
+picked in the status bar. It is kept per workspace. The Objects, IFS, SQL,
+Jobs, Spooled files and Messages views show it, and a command that needs
+a connection and has none of its own (a new SQL editor, a local file
+outside any project) uses it.
 
 ## Idle timeout and reconnect
 

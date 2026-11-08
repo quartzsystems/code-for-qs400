@@ -75,7 +75,8 @@ extension and the editor language come from the member's source type:
 | `TXT`, `BND`, `PNLGRP`, `MENU` | `.txt`, `.bnd`, `.pnlgrp`, `.menu` | Plain text |
 | anything else | the type in lower case | Plain text |
 
-Syntax colouring for the QS/400 languages arrives in a later release.
+Members in the QS/400 languages are coloured and checked as you type; see
+[Language support](languages.md).
 
 While a member is open, this connection holds it the way `STRSEU` does
 (`*SHRNUP`): other jobs can read it but not change it. Closing its last tab
@@ -140,4 +141,8 @@ second-level text under **Details**.
 ## Not in this release
 
 - Opening an object in a 5250 session.
-- Creating libraries or source files: use a 5250 session or, later, Actions.
+- Creating libraries: run `CRTLIB` as an [action](actions.md) or at a 5250
+  session. A deploy makes the source files it needs with `CRTSRCPF`; see
+  [Local projects and deploy](projects.md).
+
+See [Known limitations](known-limitations.md) for the rest.
