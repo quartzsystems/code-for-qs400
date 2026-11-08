@@ -4,6 +4,7 @@
 
 //! The `qs400-code-host` method set.
 
+pub mod ifs;
 pub mod members;
 pub mod objects;
 pub mod session;
@@ -74,13 +75,14 @@ pub fn registry(outbound: &Outbound) -> Registry {
     registry_with(&sessions)
 }
 
-/// Every method, with `sessions` behind `session.*`, `libl.*`, `object.*`
-/// and `member.*`.
+/// Every method, with `sessions` behind `session.*`, `libl.*`, `object.*`,
+/// `member.*` and `ifs.*`.
 pub fn registry_with(sessions: &Arc<session::Sessions>) -> Registry {
     let mut r = Registry::new();
     session::register(&mut r, sessions);
     objects::register(&mut r, sessions);
     members::register(&mut r, sessions);
+    ifs::register(&mut r, sessions);
     r.register("host.version", |_: NoParams, _: &Context| {
         Ok::<_, RpcError>(VersionResult {
             host: HOST_VERSION.to_owned(),
@@ -192,6 +194,15 @@ mod tests {
                 "host.ping",
                 "host.shutdown",
                 "host.version",
+                "ifs.copy",
+                "ifs.delete",
+                "ifs.info",
+                "ifs.list",
+                "ifs.mkdir",
+                "ifs.readText",
+                "ifs.rename",
+                "ifs.resolve",
+                "ifs.writeText",
                 "libl.get",
                 "libl.set",
                 "member.changeText",

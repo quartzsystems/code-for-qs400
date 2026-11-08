@@ -27,8 +27,9 @@
 //! Every connection asks for QAP version 9 ([`QAP_ASKED`]). The `Develop`
 //! service (version 8) is reached through [`Backend::develop`]: the
 //! library list here, objects and members in `objects` and `members`,
-//! each one `qap-client` call through
-//! [`Sessions::develop`].
+//! each one `qap-client` call through [`Sessions::develop`]. The `Ifs`
+//! service (version 5, `Stat` 6) is reached through [`Backend::ifs`] and
+//! [`Sessions::ifs`], for `crate::ifs`.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -37,13 +38,15 @@ use std::time::Duration;
 
 use host_rpc::{Context, NoParams, Outbound, Registry, RpcError};
 use qap_client::develop::WriteOptions;
-use qap_client::proto::Status;
+use qap_client::ifs::Stamp;
 use qap_client::proto::ops::develop::{
     Attribute, Libraries, LibraryList, ListLibraries, ListMembers, ListObjects, MemberData,
     Members, Objects, SetLibraryList,
 };
+use qap_client::proto::ops::ifs::{Entry, ReadFile, WriteFile};
 use qap_client::proto::types::{MemberName, ObjectName, SourceRecord};
-use qap_client::{Client, Error, Requests, Secret, Target, Wake};
+use qap_client::proto::{Op, Status};
+use qap_client::{Client, Error, Files, Pending, Requests, Secret, Target, Wake};
 use qsa_net::Trust;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -67,6 +70,9 @@ pub mod codes {
     /// The connection could not be opened or was lost: name lookup, TCP,
     /// TLS, a closed connection, no reply in time.
     pub const TRANSPORT: i64 = -32011;
+    /// A local file a transfer reads or writes failed (`ifs.upload`'s
+    /// `from`, `ifs.download`'s `to`): nothing the server said.
+    pub const LOCAL: i64 = -32012;
 }
 
 /// The QAP version every connection asks for: 9, so that `Develop` (8)
@@ -76,6 +82,10 @@ pub const QAP_ASKED: u16 = 9;
 
 /// The version `Develop` needs.
 pub const QAP_DEVELOP: u16 = 8;
+
+/// The version `Ifs` needs. `Stat` is 6; before it a file's stamp is
+/// `GetInfo`'s `modified`, as [`Files::stamp`] falls back.
+pub const QAP_IFS: u16 = 5;
 
 /// How often the watcher looks at the sessions without being woken.
 const WATCH_EVERY: Duration = Duration::from_secs(5);
@@ -223,6 +233,78 @@ pub trait Backend: Send {
     fn live(&self) -> bool;
     /// The `Develop` operations on this connection.
     fn develop(&mut self) -> &mut dyn DevelopBackend;
+    /// The `Ifs` operations on this connection.
+    fn ifs(&mut self) -> &mut dyn IfsBackend;
+}
+
+/// `qap-client`'s [`Files`] as an object: one method per operation or
+/// helper, each the `qap-client` call of the same name, so a [`Backend`]
+/// trait object reaches them. The two `send_*` methods only send, for
+/// `qap_client::ifs::read` and `write`, which wait for each reply
+/// themselves with the session let go. Tests implement it with canned
+/// replies.
+pub trait IfsBackend {
+    /// [`Files::all_entries`]: every entry, a page of
+    /// [`qap_client::ifs::LIST_PAGE`] at a time through
+    /// [`qap_client::ifs::Listing`].
+    fn all_entries(&mut self, path: &str, pattern: &str) -> Result<Vec<Entry>, Error>;
+    fn get_info(&mut self, path: &str) -> Result<Entry, Error>;
+    /// [`Files::stamp`]: the entry and its stamp, a link itself.
+    fn stamp(&mut self, path: &str) -> Result<(Entry, Stamp), Error>;
+    /// [`Files::checked`]: the path a copy of `path` is checked against (a
+    /// link's target), with its entry and stamp.
+    fn checked(&mut self, path: &str) -> Result<(String, Entry, Stamp), Error>;
+    /// [`Files::resolve`]: what `entry`, in `dir`, opens as.
+    fn resolve(&mut self, dir: &str, entry: &Entry) -> Result<(String, Entry), Error>;
+    fn create_directory(&mut self, path: &str, parents: bool) -> Result<(), Error>;
+    fn delete(&mut self, path: &str) -> Result<(), Error>;
+    fn rename(&mut self, from: &str, to: &str, replace: bool) -> Result<(), Error>;
+    fn copy(&mut self, from: &str, to: &str, replace: bool) -> Result<(), Error>;
+    /// [`qap_client::ifs::resume_offset`].
+    fn resume_offset(&mut self, path: &str, local_len: u64) -> Result<u64, Error>;
+    /// Sends one `ReadFile` and returns at once.
+    fn send_read(&mut self, req: &ReadFile) -> Result<Pending, Error>;
+    /// Sends one `WriteFile` and returns at once.
+    fn send_write(&mut self, req: &WriteFile) -> Result<Pending, Error>;
+}
+
+impl<T: Files> IfsBackend for T {
+    fn all_entries(&mut self, path: &str, pattern: &str) -> Result<Vec<Entry>, Error> {
+        Files::all_entries(self, path, pattern)
+    }
+    fn get_info(&mut self, path: &str) -> Result<Entry, Error> {
+        Files::get_info(self, path)
+    }
+    fn stamp(&mut self, path: &str) -> Result<(Entry, Stamp), Error> {
+        Files::stamp(self, path)
+    }
+    fn checked(&mut self, path: &str) -> Result<(String, Entry, Stamp), Error> {
+        Files::checked(self, path)
+    }
+    fn resolve(&mut self, dir: &str, entry: &Entry) -> Result<(String, Entry), Error> {
+        Files::resolve(self, dir, entry)
+    }
+    fn create_directory(&mut self, path: &str, parents: bool) -> Result<(), Error> {
+        Files::create_directory(self, path, parents)
+    }
+    fn delete(&mut self, path: &str) -> Result<(), Error> {
+        Files::delete(self, path)
+    }
+    fn rename(&mut self, from: &str, to: &str, replace: bool) -> Result<(), Error> {
+        Files::rename(self, from, to, replace)
+    }
+    fn copy(&mut self, from: &str, to: &str, replace: bool) -> Result<(), Error> {
+        Files::copy(self, from, to, replace)
+    }
+    fn resume_offset(&mut self, path: &str, local_len: u64) -> Result<u64, Error> {
+        qap_client::ifs::resume_offset(self, path, local_len)
+    }
+    fn send_read(&mut self, req: &ReadFile) -> Result<Pending, Error> {
+        self.ifs_request(Op::ReadFile, req)
+    }
+    fn send_write(&mut self, req: &WriteFile) -> Result<Pending, Error> {
+        self.ifs_request(Op::WriteFile, req)
+    }
 }
 
 /// `qap-client`'s [`qap_client::Develop`] as an object: one method per
@@ -408,6 +490,10 @@ impl Backend for QapBackend {
     fn develop(&mut self) -> &mut dyn DevelopBackend {
         &mut self.client
     }
+
+    fn ifs(&mut self) -> &mut dyn IfsBackend {
+        &mut self.client
+    }
 }
 
 /// Trust for `tls`: the platform's store, plus `caFile` when given. The
@@ -451,7 +537,9 @@ pub fn qap_factory() -> Factory {
 /// text, which for a server message is `messageId: text`.
 pub fn rpc_error(e: &Error) -> RpcError {
     let mut err = RpcError::new(codes::TRANSPORT, e.to_string());
-    if let Some(status) = e.status() {
+    if matches!(e, Error::Read(_) | Error::Write(_)) {
+        err.code = codes::LOCAL;
+    } else if let Some(status) = e.status() {
         err.code = codes::SERVER;
         err.data = Some(server_data(status, e));
     } else if let Error::Connect(qsa_net::ConnectError::Tls(qsa_net::TlsError::Untrusted {
@@ -492,9 +580,14 @@ fn not_connected(name: &str) -> RpcError {
 
 /// The connection agreed `version`, below [`QAP_DEVELOP`].
 pub fn qap_unavailable(version: u16) -> RpcError {
+    qap_unavailable_for(QAP_DEVELOP, version)
+}
+
+/// The connection agreed `version`, below `needed`.
+pub fn qap_unavailable_for(needed: u16, version: u16) -> RpcError {
     let mut e = RpcError::new(
         codes::QAP_UNAVAILABLE,
-        "QAP version 8 not available on this server",
+        format!("QAP version {needed} not available on this server"),
     );
     e.data = Some(json!({ "version": version }));
     e
@@ -894,33 +987,56 @@ impl Sessions {
         outcome
     }
 
-    /// Runs `f` on the session's `Develop` operations: the session brought
-    /// back first if it went stale, and refused with [`qap_unavailable`]
-    /// when the connection agreed a version below 8. A drop `f` met is
-    /// sent as `session.changed`.
-    pub fn develop<T>(
+    /// Runs `f` on the session's backend: the session brought back first
+    /// if it went stale, and refused with [`qap_unavailable_for`] when the
+    /// connection agreed a version below `needed`. A drop `f` met is sent
+    /// as `session.changed`. The session is held only while `f` runs.
+    fn with_backend<T>(
         &self,
         name: &str,
-        f: impl FnOnce(&mut dyn DevelopBackend) -> Result<T, Error>,
+        needed: u16,
+        f: impl FnOnce(&mut dyn Backend) -> Result<T, Error>,
     ) -> Result<T, RpcError> {
         let sess = self.get(name).ok_or_else(|| not_connected(name))?;
         let mut s = lock(&sess);
         self.ensure(&mut s)?;
         let version = s.system.as_ref().map_or(0, |sys| sys.qap);
-        if version < QAP_DEVELOP {
-            return Err(qap_unavailable(version));
+        if version < needed {
+            return Err(qap_unavailable_for(needed, version));
         }
         let b = s
             .backend
             .as_mut()
             .expect("a connected session has a backend");
-        let out = f(b.develop()).map_err(|e| match e {
-            Error::Unsupported { has, .. } => qap_unavailable(has),
+        let out = f(b.as_mut()).map_err(|e| match e {
+            Error::Unsupported { has, .. } => qap_unavailable_for(needed, has),
             e => rpc_error(&e),
         });
         s.observe();
         self.publish(&mut s);
         out
+    }
+
+    /// Runs `f` on the session's `Develop` operations (version 8), as
+    /// [`Sessions::with_backend`] does.
+    pub fn develop<T>(
+        &self,
+        name: &str,
+        f: impl FnOnce(&mut dyn DevelopBackend) -> Result<T, Error>,
+    ) -> Result<T, RpcError> {
+        self.with_backend(name, QAP_DEVELOP, |b| f(b.develop()))
+    }
+
+    /// Runs `f` on the session's `Ifs` operations (version 5), as
+    /// [`Sessions::with_backend`] does. A transfer calls it once per
+    /// request it sends and waits for the reply outside it, so the
+    /// connection's other requests go on meanwhile.
+    pub fn ifs<T>(
+        &self,
+        name: &str,
+        f: impl FnOnce(&mut dyn IfsBackend) -> Result<T, Error>,
+    ) -> Result<T, RpcError> {
+        self.with_backend(name, QAP_IFS, |b| f(b.ifs()))
     }
 
     /// `libl.get`: `GetLibraryList`, in the connection job's lane.

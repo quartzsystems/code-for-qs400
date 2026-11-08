@@ -249,6 +249,82 @@ export interface MemberChangeTextParams extends MemberParams {
   text?: string;
 }
 
+export type IfsKind = 'file' | 'directory' | 'symlink' | 'other';
+
+/** An `ifs.list` entry. */
+export interface IfsEntry {
+  name: string;
+  kind: IfsKind;
+  /** Bytes. */
+  size: number;
+  /** Milliseconds since 1970-01-01 UTC. */
+  modified: number;
+  owner: string;
+  ccsid: number;
+  /** A symbolic link's target, as stored. */
+  target?: string;
+}
+
+/**
+ * What a copy of a file is checked against: `Stat`'s change counter as a
+ * string (it is a u64), or `m` and `GetInfo`'s `modified` before QAP
+ * version 6. Only compared.
+ */
+export type IfsChange = string;
+
+/** Result of `ifs.info`: the entry (a link itself) and its change. */
+export interface IfsInfo extends IfsEntry {
+  change: IfsChange;
+}
+
+export interface IfsPathParams {
+  name: string;
+  path: string;
+}
+
+export interface IfsListParams extends IfsPathParams {
+  /** `*` and `?` wildcards; absent for every entry. */
+  pattern?: string;
+}
+
+/** Result of `ifs.readText`: the file converted by the server to UTF-8. */
+export interface IfsText {
+  text: string;
+  /** The file's own CCSID. */
+  ccsid: number;
+  /** The file's size in its own bytes. */
+  size: number;
+  change: IfsChange;
+}
+
+export type IfsWriteMode = 'create' | 'replace';
+
+export interface IfsWriteTextParams extends IfsPathParams {
+  text: string;
+  /** The CCSID of a file created; absent for 1208. An existing file keeps its own. */
+  ccsid?: number;
+  mode: IfsWriteMode;
+  /** The change the text was read with; `IfsErrorCodes.Changed` when it differs now. */
+  expect?: IfsChange;
+}
+
+export interface IfsWritten {
+  /** The file's size in its own CCSID. */
+  size: number;
+  change: IfsChange;
+}
+
+export interface IfsMkdirParams extends IfsPathParams {
+  parents: boolean;
+}
+
+export interface IfsFromToParams {
+  name: string;
+  from: string;
+  to: string;
+  replace: boolean;
+}
+
 /** Requests the extension sends, by method name. */
 export interface HostMethods {
   'host.version': { params: undefined; result: HostVersionResult };
@@ -273,6 +349,15 @@ export interface HostMethods {
   'member.rename': { params: MemberRenameParams; result: null };
   'member.delete': { params: MemberParams; result: null };
   'member.changeText': { params: MemberChangeTextParams; result: null };
+  'ifs.list': { params: IfsListParams; result: IfsEntry[] };
+  'ifs.info': { params: IfsPathParams; result: IfsInfo };
+  'ifs.readText': { params: IfsPathParams; result: IfsText };
+  'ifs.writeText': { params: IfsWriteTextParams; result: IfsWritten };
+  'ifs.mkdir': { params: IfsMkdirParams; result: null };
+  'ifs.delete': { params: IfsPathParams; result: null };
+  'ifs.rename': { params: IfsFromToParams; result: null };
+  'ifs.copy': { params: IfsFromToParams; result: null };
+  'ifs.resolve': { params: IfsPathParams; result: { path: string } };
 }
 
 /** Notifications the host sends, by method name. */
@@ -320,4 +405,18 @@ export const SessionErrorCodes = {
   Server: -32010,
   /** Name lookup, TCP, TLS, a closed connection, no reply in time. */
   Transport: -32011,
+  /** A local file a transfer reads or writes failed. */
+  Local: -32012,
+} as const;
+
+/** Error codes of `ifs.*` (host/crates/code-host/src/ifs.rs). */
+export const IfsErrorCodes = {
+  /** `ifs.writeText` with `expect`: changed on the system since. `data` is `{ change: IfsChange | null }`. */
+  Changed: -32020,
+  /** `ifs.readText` over the text limit. `data` is `{ size, limit }`. */
+  TooLarge: -32021,
+  /** A transfer was cancelled. `data` is `{ transfer, offset }`. */
+  Cancelled: -32022,
+  /** `ifs.resolve`: too many symbolic links in a row. */
+  LinkLoop: -32023,
 } as const;

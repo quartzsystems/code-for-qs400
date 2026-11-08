@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use code_host::registry_with;
 use code_host::session::{
-    Backend, DevelopBackend, Endpoint, Factory, JobDto, Sessions, SystemDto, codes,
+    Backend, DevelopBackend, Endpoint, Factory, IfsBackend, JobDto, Sessions, SystemDto, codes,
 };
 use host_rpc::{Context, Outbound, Registry, RpcError};
 use qap_client::develop::WriteOptions;
@@ -116,6 +116,9 @@ impl Backend for Fake {
     }
     fn develop(&mut self) -> &mut dyn DevelopBackend {
         self
+    }
+    fn ifs(&mut self) -> &mut dyn IfsBackend {
+        unreachable!("these tests send no Ifs request")
     }
 }
 
