@@ -24,8 +24,10 @@ use code_host::session::{
     SystemDto, codes,
 };
 use host_rpc::{Context, Outbound, Registry, RpcError};
-use qap_client::proto::ops::command::{CheckReply, CommandText};
+use qap_client::proto::ops::command::{CheckReply, CommandReply, CommandText};
 use qap_client::proto::ops::connection::HelloReply;
+use qap_client::proto::ops::develop::CompileReply;
+use qap_client::proto::types::{Diagnostic, JobId, MemberName, ObjectName, Where};
 use qap_client::proto::{Envelope, Kind, Op, Service};
 use qap_client::{
     Connection, Error, Pending, Requests, Secret, ServerMessage, Status, Target, Wake, Wire,
@@ -39,7 +41,6 @@ use serde_json::{Value, json};
 type Answer = (Status, Option<ServerMessage>, Vec<u8>);
 
 /// How the server answers the next request of an op.
-#[allow(dead_code)] // `Hold`: the run tests cancel in the lane
 enum Plan {
     /// At once.
     Now(Answer),
@@ -454,4 +455,400 @@ fn check_refused_status_is_a_server_error() {
         .unwrap_err();
     assert_eq!(e.code, codes::SERVER);
     assert_eq!(e.data.unwrap()["messageId"], json!("CPF9802"));
+}
+
+// action.run
+
+fn job() -> JobId {
+    JobId {
+        name: "QAPCNN".into(),
+        user: "QUSER".into(),
+        number: "123456".into(),
+    }
+}
+
+fn member(library: &str, file: &str, name: &str) -> MemberName {
+    MemberName {
+        file: ObjectName {
+            library: library.into(),
+            name: file.into(),
+        },
+        member: name.into(),
+    }
+}
+
+const RNF7030_HELP: &str =
+    "The name is not declared in the program. Declare it, or correct the spelling.";
+
+fn rnf7030(at: Where, line: u32) -> Diagnostic {
+    Diagnostic {
+        r#where: at,
+        line,
+        column: 9,
+        end_line: 0,
+        end_column: 17,
+        severity: 30,
+        id: "RNF7030".into(),
+        text: "ASSETQTY is not defined.".into(),
+        help: RNF7030_HELP.into(),
+    }
+}
+
+fn rns9310() -> ServerMessage {
+    message(
+        "RNS9310",
+        50,
+        "Program ASSETS42 was not created in library CWELLMAN.",
+        "The listing shows why: diagnostics above GENLVL, OPTION(*NOGEN), or a problem binding or storing the program.",
+    )
+}
+
+const COMPILE: &str = "CRTBNDRPG PGM(CWELLMAN/ASSETS42) SRCFILE(HLINV/QTMPSRC) SRCMBR(ASSETS42) DBGVIEW(*SOURCE) OPTION(*EVENTF)";
+
+#[test]
+fn compile_goes_to_develop_compile_and_an_error_keeps_its_body() {
+    let h = Host::new();
+    h.plan(
+        Op::Compile,
+        Plan::Now((
+            Status::Error,
+            Some(rns9310()),
+            body(&CompileReply {
+                job: job(),
+                messages: vec![rns9310()],
+                diagnostics: vec![
+                    rnf7030(
+                        Where::Member {
+                            member: member("HLINV", "QTMPSRC", "ASSETS42"),
+                        },
+                        42,
+                    ),
+                    rnf7030(
+                        Where::Member {
+                            member: member("HLINV", "QRPGLESRC", "ASSETCPY"),
+                        },
+                        7,
+                    ),
+                    Diagnostic {
+                        severity: 0,
+                        id: "RNF7031".into(),
+                        text: "The name or indicator is not referenced.".into(),
+                        ..rnf7030(
+                            Where::Path {
+                                path: "/home/CWELLMAN/inc.rpgleinc".into(),
+                            },
+                            3,
+                        )
+                    },
+                    Diagnostic {
+                        line: 0,
+                        column: 0,
+                        end_column: 0,
+                        ..rnf7030(Where::None, 0)
+                    },
+                ],
+            }),
+        )),
+    );
+    let out = h
+        .call(
+            "action.run",
+            json!({"name":"QSHQ400","command":COMPILE,"kind":"compile"}),
+        )
+        .unwrap();
+    assert_eq!(h.asked(), vec![format!("Compile {COMPILE}")]);
+    let escape = json!({
+        "id":"RNS9310","severity":50,
+        "text":"Program ASSETS42 was not created in library CWELLMAN.",
+        "secondLevel":rns9310().help
+    });
+    assert_eq!(out["status"], json!("Error"));
+    assert_eq!(out["escape"], escape);
+    assert_eq!(
+        out["job"],
+        json!({"number":"123456","user":"QUSER","name":"QAPCNN"})
+    );
+    assert_eq!(out["messages"], json!([escape]));
+    let d = out["diagnostics"].as_array().unwrap();
+    assert_eq!(d.len(), 4);
+    assert_eq!(
+        d[0],
+        json!({
+            "at":{"kind":"member","library":"HLINV","file":"QTMPSRC","member":"ASSETS42"},
+            "line":42,"column":9,"endLine":0,"endColumn":17,"severity":30,
+            "id":"RNF7030","text":"ASSETQTY is not defined.","help":RNF7030_HELP
+        })
+    );
+    assert_eq!(
+        d[1]["at"],
+        json!({"kind":"member","library":"HLINV","file":"QRPGLESRC","member":"ASSETCPY"})
+    );
+    assert_eq!(
+        d[2]["at"],
+        json!({"kind":"path","path":"/home/CWELLMAN/inc.rpgleinc"})
+    );
+    assert_eq!(d[3]["at"], json!({"kind":"none"}));
+    assert_eq!(d[3]["line"], json!(0));
+}
+
+#[test]
+fn compile_ok_answers_the_completion_message_and_no_diagnostics() {
+    let h = Host::new();
+    let done = message(
+        "RNS9304",
+        0,
+        "Program ASSETS42 created in library CWELLMAN. Highest severity: 00.",
+        "The program was created. The highest severity of the compile messages is shown.",
+    );
+    h.plan(
+        Op::Compile,
+        Plan::Now((
+            Status::Ok,
+            None,
+            body(&CompileReply {
+                job: job(),
+                messages: vec![done],
+                diagnostics: vec![],
+            }),
+        )),
+    );
+    let out = h
+        .call(
+            "action.run",
+            json!({"name":"QSHQ400","command":COMPILE,"kind":"compile"}),
+        )
+        .unwrap();
+    assert_eq!(out["status"], json!("Ok"));
+    assert!(out.get("escape").is_none());
+    assert_eq!(out["messages"][0]["id"], json!("RNS9304"));
+    assert_eq!(out["diagnostics"], json!([]));
+}
+
+#[test]
+fn command_goes_to_run_command_and_never_has_diagnostics() {
+    let h = Host::new();
+    h.plan(
+        Op::RunCommand,
+        Plan::Now((
+            Status::Ok,
+            None,
+            body(&CommandReply {
+                job: job(),
+                messages: vec![message("CPC2206", 0, "Ownership of object changed.", "")],
+            }),
+        )),
+    );
+    let out = h
+        .call(
+            "action.run",
+            json!({"name":"QSHQ400","command":"CALL PGM(HLINV/ASSETS)","kind":"command"}),
+        )
+        .unwrap();
+    assert_eq!(h.asked(), vec!["RunCommand CALL PGM(HLINV/ASSETS)"]);
+    assert_eq!(
+        out,
+        json!({
+            "status":"Ok",
+            "job":{"number":"123456","user":"QUSER","name":"QAPCNN"},
+            "messages":[{"id":"CPC2206","severity":0,"text":"Ownership of object changed."}],
+            "diagnostics":[]
+        })
+    );
+}
+
+#[test]
+fn an_escape_is_the_real_message_with_the_body_filled() {
+    let h = Host::new();
+    let cpf9812 = message(
+        "CPF9812",
+        40,
+        "No file QNOSRC in library HLINV.",
+        "Check the name and the library, or the library list.",
+    );
+    h.plan(
+        Op::Compile,
+        Plan::Now((
+            Status::NotFound,
+            Some(cpf9812.clone()),
+            body(&CompileReply {
+                job: job(),
+                messages: vec![cpf9812],
+                diagnostics: vec![],
+            }),
+        )),
+    );
+    let out = h
+        .call(
+            "action.run",
+            json!({"name":"QSHQ400","command":"CRTBNDRPG PGM(CWELLMAN/ASSETS42) SRCFILE(HLINV/QNOSRC)","kind":"compile"}),
+        )
+        .unwrap();
+    assert_eq!(out["status"], json!("NotFound"));
+    assert_eq!(out["escape"]["id"], json!("CPF9812"));
+    assert_eq!(
+        out["escape"]["text"],
+        json!("No file QNOSRC in library HLINV.")
+    );
+    assert_eq!(
+        out["escape"]["secondLevel"],
+        json!("Check the name and the library, or the library list.")
+    );
+    assert_eq!(out["messages"][0]["id"], json!("CPF9812"));
+}
+
+/// Calls `action.run` on a thread of its own; the answer when it ends.
+fn run_in_background(h: &Host, params: Value) -> std::thread::JoinHandle<Result<Value, RpcError>> {
+    let registry = Arc::clone(&h.registry);
+    let outbound = h.outbound.clone();
+    std::thread::spawn(move || registry.dispatch("action.run", params, &Context::new(outbound)))
+}
+
+/// Waits until the server has been asked `line`.
+fn until_asked(h: &Host, line: &str) {
+    for _ in 0..1000 {
+        if h.script().asked.iter().any(|a| a == line) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("never asked {line}");
+}
+
+#[test]
+fn cancelled_in_the_lane_has_no_body() {
+    let h = Host::new();
+    h.plan(
+        Op::Compile,
+        Plan::Hold((Status::Cancelled, None, Vec::new())),
+    );
+    let waiting = run_in_background(
+        &h,
+        json!({"name":"QSHQ400","command":COMPILE,"kind":"compile","run":"r-test"}),
+    );
+    until_asked(&h, &format!("Compile {COMPILE}"));
+    // The host goes on answering while the run waits.
+    assert_eq!(
+        h.call("action.cancel", json!({"name":"QSHQ400","run":"r-test"}))
+            .unwrap(),
+        Value::Null
+    );
+    let out = waiting.join().unwrap().unwrap();
+    assert_eq!(
+        out,
+        json!({"status":"Cancelled","messages":[],"diagnostics":[]})
+    );
+    assert_eq!(
+        h.asked(),
+        vec![format!("Compile {COMPILE}"), "Cancel".to_owned()]
+    );
+}
+
+#[test]
+fn cancelled_once_started_keeps_its_body() {
+    let h = Host::new();
+    let ended = message(
+        "CPF0001",
+        30,
+        "Error found on CALL command.",
+        "The command was ended.",
+    );
+    h.plan(
+        Op::RunCommand,
+        Plan::Hold((
+            Status::Cancelled,
+            Some(ended.clone()),
+            body(&CommandReply {
+                job: job(),
+                messages: vec![ended],
+            }),
+        )),
+    );
+    let waiting = run_in_background(
+        &h,
+        json!({"name":"QSHQ400","command":"CALL PGM(HLINV/LOOP)","kind":"command","run":"r-loop"}),
+    );
+    until_asked(&h, "RunCommand CALL PGM(HLINV/LOOP)");
+    h.call("action.cancel", json!({"run":"r-loop"})).unwrap();
+    let out = waiting.join().unwrap().unwrap();
+    assert_eq!(out["status"], json!("Cancelled"));
+    assert_eq!(out["escape"]["id"], json!("CPF0001"));
+    assert_eq!(out["job"]["number"], json!("123456"));
+    assert_eq!(out["messages"][0]["id"], json!("CPF0001"));
+}
+
+#[test]
+fn a_status_that_is_not_an_outcome_is_the_server_refusal() {
+    let h = Host::new();
+    h.plan(
+        Op::Compile,
+        Plan::Now((
+            Status::Busy,
+            Some(message("CPF1234", 40, "Too many requests.", "")),
+            Vec::new(),
+        )),
+    );
+    let e = h
+        .call(
+            "action.run",
+            json!({"name":"QSHQ400","command":COMPILE,"kind":"compile"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, codes::SERVER);
+    assert_eq!(e.data.unwrap()["status"], json!("Busy"));
+}
+
+#[test]
+fn compile_below_version_8_is_refused_before_anything_is_sent() {
+    let h = Host::at(Some(7));
+    let e = h
+        .call(
+            "action.run",
+            json!({"name":"QSHQ400","command":COMPILE,"kind":"compile"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, codes::QAP_UNAVAILABLE);
+    assert_eq!(e.data.unwrap(), json!({"version":7}));
+    assert!(h.asked().is_empty());
+}
+
+#[test]
+fn run_params_are_checked() {
+    let h = Host::new();
+    for bad in [
+        json!({"name":"QSHQ400","command":"","kind":"command"}),
+        json!({"name":"QSHQ400","command":"CALL X","kind":"submit"}),
+        json!({"name":"QSHQ400","command":"CALL X","kind":"command","run":""}),
+    ] {
+        let e = h.call("action.run", bad.clone()).unwrap_err();
+        assert_eq!(e.code, host_rpc::codes::INVALID_PARAMS, "{bad}");
+    }
+    assert!(h.asked().is_empty());
+    // A cancel of a run that is not running answers null.
+    assert_eq!(
+        h.call("action.cancel", json!({"run":"r404"})).unwrap(),
+        Value::Null
+    );
+}
+
+#[test]
+fn a_run_id_already_running_is_refused() {
+    let h = Host::new();
+    h.plan(
+        Op::Compile,
+        Plan::Hold((Status::Cancelled, None, Vec::new())),
+    );
+    let first = run_in_background(
+        &h,
+        json!({"name":"QSHQ400","command":COMPILE,"kind":"compile","run":"same"}),
+    );
+    until_asked(&h, &format!("Compile {COMPILE}"));
+    let e = h
+        .call(
+            "action.run",
+            json!({"name":"QSHQ400","command":"CALL X","kind":"command","run":"same"}),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, host_rpc::codes::INVALID_PARAMS);
+    h.call("action.cancel", json!({"run":"same"})).unwrap();
+    assert_eq!(first.join().unwrap().unwrap()["status"], json!("Cancelled"));
 }

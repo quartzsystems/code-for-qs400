@@ -193,7 +193,9 @@ mod tests {
         assert_eq!(
             registry(&Outbound::new(io::sink())).method_names(),
             vec![
+                "action.cancel",
                 "action.check",
+                "action.run",
                 "host.ping",
                 "host.shutdown",
                 "host.version",

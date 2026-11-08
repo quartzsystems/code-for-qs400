@@ -392,6 +392,62 @@ export interface ActionCheckResult {
   messages: CommandMessage[];
 }
 
+/**
+ * `compile` runs `Develop.Compile`, whose outcome carries the compiler's
+ * diagnostics; `command` runs `RunCommand`.
+ */
+export type ActionKind = 'compile' | 'command';
+
+export interface ActionRunParams {
+  /** The connection. */
+  name: string;
+  command: string;
+  kind: ActionKind;
+  /** The ID `action.cancel` names; the host makes one when absent. */
+  run?: string;
+}
+
+export interface ActionCancelParams {
+  name?: string;
+  run: string;
+}
+
+/** Where a diagnostic points: the member compiled or a `/COPY` member, a stream file, or nowhere. */
+export type DiagnosticAt =
+  | { kind: 'member'; library: string; file: string; member: string }
+  | { kind: 'path'; path: string }
+  | { kind: 'none' };
+
+/**
+ * A compiler's message, as the spec's `Diagnostic`: lines and columns from
+ * 1, 0 unknown; `endLine` 0 is `line`. `help` is the second-level text.
+ */
+export interface CompileDiagnostic {
+  at: DiagnosticAt;
+  line: number;
+  column: number;
+  endLine: number;
+  endColumn: number;
+  severity: number;
+  id: string;
+  text: string;
+  help: string;
+}
+
+/** Result of `action.run`: the command's or the compile's outcome as QAP returned it. */
+export interface ActionOutcome {
+  /** `Ok`, `Error`, `NotFound`, `NotAuthorized` or `Cancelled`. */
+  status: string;
+  /** The escape message that ended it, when one did. */
+  escape?: CommandMessage;
+  /** The job it ran in; absent when it was cancelled while it waited in the lane. */
+  job?: SessionJob;
+  /** Every message it sent its caller, oldest first. */
+  messages: CommandMessage[];
+  /** The compiler's; always empty for `command`. */
+  diagnostics: CompileDiagnostic[];
+}
+
 /** Requests the extension sends, by method name. */
 export interface HostMethods {
   'host.version': { params: undefined; result: HostVersionResult };
@@ -432,6 +488,9 @@ export interface HostMethods {
   'ifs.cancel': { params: IfsCancelParams; result: null };
   /** Waits in the connection job's lane; the host bounds the wait. */
   'action.check': { params: ActionCheckParams; result: ActionCheckResult };
+  /** Answered when the command ends, however long it runs: no request timeout. */
+  'action.run': { params: ActionRunParams; result: ActionOutcome };
+  'action.cancel': { params: ActionCancelParams; result: null };
 }
 
 /** Notifications the host sends, by method name. */

@@ -87,7 +87,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * Methods answered only when the work ends (a transfer), or that wait in the
  * connection job's lane, where the host bounds the wait itself: no timeout.
  */
-export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>(['ifs.download', 'ifs.upload', 'action.check']);
+export const UNTIMED_METHODS: ReadonlySet<MethodName> = new Set<MethodName>(['ifs.download', 'ifs.upload', 'action.check', 'action.run']);
 const SHUTDOWN_GRACE_MS = 2_000;
 
 /** File name of the host binary on this platform. */
