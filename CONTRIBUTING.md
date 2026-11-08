@@ -526,3 +526,62 @@ To run it, on a machine that reaches `QSHQ400`:
    `QS400_TEST_HOST`, `QS400_TEST_USER` and `QS400_TEST_PASSWORD` are
    set.
 5. Record the result and every message ID seen here.
+
+## Phase 2 exit test
+
+> A member saved from VS Code round-trips byte-identical in `QRPGLESRC`;
+> `DSPPFM` shows updated dates.
+
+**Not run yet, 2026-11-07: no QAP server was reachable from the
+development machine.** As for Phase 1, `QSHQ400` does not resolve (bare,
+under `ad.quartz.systems` or `quartz.systems`) and 10.42.70.150 does not
+answer on port 2320; checked at the start of the phase and again at its
+end. So there are no `DSPPFM` or `CMPPFM` observations, no message IDs
+from a real system, and the library list step of the Phase 1 exit test is
+still to run too.
+
+What was checked instead, on Windows x64 with VS Code 1.143.0:
+
+- The host's `object.*` and `member.*` against canned `qap-client`
+  replies (`tests/develop.rs`): paging in 500s, filters and patterns sent
+  as typed, `seq` and `date` converted only in `members::codec` (edges
+  `0000.01`, `9999.99`, `000000`, a date of 0), `renumber` through
+  `WriteOptions` alone, and `CPF1002`, `TCP1A5A`, `TCP1A61`, `TCP1A62`,
+  `CPF9801` and `CPF7306` passed through with their second-level text.
+  Below version 8 every method answers `-32001` with the version and sends
+  nothing.
+- The save diff's six fixtures through the provider (`test/save.test.ts`),
+  each asserting the exact `lines` sent: no change (nothing written), one
+  change, insert at the top, two inserts in a gap, an insert with no room
+  (`renumber: true`), and deleted lines. All six pass.
+- The provider against a fake host: the lock on open, `CPF1002` falling
+  back to a read-only open, Open Read-Only without a lock, unlock on
+  release, locks taken again after a reconnect, directory listings.
+- The Objects view against a fake host, and the `win32-x64` VSIX packaged
+  with the new contributions.
+
+To run it, on a machine that reaches `QSHQ400`, signed on as `CWELLMAN`:
+
+1. Set `QS400_TEST_HOST`, `QS400_TEST_USER`, `QS400_TEST_PASSWORD` (and
+   `QS400_TEST_SRCPF=HLINV/QTMPSRC`, which must exist) and run `npm test`.
+   The Phase 2 live suite runs every scenario below except the lock, on
+   copies in `HLINV/QTMPSRC`, and logs the messages it sees.
+2. By hand, in the Objects view: open `HLINV/QRPGLESRC/ASSETS.rpgle`, save
+   with no change. The host log shows no `member.write`.
+3. `CPYSRCF FROMFILE(HLINV/QRPGLESRC) TOFILE(HLINV/QTMPSRC)
+   FROMMBR(ASSETS)` at a 5250 session. Save `ASSETS` from VS Code with no
+   change, then `CMPPFM NEWFILE(HLINV/QRPGLESRC) NEWMBR(ASSETS)
+   OLDFILE(HLINV/QTMPSRC) OLDMBR(ASSETS)`: identical; record the result.
+4. Change one line, save, `DSPPFM HLINV/QRPGLESRC ASSETS`: that line has
+   today's date and its own sequence number; every other line is as it
+   was. Record what `DSPPFM` shows.
+5. Insert two lines between two existing ones, save: sequence numbers
+   between the neighbours, today's date.
+6. Insert where no gap remains: the member is renumbered from `0001.00`,
+   with a notification.
+7. In `HLINV/QTMPSRC`, from the tree: New Member, Copy, Rename, Delete
+   (it asks, naming the member). Check each in `WRKMBRPDM`.
+8. Hold `ASSETS` with `STRSEU` at a 5250 session and open it in VS Code:
+   the `CPF1002` text is shown and the document is read-only.
+9. Record the result, the `DSPPFM` and `CMPPFM` observations and every
+   message ID seen here.
