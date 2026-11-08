@@ -14,6 +14,7 @@ members = [
     "crates/lsp-dds",
     "crates/lsp-sql",
     "crates/lsp-cmd",
+    "crates/dap",
 ]
 
 [workspace.package]
@@ -58,6 +59,7 @@ lsp-cl = { path = "crates/lsp-cl" }
 lsp-dds = { path = "crates/lsp-dds" }
 lsp-sql = { path = "crates/lsp-sql" }
 lsp-cmd = { path = "crates/lsp-cmd" }
+dap = { path = "crates/dap" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

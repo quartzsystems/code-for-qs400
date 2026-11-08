@@ -26,7 +26,7 @@ enum Command {
         /// rpgle, cl, dds, sql or cmd
         lang: String,
     },
-    /// Debug adapter
+    /// Debug adapter for one debug session, DAP over stdio
     Dap,
 }
 
@@ -34,10 +34,7 @@ fn main() -> ExitCode {
     match Cli::parse().command.unwrap_or(Command::Serve) {
         Command::Serve => run_server(),
         Command::Lsp { lang } => run_lsp(&lang),
-        Command::Dap => {
-            eprintln!("not implemented in this release");
-            ExitCode::from(2)
-        }
+        Command::Dap => run_dap(),
     }
 }
 
@@ -58,6 +55,27 @@ fn run_lsp(lang: &str) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("[error] language server {lang}: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// One debug session, until the client says `disconnect`. qap-client's
+/// warnings go to stderr; stdout is the protocol's.
+fn run_dap() -> ExitCode {
+    qsa_net::log::set_sink(qsa_net::log::Level::Warn, |_, line| {
+        eprintln!("[warn] {line}");
+    });
+    let stdin = BufReader::new(io::stdin());
+    match dap::serve(
+        stdin,
+        Box::new(io::stdout()),
+        code_host::debug::connector(),
+        dap::Options::default(),
+    ) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("[error] debug adapter: {e}");
             ExitCode::FAILURE
         }
     }

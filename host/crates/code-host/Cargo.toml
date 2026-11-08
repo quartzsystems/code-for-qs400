@@ -28,6 +28,7 @@ lsp-cl.workspace = true
 lsp-dds.workspace = true
 lsp-sql.workspace = true
 lsp-cmd.workspace = true
+dap.workspace = true
 
 [dev-dependencies]
 lsp-common.workspace = true

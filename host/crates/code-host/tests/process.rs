@@ -21,11 +21,48 @@ fn version_flag() {
     );
 }
 
+/// The debug adapter: `initialize`, a `launch` whose sign-on cannot reach
+/// a closed port, `disconnect`, and exit 0. The password goes in the
+/// arguments, never on the command line.
 #[test]
-fn dap_not_implemented() {
-    let out = Command::new(BIN).arg("dap").output().unwrap();
-    assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("not implemented in this release"));
+fn dap_initializes_refuses_an_unreachable_launch_and_exits() {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let mut child = Command::new(BIN)
+        .arg("dap")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut send = |v: Value| {
+        write_frame(&mut stdin, &serde_json::to_vec(&v).unwrap()).unwrap();
+        stdin.flush().unwrap();
+    };
+    let reply = |r: &mut BufReader<_>, seq: i64| until(r, |v| v["request_seq"] == json!(seq));
+    send(
+        json!({"seq":1,"type":"request","command":"initialize","arguments":{"adapterID":"qs400"}}),
+    );
+    let init = reply(&mut stdout, 1);
+    assert_eq!(init["success"], json!(true));
+    assert_eq!(init["body"]["supportsConditionalBreakpoints"], json!(true));
+    send(
+        json!({"seq":2,"type":"request","command":"launch","arguments":{
+            "program": "HLINV/ASSETS",
+            "qs400": { "host": "127.0.0.1", "port": port, "user": "CWELLMAN", "password": "x" }
+        }}),
+    );
+    let launch = reply(&mut stdout, 2);
+    assert_eq!(launch["success"], json!(false), "{launch}");
+    assert_eq!(launch["body"]["error"]["showUser"], json!(true));
+    send(json!({"seq":3,"type":"request","command":"disconnect","arguments":{}}));
+    assert_eq!(reply(&mut stdout, 3)["success"], json!(true));
+    assert_eq!(child.wait().unwrap().code(), Some(0));
 }
 
 #[test]

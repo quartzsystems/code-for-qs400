@@ -6,6 +6,7 @@
 
 pub mod actions;
 pub mod codec;
+pub mod debug;
 pub mod deploy;
 pub mod ifs;
 pub mod jobs;
