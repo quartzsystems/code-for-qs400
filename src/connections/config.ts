@@ -42,6 +42,14 @@ export interface ConnectionConfig {
   filters?: FilterConfig[];
   /** IFS view roots, in order; the first is Home. Left out: `/home/<user>` and `/`. */
   ifsRoots?: string[];
+  /**
+   * This connection's actions, as written: the actions store reads them
+   * (src/actions/model.ts) and reports entries that do not parse, which are
+   * kept here as they are.
+   */
+  actions?: unknown[];
+  /** Values of `&CUSTOM:NAME`, by upper-case name. */
+  variables?: Record<string, string>;
 }
 
 export interface ParsedConnections {
@@ -102,6 +110,31 @@ function parseRoots(raw: unknown, label: string, problems: string[]): string[] |
     }
   }
   return roots;
+}
+
+const VARIABLE = /^[A-Z0-9_$#@]+$/;
+
+/**
+ * The `variables` of a connection: names (upper-cased) to string values.
+ * An entry that is not one is skipped and reported.
+ */
+function parseVariables(raw: unknown, label: string, problems: string[]): Record<string, string> | undefined {
+  if (!isObject(raw)) {
+    problems.push(`${label}: variables is not an object; it is ignored`);
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const name = k.trim().toUpperCase();
+    if (!VARIABLE.test(name)) {
+      problems.push(`${label}: ${JSON.stringify(k)} is not a variable name (letters, digits, _, $, #, @)`);
+    } else if (typeof v !== 'string') {
+      problems.push(`${label}: variable ${name} is not a string`);
+    } else {
+      out[name] = v;
+    }
+  }
+  return out;
 }
 
 /** Reads the setting's value. Bad entries are skipped and reported, never thrown. */
@@ -196,6 +229,19 @@ export function parseConnections(raw: unknown): ParsedConnections {
         c.ifsRoots = roots;
       }
     }
+    if (entry.actions !== undefined) {
+      if (Array.isArray(entry.actions)) {
+        c.actions = [...entry.actions];
+      } else {
+        problems.push(`${label}: actions is not an array; it is ignored`);
+      }
+    }
+    if (entry.variables !== undefined) {
+      const variables = parseVariables(entry.variables, label, problems);
+      if (variables) {
+        c.variables = variables;
+      }
+    }
     connections.push(c);
   });
   return { connections, problems };
@@ -226,6 +272,12 @@ export function toSetting(c: ConnectionConfig): Record<string, unknown> {
   }
   if (c.ifsRoots) {
     out.ifsRoots = [...c.ifsRoots];
+  }
+  if (c.actions) {
+    out.actions = [...c.actions];
+  }
+  if (c.variables && Object.keys(c.variables).length > 0) {
+    out.variables = { ...c.variables };
   }
   return out;
 }

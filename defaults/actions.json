@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Compile (CRTBNDRPG)",
+    "command": "CRTBNDRPG PGM(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) DBGVIEW(*SOURCE) OPTION(*EVENTF)",
+    "environment": "member",
+    "extensions": ["rpgle"],
+    "refresh": "parent",
+    "runAs": "connection"
+  }
+]

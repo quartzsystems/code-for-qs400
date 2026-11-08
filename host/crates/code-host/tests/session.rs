@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 
 use code_host::registry_with;
 use code_host::session::{
-    Backend, DevelopBackend, Endpoint, Factory, IfsBackend, JobDto, Sessions, SystemDto, codes,
-    qap_factory,
+    Backend, CommandBackend, DevelopBackend, Endpoint, Factory, IfsBackend, JobDto, Sessions,
+    SystemDto, codes, qap_factory,
 };
 use host_rpc::framing::read_frame;
 use host_rpc::{Context, Outbound, Registry, RpcError};
@@ -146,6 +146,9 @@ impl Backend for Fake {
     }
     fn ifs(&mut self) -> &mut dyn IfsBackend {
         unreachable!("these tests send no Ifs request")
+    }
+    fn command(&mut self) -> &mut dyn CommandBackend {
+        unreachable!("these tests send no Command request")
     }
 }
 

@@ -367,6 +367,31 @@ export interface IfsTransferEnded {
   offset?: number;
 }
 
+/**
+ * A message as a command or compile sent it: the server's own, with its
+ * second-level text when it has one.
+ */
+export interface CommandMessage {
+  id: string;
+  severity: number;
+  text: string;
+  secondLevel?: string;
+}
+
+export interface ActionCheckParams {
+  name: string;
+  command: string;
+}
+
+/** Result of `action.check`: `CheckCommand`'s outcome. */
+export interface ActionCheckResult {
+  /** `Ok`, `Error` or `NotFound`. */
+  status: string;
+  valid: boolean;
+  /** The check's messages; none when the command is valid. */
+  messages: CommandMessage[];
+}
+
 /** Requests the extension sends, by method name. */
 export interface HostMethods {
   'host.version': { params: undefined; result: HostVersionResult };
@@ -405,6 +430,8 @@ export interface HostMethods {
   /** Answered when the transfer ends: no request timeout. */
   'ifs.upload': { params: IfsUploadParams; result: { size: number } };
   'ifs.cancel': { params: IfsCancelParams; result: null };
+  /** Waits in the connection job's lane; the host bounds the wait. */
+  'action.check': { params: ActionCheckParams; result: ActionCheckResult };
 }
 
 /** Notifications the host sends, by method name. */

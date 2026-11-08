@@ -5,6 +5,7 @@
 !dist/extension.js
 !media/*.svg
 !schemas/*.json
+!defaults/*.json
 !syntaxes/*.json
 !languages/*.json
 !README.md

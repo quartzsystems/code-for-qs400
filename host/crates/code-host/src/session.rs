@@ -29,7 +29,10 @@
 //! library list here, objects and members in `objects` and `members`,
 //! each one `qap-client` call through [`Sessions::develop`]. The `Ifs`
 //! service (version 5, `Stat` 6) is reached through [`Backend::ifs`] and
-//! [`Sessions::ifs`], for `crate::ifs`.
+//! [`Sessions::ifs`], for `crate::ifs`. `Command` (version 2), `Develop`'s
+//! `Compile` and `Jobs`' `JobLog` (version 8) are reached through
+//! [`Backend::command`] and [`Sessions::command`], for `crate::actions`
+//! and `crate::jobs`.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -39,14 +42,16 @@ use std::time::Duration;
 use host_rpc::{Context, NoParams, Outbound, Registry, RpcError};
 use qap_client::develop::WriteOptions;
 use qap_client::ifs::Stamp;
+use qap_client::proto::ops::command::CommandText;
 use qap_client::proto::ops::develop::{
     Attribute, Libraries, LibraryList, ListLibraries, ListMembers, ListObjects, MemberData,
     Members, Objects, SetLibraryList,
 };
 use qap_client::proto::ops::ifs::{Entry, ReadFile, WriteFile};
+use qap_client::proto::ops::jobs::{JobLog, JobLogEntries};
 use qap_client::proto::types::{MemberName, ObjectName, SourceRecord};
 use qap_client::proto::{Op, Status};
-use qap_client::{Client, Error, Files, Pending, Requests, Secret, Target, Wake};
+use qap_client::{Client, Error, Files, Jobs, Pending, Requests, Secret, Target, Wake};
 use qsa_net::Trust;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -86,6 +91,9 @@ pub const QAP_DEVELOP: u16 = 8;
 /// The version `Ifs` needs. `Stat` is 6; before it a file's stamp is
 /// `GetInfo`'s `modified`, as [`Files::stamp`] falls back.
 pub const QAP_IFS: u16 = 5;
+
+/// The version `Command` (`RunCommand`, `CheckCommand`) needs.
+pub const QAP_COMMAND: u16 = 2;
 
 /// How often the watcher looks at the sessions without being woken.
 const WATCH_EVERY: Duration = Duration::from_secs(5);
@@ -235,6 +243,60 @@ pub trait Backend: Send {
     fn develop(&mut self) -> &mut dyn DevelopBackend;
     /// The `Ifs` operations on this connection.
     fn ifs(&mut self) -> &mut dyn IfsBackend;
+    /// `Command`, `Develop`'s `Compile` and `Jobs`' `JobLog` on this
+    /// connection.
+    fn command(&mut self) -> &mut dyn CommandBackend;
+}
+
+/// The lane's commands and the job log as an object, for a [`Backend`]
+/// trait object. The three `send_*`/`compile`/`run_command` methods only
+/// send and return the [`Pending`], so the caller waits for the reply with
+/// the session let go: a command waits in the connection job's lane
+/// behind any other, and a compile has no reply timeout. Implemented for
+/// every `qap-client` connection through its [`Requests`]; tests do it over
+/// a canned connection.
+pub trait CommandBackend {
+    /// `RunCommand`, as [`Client::run_command`] sends it. Read the reply
+    /// with [`qap_client::CommandOutcome::from_reply`].
+    fn run_command(&mut self, command: &str) -> Result<Pending, Error>;
+    /// `CheckCommand`, sent and not waited for; read the reply with
+    /// [`qap_client::CheckOutcome::from_reply`].
+    fn send_check(&mut self, command: &str) -> Result<Pending, Error>;
+    /// [`qap_client::Develop::compile`]. Read the reply with
+    /// [`qap_client::CompileOutcome::from_reply`].
+    fn compile(&mut self, command: &str) -> Result<Pending, Error>;
+    /// [`Jobs::job_log`]: one page of a job's log.
+    fn job_log(&mut self, req: &JobLog) -> Result<JobLogEntries, Error>;
+    /// How long a short request (`CheckCommand`) waits for its reply.
+    fn reply_timeout(&self) -> Duration;
+}
+
+impl<T: Requests> CommandBackend for T {
+    fn run_command(&mut self, command: &str) -> Result<Pending, Error> {
+        self.request_op(
+            Op::RunCommand,
+            &CommandText {
+                command: command.to_owned(),
+            },
+        )
+    }
+    fn send_check(&mut self, command: &str) -> Result<Pending, Error> {
+        self.request_op(
+            Op::CheckCommand,
+            &CommandText {
+                command: command.to_owned(),
+            },
+        )
+    }
+    fn compile(&mut self, command: &str) -> Result<Pending, Error> {
+        qap_client::Develop::compile(self, command)
+    }
+    fn job_log(&mut self, req: &JobLog) -> Result<JobLogEntries, Error> {
+        Jobs::job_log(self, req)
+    }
+    fn reply_timeout(&self) -> Duration {
+        Requests::reply_timeout(self)
+    }
 }
 
 /// `qap-client`'s [`Files`] as an object: one method per operation or
@@ -492,6 +554,10 @@ impl Backend for QapBackend {
     }
 
     fn ifs(&mut self) -> &mut dyn IfsBackend {
+        &mut self.client
+    }
+
+    fn command(&mut self) -> &mut dyn CommandBackend {
         &mut self.client
     }
 }
@@ -1037,6 +1103,19 @@ impl Sessions {
         f: impl FnOnce(&mut dyn IfsBackend) -> Result<T, Error>,
     ) -> Result<T, RpcError> {
         self.with_backend(name, QAP_IFS, |b| f(b.ifs()))
+    }
+
+    /// Runs `f` on the session's `Command`, `Compile` and `JobLog`
+    /// operations, refused below version `needed` ([`QAP_COMMAND`] or
+    /// [`QAP_DEVELOP`]), as [`Sessions::with_backend`] does. What waits in
+    /// the lane is only sent here; the caller waits outside.
+    pub fn command<T>(
+        &self,
+        name: &str,
+        needed: u16,
+        f: impl FnOnce(&mut dyn CommandBackend) -> Result<T, Error>,
+    ) -> Result<T, RpcError> {
+        self.with_backend(name, needed, |b| f(b.command()))
     }
 
     /// `libl.get`: `GetLibraryList`, in the connection job's lane.

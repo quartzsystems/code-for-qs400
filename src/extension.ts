@@ -3,6 +3,7 @@
 // root directory of this project.
 
 import * as vscode from 'vscode';
+import { ActionStore } from './actions/store';
 import { about } from './commands/about';
 import { registerConnectionCommands } from './commands/connection';
 import { IfsDragAndDrop, registerIfsFileCommands } from './commands/ifsFiles';
@@ -37,6 +38,7 @@ export interface ExtensionApi {
   readonly ifsFs: IfsFsProvider;
   readonly transfers: Transfers;
   readonly statusBar: SessionStatusBar;
+  readonly actions: ActionStore;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -68,6 +70,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   });
   const ifsFs = new IfsFsProvider(sessions, store, output);
   const transfers = new Transfers(host, sessions, ifs, ifsFs);
+  const actions = new ActionStore(context.extensionPath, store, sessions, output);
 
   context.subscriptions.push(
     output,
@@ -83,6 +86,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ifs,
     ifsView,
     ifsFs,
+    actions,
     host.onDidChangeState(showState),
     vscode.window.registerTreeDataProvider('code-for-qs400.connections', connections),
     vscode.window.registerTreeDataProvider('code-for-qs400.objects', objects),
@@ -108,7 +112,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers };
+  return { host, store, sessions, connections, libraryList, statusBar, objects, members, ifs, ifsView, ifsFs, transfers, actions };
 }
 
 export function deactivate(): void {

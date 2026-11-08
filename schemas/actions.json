@@ -1,6 +1,96 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Code for QS/400 Actions",
-  "description": "Schema for .vscode/actions.json. Defined in Phase 4.",
-  "type": "object"
+  "description": "The actions of a workspace folder (.vscode/actions.json): commands run against a source member, a stream file or an object.",
+  "type": "array",
+  "items": {
+    "$ref": "#/definitions/action"
+  },
+  "definitions": {
+    "action": {
+      "type": "object",
+      "required": [
+        "name",
+        "command",
+        "environment"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "markdownDescription": "Shown in the action pick. Unique without case: an action of the same name in a workspace folder overrides the default one, and a connection's overrides both."
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "markdownDescription": "The CL command. Variables: `&LIBRARY` `&NAME` `&TYPE` `&EXT` `&SRCFILE` `&SRCLIB` `&CURLIB` `&USERNAME` `&HOST` `&FULLPATH` `&PARENT` `&BASENAME` `&BASENAMEEXT` and `&CUSTOM:NAME`; `&&` is a literal `&`. The command's name decides how it runs: a compile the spec lists (`CRTBNDRPG`, `CRTRPGMOD`, `CRTSQLRPGI`, `CRTBNDCL`, `CRTCLMOD`, `CRTPF`, `CRTLF`, `CRTDSPF`, `CRTPRTF`, `CRTCMD`, `RUNSQLSTM`, `CRTPGM`, `CRTSRVPGM`) returns diagnostics for the Problems panel; anything else runs as a command."
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "member",
+            "file",
+            "object"
+          ],
+          "enumDescriptions": [
+            "A source member.",
+            "An IFS stream file.",
+            "An object in the Objects view."
+          ],
+          "description": "What the action runs against."
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "markdownDescription": "Member types (`RPGLE`) or file extensions (`rpgle`, `sql`), or object types for `object` (`*PGM`); compared without case. Left out, or `*`: every target of the environment."
+        },
+        "refresh": {
+          "type": "string",
+          "enum": [
+            "none",
+            "parent",
+            "library"
+          ],
+          "default": "none",
+          "enumDescriptions": [
+            "Nothing.",
+            "The member's source file, the file's folder, or the object's type node.",
+            "The library the action ran in."
+          ],
+          "description": "What to refresh in the views after the action ends."
+        },
+        "runAs": {
+          "type": "string",
+          "enum": [
+            "connection",
+            "batch"
+          ],
+          "default": "connection",
+          "enumDescriptions": [
+            "In the connection job, waiting for it to end: messages and diagnostics come back.",
+            "Submitted with SBMJOB to QBATCH: the job's name comes back, but no diagnostics."
+          ],
+          "description": "Where the command runs."
+        }
+      }
+    }
+  },
+  "examples": [
+    [
+      {
+        "name": "Compile (CRTBNDRPG)",
+        "command": "CRTBNDRPG PGM(&LIBRARY/&NAME) SRCFILE(&SRCLIB/&SRCFILE) SRCMBR(&NAME) DBGVIEW(*SOURCE) OPTION(*EVENTF)",
+        "environment": "member",
+        "extensions": [
+          "rpgle"
+        ],
+        "refresh": "parent",
+        "runAs": "connection"
+      }
+    ]
+  ]
 }

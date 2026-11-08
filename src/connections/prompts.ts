@@ -99,6 +99,12 @@ export async function promptConnection(
   if (existing?.ifsRoots) {
     c.ifsRoots = existing.ifsRoots;
   }
+  if (existing?.actions) {
+    c.actions = existing.actions;
+  }
+  if (existing?.variables) {
+    c.variables = existing.variables;
+  }
   return c;
 }
 

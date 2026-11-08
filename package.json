@@ -24,7 +24,8 @@
     "onCommand:code-for-qs400.host.restart",
     "onView:code-for-qs400.objects",
     "onView:code-for-qs400.ifs",
-    "onFileSystem:qs400ifs"
+    "onFileSystem:qs400ifs",
+    "workspaceContains:.vscode/actions.json"
   ],
   "contributes": {
     "viewsContainers": {
@@ -465,6 +466,91 @@
                   "pattern": "^/"
                 },
                 "markdownDescription": "Top-level folders of the **IFS** view, in order; the first is Home. Left out: `/home/<user>` and `/`. Edit them with **Add IFS Root**, **Remove IFS Root** and **Set as IFS Home**."
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "command",
+                    "environment"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "markdownDescription": "Shown in the action pick. Unique without case: an action of the same name in a workspace folder overrides the default one, and a connection's overrides both."
+                    },
+                    "command": {
+                      "type": "string",
+                      "minLength": 1,
+                      "markdownDescription": "The CL command. Variables: `&LIBRARY` `&NAME` `&TYPE` `&EXT` `&SRCFILE` `&SRCLIB` `&CURLIB` `&USERNAME` `&HOST` `&FULLPATH` `&PARENT` `&BASENAME` `&BASENAMEEXT` and `&CUSTOM:NAME`; `&&` is a literal `&`. The command's name decides how it runs: a compile the spec lists (`CRTBNDRPG`, `CRTRPGMOD`, `CRTSQLRPGI`, `CRTBNDCL`, `CRTCLMOD`, `CRTPF`, `CRTLF`, `CRTDSPF`, `CRTPRTF`, `CRTCMD`, `RUNSQLSTM`, `CRTPGM`, `CRTSRVPGM`) returns diagnostics for the Problems panel; anything else runs as a command."
+                    },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "member",
+                        "file",
+                        "object"
+                      ],
+                      "enumDescriptions": [
+                        "A source member.",
+                        "An IFS stream file.",
+                        "An object in the Objects view."
+                      ],
+                      "description": "What the action runs against."
+                    },
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "markdownDescription": "Member types (`RPGLE`) or file extensions (`rpgle`, `sql`), or object types for `object` (`*PGM`); compared without case. Left out, or `*`: every target of the environment."
+                    },
+                    "refresh": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "parent",
+                        "library"
+                      ],
+                      "default": "none",
+                      "enumDescriptions": [
+                        "Nothing.",
+                        "The member's source file, the file's folder, or the object's type node.",
+                        "The library the action ran in."
+                      ],
+                      "description": "What to refresh in the views after the action ends."
+                    },
+                    "runAs": {
+                      "type": "string",
+                      "enum": [
+                        "connection",
+                        "batch"
+                      ],
+                      "default": "connection",
+                      "enumDescriptions": [
+                        "In the connection job, waiting for it to end: messages and diagnostics come back.",
+                        "Submitted with SBMJOB to QBATCH: the job's name comes back, but no diagnostics."
+                      ],
+                      "description": "Where the command runs."
+                    }
+                  }
+                },
+                "markdownDescription": "Actions of this connection, the same shape as `.vscode/actions.json`. One with the name of a workspace or default action overrides it, for a site's `TGTRLS` or `DBGVIEW`."
+              },
+              "variables": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "pattern": "^[A-Za-z0-9_$#@]+$"
+                },
+                "markdownDescription": "Values of `&CUSTOM:NAME` in actions, by name: `{ \"TGTRLS\": \"V1R0M0\" }` is `&CUSTOM:TGTRLS`."
               }
             }
           }
@@ -958,7 +1044,13 @@
         "editor.fontFamily": "'Courier New', Courier, monospace",
         "editor.wordWrap": "off"
       }
-    }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "**/.vscode/actions.json",
+        "url": "./schemas/actions.json"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",
@@ -982,5 +1074,8 @@
     "mocha": "^11.7.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.72.1"
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1"
   }
 }

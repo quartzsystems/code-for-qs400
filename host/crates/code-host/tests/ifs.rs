@@ -20,7 +20,8 @@ use std::time::Duration;
 
 use code_host::registry_with;
 use code_host::session::{
-    Backend, DevelopBackend, Endpoint, Factory, IfsBackend, JobDto, Sessions, SystemDto, codes,
+    Backend, CommandBackend, DevelopBackend, Endpoint, Factory, IfsBackend, JobDto, Sessions,
+    SystemDto, codes,
 };
 use host_rpc::{Context, Outbound, Registry, RpcError};
 use qap_client::ifs::{self, whole_utf8};
@@ -633,6 +634,9 @@ impl Backend for Fake {
     }
     fn ifs(&mut self) -> &mut dyn IfsBackend {
         self
+    }
+    fn command(&mut self) -> &mut dyn CommandBackend {
+        unreachable!("these tests send no Command request")
     }
 }
 
