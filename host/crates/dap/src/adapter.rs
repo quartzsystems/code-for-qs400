@@ -238,6 +238,60 @@ struct State {
     call_done: Option<Receiver<CallNews>>,
     /// Each module's source, by [`module_key`]; asked once.
     sources: HashMap<String, Src>,
+    /// The stop's variable references: `variablesReference` `n` is entry
+    /// `n - 1`. Gone at the next stop or resume.
+    refs: Vec<Ref>,
+    /// Whether `Eval` takes an assignment, once probed.
+    set_variable: Option<bool>,
+}
+
+/// A `variablesReference`: a frame's own variables, or a structure's or
+/// array's parts.
+#[derive(Debug, Clone, Default)]
+struct Ref {
+    frame: u32,
+    parent: Option<String>,
+    /// Each part shown, by the name shown, to its full name.
+    names: HashMap<String, String>,
+}
+
+impl State {
+    fn add_ref(&mut self, frame: u32, parent: Option<String>) -> i64 {
+        self.refs.push(Ref {
+            frame,
+            parent,
+            names: HashMap::new(),
+        });
+        i64::try_from(self.refs.len()).unwrap_or(i64::MAX)
+    }
+
+    fn get_ref(&self, id: i64) -> Option<&Ref> {
+        usize::try_from(id - 1).ok().and_then(|i| self.refs.get(i))
+    }
+}
+
+/// What a stale or unknown reference is told.
+pub const STALE: &str = "That value is from an earlier stop; the job has gone on since.";
+
+/// What `setVariable` answers when the probe found `Eval` takes no
+/// assignment.
+pub const NO_ASSIGNMENT: &str = "This system's debugger shows values but does not change them.";
+
+/// A part's name as shown under its parent: `ASSET.ID` is `ID` under
+/// `ASSET`, `ARR(1)` is `(1)` under `ARR`.
+fn shown_name(full: &str, parent: Option<&str>) -> String {
+    match parent {
+        Some(p) => {
+            let rest = full
+                .get(p.len()..)
+                .filter(|_| full.len() > p.len() && full[..p.len()].eq_ignore_ascii_case(p));
+            match rest {
+                Some(r) => r.strip_prefix('.').unwrap_or(r).to_owned(),
+                None => full.to_owned(),
+            }
+        }
+        None => full.to_owned(),
+    }
 }
 
 impl State {
@@ -420,6 +474,7 @@ impl Session {
             let thread = st.thread_for(&s.job);
             st.stopped = Some(thread);
             st.frames.clear();
+            st.refs.clear();
             thread
         };
         let (reason, text) = match &s.reason {
@@ -585,6 +640,10 @@ impl Adapter {
             }
             "threads" => Ok(self.threads()),
             "stackTrace" => self.stack_trace(&req.arguments),
+            "scopes" => self.scopes(&req.arguments),
+            "variables" => self.variables(&req.arguments),
+            "evaluate" => self.evaluate(&req.arguments),
+            "setVariable" => self.set_variable(&req.arguments),
             "disconnect" => {
                 let terminate = req
                     .arguments
@@ -802,19 +861,162 @@ impl Adapter {
         }
     }
 
-    /// `Resume`: the stop's frames are gone.
+    /// `Resume`: the stop's frames and variables are gone.
     fn resume(&mut self, how: ResumeHow) -> Result<Value, Failure> {
         self.session.with_backend(|b| b.resume(how))?;
         {
             let mut st = lock(&self.session.state);
             st.stopped = None;
             st.frames.clear();
+            st.refs.clear();
         }
         Ok(if how == ResumeHow::Go {
             json!({ "allThreadsContinued": true })
         } else {
             Value::Null
         })
+    }
+
+    /// One scope per frame, `Locals`: the service has one level.
+    fn scopes(&mut self, args: &Value) -> Result<Value, Failure> {
+        let frame = frame_index(args)?;
+        let r = lock(&self.session.state).add_ref(frame, None);
+        Ok(json!({ "scopes": [{
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": r,
+            "expensive": false,
+        }] }))
+    }
+
+    /// `Variables` of the reference's frame, or of its parent; each part
+    /// that has parts gets a reference of its own. The first list of a
+    /// stop's own variables probes `setVariable` once per session.
+    fn variables(&mut self, args: &Value) -> Result<Value, Failure> {
+        let id = args
+            .get("variablesReference")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        let r = lock(&self.session.state)
+            .get_ref(id)
+            .cloned()
+            .ok_or_else(|| Failure::new(STALE).quiet())?;
+        let vars = self
+            .session
+            .with_backend(|b| b.variables(r.frame, r.parent.as_deref()))?;
+        if r.parent.is_none() {
+            self.probe(r.frame, &vars);
+        }
+        let mut st = lock(&self.session.state);
+        let mut shown = Vec::with_capacity(vars.len());
+        let mut names = HashMap::new();
+        for v in &vars {
+            let name = shown_name(&v.name, r.parent.as_deref());
+            let child = if v.expandable {
+                st.add_ref(r.frame, Some(v.name.clone()))
+            } else {
+                0
+            };
+            names.insert(name.to_ascii_uppercase(), v.name.clone());
+            shown.push(json!({
+                "name": name,
+                "value": v.value,
+                "type": v.r#type,
+                "evaluateName": v.name,
+                "variablesReference": child,
+            }));
+        }
+        if let Some(entry) = usize::try_from(id - 1)
+            .ok()
+            .and_then(|i| st.refs.get_mut(i))
+        {
+            entry.names = names;
+        }
+        Ok(json!({ "variables": shown }))
+    }
+
+    /// Whether `Eval` takes an assignment: `NAME = NAME` of the first
+    /// variable without parts, which changes nothing where it is taken.
+    /// Asked once per session; when it is, `supportsSetVariable` follows
+    /// as a `capabilities` event.
+    fn probe(&self, frame: u32, vars: &[qap_client::proto::ops::debug::Variable]) {
+        if lock(&self.session.state).set_variable.is_some() {
+            return;
+        }
+        let Some(v) = vars.iter().find(|v| !v.expandable) else {
+            return;
+        };
+        let name = v.name.trim();
+        let takes = self
+            .session
+            .with_backend(|b| b.eval(frame, &format!("{name} = {name}")))
+            .is_ok();
+        lock(&self.session.state).set_variable = Some(takes);
+        if takes {
+            self.out().event(
+                "capabilities",
+                json!({ "capabilities": { "supportsSetVariable": true } }),
+            );
+        }
+    }
+
+    /// `Eval` in the frame (the newest when none is named). A hover that
+    /// fails is not shown; the Debug Console takes `EVAL NAME` as typed at
+    /// `STRDBG`, and `NAME:x` and `NAME:c` as the spec names them.
+    fn evaluate(&mut self, args: &Value) -> Result<Value, Failure> {
+        let frame = if args.get("frameId").is_some() {
+            frame_index(args)?
+        } else {
+            0
+        };
+        let context = args.get("context").and_then(Value::as_str).unwrap_or("");
+        let mut expression = args
+            .get("expression")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if context == "repl"
+            && expression.len() > 5
+            && expression[..5].eq_ignore_ascii_case("EVAL ")
+        {
+            expression = expression[5..].trim();
+        }
+        if expression.is_empty() {
+            return Err(Failure::new("nothing to evaluate").quiet());
+        }
+        match self.session.with_backend(|b| b.eval(frame, expression)) {
+            Ok(value) => Ok(json!({ "result": value, "variablesReference": 0 })),
+            Err(f) if context == "hover" => Err(f.quiet()),
+            Err(f) => Err(f),
+        }
+    }
+
+    /// `Eval` of `NAME = value`, when the probe found it taken; the value
+    /// read back as `EVAL` shows it.
+    fn set_variable(&mut self, args: &Value) -> Result<Value, Failure> {
+        if lock(&self.session.state).set_variable != Some(true) {
+            return Err(Failure::new(NO_ASSIGNMENT));
+        }
+        let id = args
+            .get("variablesReference")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        let shown = args.get("name").and_then(Value::as_str).unwrap_or("");
+        let value = args.get("value").and_then(Value::as_str).unwrap_or("");
+        let r = lock(&self.session.state)
+            .get_ref(id)
+            .cloned()
+            .ok_or_else(|| Failure::new(STALE))?;
+        let full = r
+            .names
+            .get(&shown.to_ascii_uppercase())
+            .cloned()
+            .unwrap_or_else(|| shown.to_owned());
+        let now = self.session.with_backend(|b| {
+            b.eval(r.frame, &format!("{full} = {}", value.trim()))?;
+            b.eval(r.frame, &full)
+        })?;
+        Ok(json!({ "value": now }))
     }
 
     /// The session is configured: a `CALL` runs now.
@@ -921,6 +1123,14 @@ impl Adapter {
         }
         (Some(synthetic(&f.program, &f.module)), f.stmt)
     }
+}
+
+/// The service's frame number (0 the newest) of `frameId`.
+fn frame_index(args: &Value) -> Result<u32, Failure> {
+    args.get("frameId")
+        .and_then(Value::as_i64)
+        .and_then(|id| u32::try_from(id - 1).ok())
+        .ok_or_else(|| Failure::new(STALE).quiet())
 }
 
 fn next_breakpoint() -> i64 {
